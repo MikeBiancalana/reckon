@@ -7,6 +7,8 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/storage"
+	"github.com/MikeBiancalana/reckon/internal/tui"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +23,10 @@ var RootCmd = &cobra.Command{
 	Long:  `A terminal-based productivity tool combining daily journaling, task management, and knowledge base.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Default behavior: launch TUI
-		return fmt.Errorf("TUI not yet implemented")
+		model := tui.NewModel(service)
+		p := tea.NewProgram(model, tea.WithAltScreen())
+		_, err := p.Run()
+		return err
 	},
 }
 

@@ -94,12 +94,12 @@ func NewWin(text string, position int) *Win {
 
 // Journal represents a daily journal entry
 type Journal struct {
-	Date         string       `json:"date"` // YYYY-MM-DD format
-	Intentions   []Intention  `json:"intentions"`
-	Wins         []Win        `json:"wins"`
-	LogEntries   []LogEntry   `json:"log_entries"`
-	FilePath     string       `json:"file_path"`
-	LastModified time.Time    `json:"last_modified"`
+	Date         string      `json:"date"` // YYYY-MM-DD format
+	Intentions   []Intention `json:"intentions"`
+	Wins         []Win       `json:"wins"`
+	LogEntries   []LogEntry  `json:"log_entries"`
+	FilePath     string      `json:"file_path"`
+	LastModified time.Time   `json:"last_modified"`
 }
 
 // NewJournal creates a new empty journal for the given date
