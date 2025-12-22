@@ -1,0 +1,23 @@
+package cli
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+var rebuildCmd = &cobra.Command{
+	Use:   "rebuild",
+	Short: "Rebuild the SQLite database from markdown files",
+	Long:  `Deletes and regenerates the SQLite database by scanning all markdown journal files.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Println("Rebuilding database from markdown files...")
+
+		if err := service.Rebuild(); err != nil {
+			return fmt.Errorf("failed to rebuild database: %w", err)
+		}
+
+		fmt.Println("✓ Database rebuilt successfully")
+		return nil
+	},
+}

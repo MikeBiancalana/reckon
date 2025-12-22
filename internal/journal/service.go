@@ -1,0 +1,250 @@
+package journal
+
+import (
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/MikeBiancalana/reckon/internal/storage"
+)
+
+// Service handles journal business logic
+type Service struct {
+	repo      *Repository
+	fileStore *storage.FileStore
+}
+
+// NewService creates a new journal service
+func NewService(repo *Repository, fileStore *storage.FileStore) *Service {
+	return &Service{
+		repo:      repo,
+		fileStore: fileStore,
+	}
+}
+
+// GetToday returns today's journal, creating it if it doesn't exist
+func (s *Service) GetToday() (*Journal, error) {
+	today := time.Now().Format("2006-01-02")
+	return s.GetByDate(today)
+}
+
+// GetByDate returns a journal for the given date, creating it if it doesn't exist
+func (s *Service) GetByDate(date string) (*Journal, error) {
+	// Try to read from filesystem first
+	content, fileInfo, err := s.fileStore.ReadJournalFile(date)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read journal: %w", err)
+	}
+
+	var j *Journal
+
+	// If journal doesn't exist, create a new one
+	if !fileInfo.Exists {
+		j = NewJournal(date)
+
+		// Auto-carry intentions from yesterday if this is today
+		today := time.Now().Format("2006-01-02")
+		if date == today {
+			if err := s.autoCarryIntentions(j); err != nil {
+				return nil, fmt.Errorf("failed to auto-carry intentions: %w", err)
+			}
+		}
+
+		// Save the new journal
+		if err := s.save(j); err != nil {
+			return nil, fmt.Errorf("failed to save new journal: %w", err)
+		}
+	} else {
+		// Parse the journal content
+		j, err = s.parseJournal(content, fileInfo.Path, fileInfo.LastModified)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse journal: %w", err)
+		}
+	}
+
+	return j, nil
+}
+
+// AppendLog appends a log entry to the journal
+func (s *Service) AppendLog(j *Journal, content string) error {
+	timestamp := time.Now()
+	position := len(j.LogEntries)
+
+	// Determine entry type based on content
+	entryType := EntryTypeLog
+	if len(content) > 0 {
+		if content[0] == '[' {
+			if content[1:9] == "meeting:" {
+				entryType = EntryTypeMeeting
+			} else if content[1:7] == "break]" {
+				entryType = EntryTypeBreak
+			}
+		}
+	}
+
+	entry := NewLogEntry(timestamp, content, entryType, position)
+	j.LogEntries = append(j.LogEntries, *entry)
+
+	return s.save(j)
+}
+
+// AddIntention adds a new intention to the journal
+func (s *Service) AddIntention(j *Journal, text string) error {
+	position := len(j.Intentions)
+	intention := NewIntention(text, position)
+	j.Intentions = append(j.Intentions, *intention)
+
+	return s.save(j)
+}
+
+// ToggleIntention toggles an intention between open and done
+func (s *Service) ToggleIntention(j *Journal, intentionID string) error {
+	for i := range j.Intentions {
+		if j.Intentions[i].ID == intentionID {
+			if j.Intentions[i].Status == IntentionDone {
+				j.Intentions[i].Status = IntentionOpen
+			} else {
+				j.Intentions[i].Status = IntentionDone
+			}
+			return s.save(j)
+		}
+	}
+
+	return fmt.Errorf("intention not found: %s", intentionID)
+}
+
+// AddWin adds a new win to the journal
+func (s *Service) AddWin(j *Journal, text string) error {
+	position := len(j.Wins)
+	win := NewWin(text, position)
+	j.Wins = append(j.Wins, *win)
+
+	return s.save(j)
+}
+
+// save saves a journal to both filesystem and database
+func (s *Service) save(j *Journal) error {
+	// Serialize to markdown
+	content := WriteJournal(j)
+
+	// Write to filesystem
+	if err := s.fileStore.WriteJournalFile(j.Date, content); err != nil {
+		return fmt.Errorf("failed to write journal file: %w", err)
+	}
+
+	// Update journal metadata
+	filePath, _ := s.fileStore.GetJournalPath(j.Date)
+	j.FilePath = filePath
+	j.LastModified = time.Now()
+
+	// Update database index
+	if err := s.repo.SaveJournal(j); err != nil {
+		return fmt.Errorf("failed to save journal to database: %w", err)
+	}
+
+	return nil
+}
+
+// parseJournal parses journal content
+func (s *Service) parseJournal(content string, filePath string, lastModified time.Time) (*Journal, error) {
+	return ParseJournal(content, filePath, lastModified)
+}
+
+// autoCarryIntentions carries over open intentions from yesterday
+func (s *Service) autoCarryIntentions(j *Journal) error {
+	// Parse today's date and get yesterday
+	today, err := time.Parse("2006-01-02", j.Date)
+	if err != nil {
+		return fmt.Errorf("invalid date format: %w", err)
+	}
+
+	yesterday := today.AddDate(0, 0, -1).Format("2006-01-02")
+
+	// Get yesterday's open intentions from database
+	openIntentions, err := s.repo.GetOpenIntentions(yesterday)
+	if err != nil {
+		return fmt.Errorf("failed to get open intentions: %w", err)
+	}
+
+	// Carry them over
+	for _, intention := range openIntentions {
+		carried := NewCarriedIntention(intention.Text, yesterday, len(j.Intentions))
+		j.Intentions = append(j.Intentions, *carried)
+	}
+
+	return nil
+}
+
+// Rebuild recreates the database index from all markdown files
+func (s *Service) Rebuild() error {
+	// Clear all data from database
+	if err := s.repo.ClearAllData(); err != nil {
+		return fmt.Errorf("failed to clear database: %w", err)
+	}
+
+	// Get all journal dates
+	dates, err := s.fileStore.ListJournalDates()
+	if err != nil {
+		return fmt.Errorf("failed to list journals: %w", err)
+	}
+
+	// Reindex each journal
+	for _, date := range dates {
+		content, fileInfo, err := s.fileStore.ReadJournalFile(date)
+		if err != nil {
+			return fmt.Errorf("failed to read journal %s: %w", date, err)
+		}
+
+		if fileInfo.Exists {
+			j, err := s.parseJournal(content, fileInfo.Path, fileInfo.LastModified)
+			if err != nil {
+				return fmt.Errorf("failed to parse journal %s: %w", date, err)
+			}
+
+			if err := s.repo.SaveJournal(j); err != nil {
+				return fmt.Errorf("failed to save journal %s: %w", date, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetJournalContent returns the journal as markdown text
+func (s *Service) GetJournalContent(date string) (string, error) {
+	content, fileInfo, err := s.fileStore.ReadJournalFile(date)
+	if err != nil {
+		return "", fmt.Errorf("failed to read journal: %w", err)
+	}
+
+	if !fileInfo.Exists {
+		return "", fmt.Errorf("journal not found for date: %s", date)
+	}
+
+	return content, nil
+}
+
+// GetWeekContent returns the last 7 days of journals as markdown
+func (s *Service) GetWeekContent() (string, error) {
+	var content string
+
+	for i := 6; i >= 0; i-- {
+		date := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+
+		// Read file directly instead of parsing
+		filePath, err := s.fileStore.GetJournalPath(date)
+		if err != nil {
+			continue
+		}
+
+		fileContent, err := os.ReadFile(filePath)
+		if err != nil {
+			continue // Skip missing days
+		}
+
+		content += fmt.Sprintf("# %s\n\n", date)
+		content += string(fileContent) + "\n\n---\n\n"
+	}
+
+	return content, nil
+}
