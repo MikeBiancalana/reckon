@@ -104,6 +104,9 @@ func (il *IntentionList) Update(msg tea.Msg) (*IntentionList, tea.Cmd) {
 
 // View renders the intention list
 func (il *IntentionList) View() string {
+	if len(il.list.Items()) == 0 {
+		return "Intentions\n\nNo intentions yet - press i to add one"
+	}
 	return il.list.View()
 }
 

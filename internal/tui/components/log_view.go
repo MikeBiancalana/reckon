@@ -87,6 +87,9 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 
 // View renders the log view
 func (lv *LogView) View() string {
+	if len(lv.list.Items()) == 0 {
+		return "Log Entries\n\nNo log entries yet - press L to add one"
+	}
 	return lv.list.View()
 }
 
