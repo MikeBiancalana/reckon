@@ -6,6 +6,7 @@ import (
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -16,6 +17,7 @@ const (
 	SectionIntentions Section = iota
 	SectionWins
 	SectionLogs
+	SectionCount // Keep this last to get the count
 )
 
 // Model represents the main TUI state
@@ -31,21 +33,28 @@ type Model struct {
 	intentionList *components.IntentionList
 	winsView      *components.WinsView
 	logView       *components.LogView
-	logInput      tea.Model
+	textInput     textinput.Model
 	statusBar     *components.StatusBar
 
 	// State for input modes
 	inputMode bool
 	inputType string // "intention", "win", "log"
-	inputText string
+	lastError error
 }
 
 // NewModel creates a new TUI model
 func NewModel(service *journal.Service) *Model {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.Placeholder = ""
+	ti.CharLimit = 200
+	ti.Width = 50
+
 	return &Model{
 		service:        service,
 		currentDate:    time.Now().Format("2006-01-02"),
 		focusedSection: SectionIntentions,
+		textInput:      ti,
 		statusBar:      components.NewStatusBar(),
 	}
 }
@@ -94,10 +103,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case journalUpdatedMsg:
+		// Reset input state after successful submission
+		if m.inputMode {
+			m.inputMode = false
+			m.textInput.SetValue("")
+			m.textInput.Blur()
+		}
 		return m, m.loadJournal()
 
 	case errMsg:
-		// Handle error - for now just ignore
+		// Reset input state and store error for display
+		if m.inputMode {
+			m.inputMode = false
+			m.textInput.SetValue("")
+			m.textInput.Blur()
+		}
+		m.lastError = msg.err
 		return m, nil
 
 	case tea.KeyMsg:
@@ -110,19 +131,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				// Cancel input
 				m.inputMode = false
-				m.inputText = ""
-				return m, nil
-			case "backspace":
-				if len(m.inputText) > 0 {
-					m.inputText = m.inputText[:len(m.inputText)-1]
-				}
+				m.textInput.SetValue("")
+				m.textInput.Blur()
 				return m, nil
 			default:
-				// Add character to input
-				if len(msg.String()) == 1 {
-					m.inputText += msg.String()
-				}
-				return m, nil
+				// Delegate to textinput for editing
+				var cmd tea.Cmd
+				m.textInput, cmd = m.textInput.Update(msg)
+				return m, cmd
 			}
 		}
 
@@ -131,10 +147,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "tab":
-			m.focusedSection = (m.focusedSection + 1) % 3
+			m.focusedSection = (m.focusedSection + 1) % SectionCount
 			return m, nil
 		case "shift+tab":
-			m.focusedSection = (m.focusedSection + 2) % 3
+			m.focusedSection = (m.focusedSection + SectionCount - 1) % SectionCount
 			return m, nil
 		case "h", "left":
 			return m, m.prevDay()
@@ -149,20 +165,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add intention
 			m.inputMode = true
 			m.inputType = "intention"
-			m.inputText = ""
-			return m, nil
+			m.textInput.Prompt = "Add intention: "
+			m.textInput.Placeholder = "What do you intend to accomplish?"
+			m.textInput.SetValue("")
+			m.textInput.Focus()
+			return m, textinput.Blink
 		case "w":
 			// Add win
 			m.inputMode = true
 			m.inputType = "win"
-			m.inputText = ""
-			return m, nil
+			m.textInput.Prompt = "Add win: "
+			m.textInput.Placeholder = "What did you accomplish?"
+			m.textInput.SetValue("")
+			m.textInput.Focus()
+			return m, textinput.Blink
 		case "L":
 			// Add log
 			m.inputMode = true
 			m.inputType = "log"
-			m.inputText = ""
-			return m, nil
+			m.textInput.Prompt = "Add log entry: "
+			m.textInput.Placeholder = "What did you do?"
+			m.textInput.SetValue("")
+			m.textInput.Focus()
+			return m, textinput.Blink
 		case "enter":
 			// Handle enter key for toggling intentions
 			if m.focusedSection == SectionIntentions && m.intentionList != nil {
@@ -206,8 +231,7 @@ func (m *Model) View() string {
 	}
 
 	if m.inputMode {
-		prompt := fmt.Sprintf("Add %s: %s", m.inputType, m.inputText)
-		return prompt + "\n\n(Enter to submit, Esc to cancel)"
+		return m.textInput.View() + "\n\n(Enter to submit, Esc to cancel)"
 	}
 
 	var content string
@@ -230,6 +254,12 @@ func (m *Model) View() string {
 	status := ""
 	if m.statusBar != nil {
 		status = m.statusBar.View()
+	}
+
+	// Display error if present
+	if m.lastError != nil {
+		errorMsg := fmt.Sprintf("Error: %s", m.lastError.Error())
+		content += "\n\n" + errorMsg
 	}
 
 	return content + "\n" + status
@@ -273,8 +303,8 @@ func (m *Model) toggleIntention(intentionID string) tea.Cmd {
 }
 
 func (m *Model) submitInput() tea.Cmd {
-	if m.inputText == "" {
-		m.inputMode = false
+	inputText := m.textInput.Value()
+	if inputText == "" {
 		return nil
 	}
 
@@ -282,15 +312,12 @@ func (m *Model) submitInput() tea.Cmd {
 		var err error
 		switch m.inputType {
 		case "intention":
-			err = m.service.AddIntention(m.currentJournal, m.inputText)
+			err = m.service.AddIntention(m.currentJournal, inputText)
 		case "win":
-			err = m.service.AddWin(m.currentJournal, m.inputText)
+			err = m.service.AddWin(m.currentJournal, inputText)
 		case "log":
-			err = m.service.AppendLog(m.currentJournal, m.inputText)
+			err = m.service.AppendLog(m.currentJournal, inputText)
 		}
-
-		m.inputMode = false
-		m.inputText = ""
 
 		if err != nil {
 			return errMsg{err}

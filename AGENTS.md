@@ -1,3 +1,24 @@
+# Agent Guidelines for Reckon
+
+## Build/Lint/Test Commands
+- **Build**: `go build -o rk ./cmd/rk`
+- **Test all**: `go test ./...`
+- **Test single**: `go test -run TestName ./path/to/package`
+- **Lint**: `go vet ./...`
+- **Format**: `go fmt ./...`
+- **Tidy deps**: `go mod tidy`
+
+## Code Style Guidelines
+- **Formatting**: Use `go fmt` (standard Go formatting)
+- **Imports**: stdlib → third-party → internal packages (blank line between groups)
+- **Naming**: PascalCase for exported, camelCase for unexported
+- **Packages**: lowercase, single word (journal, tui, cli, storage)
+- **Errors**: Return errors, wrap with `fmt.Errorf("context: %w", err)`
+- **Pointers**: Use for optional values and large structs to avoid copying
+- **Types**: Strongly typed, avoid interface{}
+- **Comments**: Document all exported functions/types
+- **Enums**: Use iota for constants
+
 Use 'bd' for task tracking
 
 ## Landing the Plane (Session Completion)
@@ -25,4 +46,3 @@ Use 'bd' for task tracking
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-Use 'bd' for task tracking
