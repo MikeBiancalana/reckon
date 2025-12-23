@@ -39,6 +39,7 @@ type Model struct {
 	// State for input modes
 	inputMode bool
 	inputType string // "intention", "win", "log"
+	helpMode  bool
 	lastError error
 }
 
@@ -159,7 +160,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			return m, m.jumpToToday()
 		case "?":
-			// Help mode - TODO
+			m.helpMode = !m.helpMode
 			return m, nil
 		case "i":
 			// Add intention
@@ -238,6 +239,10 @@ func (m *Model) View() string {
 		return view
 	}
 
+	if m.helpMode {
+		return m.helpView()
+	}
+
 	var content string
 
 	switch m.focusedSection {
@@ -268,6 +273,43 @@ func (m *Model) View() string {
 	}
 
 	return content + "\n" + status
+}
+
+// helpView renders the help overlay
+func (m *Model) helpView() string {
+	helpText := `Help - Key Bindings:
+
+Navigation:
+  h, ←       Previous day
+  l, →       Next day
+  t          Jump to today
+  tab        Next section
+  shift+tab  Previous section
+
+Actions:
+  i          Add intention
+  w          Add win
+  L          Add log entry
+  enter      Toggle intention (in intentions section)
+
+Input Mode:
+  enter      Submit
+  esc        Cancel
+  backspace  Delete character
+  any key    Add character
+
+General:
+  q, ctrl+c  Quit
+  ?          Toggle help
+
+Press ? to exit help.`
+
+	status := ""
+	if m.statusBar != nil {
+		status = m.statusBar.View()
+	}
+
+	return helpText + "\n\n" + status
 }
 
 // Helper functions for navigation
