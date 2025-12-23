@@ -1,13 +1,13 @@
 package tui
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Section represents different sections of the journal
@@ -85,14 +85,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.statusBar != nil {
 			m.statusBar.SetWidth(msg.Width)
 		}
+		// Calculate pane dimensions
+		paneWidthIntentions := int(float64(msg.Width) * 0.25)
+		paneWidthWins := paneWidthIntentions
+		paneWidthLogs := msg.Width - 2*paneWidthIntentions
+		paneHeight := msg.Height - 2
 		if m.intentionList != nil {
-			m.intentionList.SetSize(msg.Width, msg.Height-2) // Leave space for status bar
+			m.intentionList.SetSize(paneWidthIntentions, paneHeight)
 		}
 		if m.winsView != nil {
-			m.winsView.SetSize(msg.Width, msg.Height-2) // Leave space for status bar
+			m.winsView.SetSize(paneWidthWins, paneHeight)
 		}
 		if m.logView != nil {
-			m.logView.SetSize(msg.Width, msg.Height-2) // Leave space for status bar
+			m.logView.SetSize(paneWidthLogs, paneHeight)
 		}
 		return m, nil
 
@@ -243,33 +248,50 @@ func (m *Model) View() string {
 		return m.helpView()
 	}
 
-	var content string
+	// Calculate pane dimensions
+	paneWidthIntentions := int(float64(m.width) * 0.25)
+	paneWidthWins := paneWidthIntentions
+	paneWidthLogs := m.width - 2*paneWidthIntentions
+	paneHeight := m.height - 2
 
-	switch m.focusedSection {
-	case SectionIntentions:
-		if m.intentionList != nil {
-			content = m.intentionList.View()
-		}
-	case SectionWins:
-		if m.winsView != nil {
-			content = m.winsView.View()
-		}
-	case SectionLogs:
-		if m.logView != nil {
-			content = m.logView.View()
-		}
+	// Size components to panes
+	if m.intentionList != nil {
+		m.intentionList.SetSize(paneWidthIntentions, paneHeight)
 	}
+	if m.winsView != nil {
+		m.winsView.SetSize(paneWidthWins, paneHeight)
+	}
+	if m.logView != nil {
+		m.logView.SetSize(paneWidthLogs, paneHeight)
+	}
+
+	// Get pane views
+	intentionsView := ""
+	if m.intentionList != nil {
+		intentionsView = m.intentionList.View()
+	}
+	winsView := ""
+	if m.winsView != nil {
+		winsView = m.winsView.View()
+	}
+	logsView := ""
+	if m.logView != nil {
+		logsView = m.logView.View()
+	}
+
+	// Join panes with borders
+	borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
+	content := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		borderStyle.Render(intentionsView),
+		borderStyle.Render(winsView),
+		logsView,
+	)
 
 	status := ""
 	if m.statusBar != nil {
 		m.statusBar.SetDate(m.currentDate)
 		status = m.statusBar.View()
-	}
-
-	// Display error if present
-	if m.lastError != nil {
-		errorMsg := fmt.Sprintf("Error: %s", m.lastError.Error())
-		content += "\n\n" + errorMsg
 	}
 
 	return content + "\n" + status
