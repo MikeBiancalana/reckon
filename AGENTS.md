@@ -21,6 +21,39 @@
 
 Use 'bd' for task tracking
 
+## Branch Management
+
+**ALWAYS use short-lived feature branches.** Each ticket/issue gets its own branch.
+
+**Starting work on a ticket:**
+
+1. **Ensure you're on main and up to date:**
+   ```bash
+   git checkout main
+   git pull origin main
+   ```
+
+2. **Create a new branch from main:**
+   ```bash
+   git checkout -b <descriptive-branch-name>
+   ```
+   - Branch naming: `<type>/<short-description>` or `<issue-id>/<short-description>`
+   - Examples: `feature/add-timer`, `bug/fix-parser`, `reckon-123/implement-analytics`
+
+3. **Work in that branch** - All commits for the ticket stay in this branch
+
+4. **When done:**
+   - Push the branch: `git push -u origin <branch-name>`
+   - Create a PR to merge into main
+   - Delete the branch after merging (GitHub does this automatically)
+
+**CRITICAL RULES:**
+- ONE branch per ticket/issue
+- ALWAYS branch from main (not from other feature branches)
+- Keep branches short-lived (hours to days, not weeks)
+- Merge to main frequently via PRs
+- Delete branches after merging
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
