@@ -231,7 +231,11 @@ func (m *Model) View() string {
 	}
 
 	if m.inputMode {
-		return m.textInput.View() + "\n\n(Enter to submit, Esc to cancel)"
+		view := m.textInput.View() + "\n\n(Enter to submit, Esc to cancel)"
+		if m.lastError != nil {
+			view += "\n\nError: " + m.lastError.Error()
+		}
+		return view
 	}
 
 	var content string
