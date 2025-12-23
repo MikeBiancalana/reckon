@@ -257,6 +257,7 @@ func (m *Model) View() string {
 
 	status := ""
 	if m.statusBar != nil {
+		m.statusBar.SetDate(m.currentDate)
 		status = m.statusBar.View()
 	}
 
