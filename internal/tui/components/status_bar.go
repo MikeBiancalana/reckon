@@ -9,14 +9,14 @@ import (
 
 var (
 	statusBarStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Background(lipgloss.Color("236")).
-		Padding(0, 1)
+			Foreground(lipgloss.Color("241")).
+			Background(lipgloss.Color("236")).
+			Padding(0, 1)
 
 	dateStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("255")).
-		Background(lipgloss.Color("236")).
-		Bold(true)
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("236")).
+			Bold(true)
 )
 
 // StatusBar represents the status bar component
