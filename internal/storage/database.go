@@ -48,6 +48,34 @@ CREATE TABLE IF NOT EXISTS wins (
     FOREIGN KEY (journal_date) REFERENCES journals(date) ON DELETE CASCADE
 );
 
+-- Tasks table (global tasks)
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    status TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+-- Task notes table
+CREATE TABLE IF NOT EXISTS task_notes (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+-- Schedule items table (per-journal)
+CREATE TABLE IF NOT EXISTS schedule_items (
+    id TEXT PRIMARY KEY,
+    journal_date TEXT NOT NULL,
+    time TEXT NOT NULL,
+    content TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    FOREIGN KEY (journal_date) REFERENCES journals(date) ON DELETE CASCADE
+);
+
 -- Indices for faster queries
 CREATE INDEX IF NOT EXISTS idx_intentions_date ON intentions(journal_date);
 CREATE INDEX IF NOT EXISTS idx_intentions_status ON intentions(status);
@@ -55,6 +83,11 @@ CREATE INDEX IF NOT EXISTS idx_log_entries_date ON log_entries(journal_date);
 CREATE INDEX IF NOT EXISTS idx_log_entries_type ON log_entries(entry_type);
 CREATE INDEX IF NOT EXISTS idx_log_entries_task ON log_entries(task_id);
 CREATE INDEX IF NOT EXISTS idx_wins_date ON wins(journal_date);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_position ON tasks(position);
+CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes(task_id);
+CREATE INDEX IF NOT EXISTS idx_schedule_items_date ON schedule_items(journal_date);
+CREATE INDEX IF NOT EXISTS idx_schedule_items_time ON schedule_items(time);
 `
 
 // Database wraps a SQL database connection
