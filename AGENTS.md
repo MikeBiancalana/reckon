@@ -51,6 +51,7 @@ Use 'bd' for task tracking
 - ONE branch per ticket/issue
 - ALWAYS branch from main (not from other feature branches)
 - Keep branches short-lived (hours to days, not weeks)
+- Name branches with short, meaningful names related to the changes in the branch
 - Merge to main frequently via PRs
 - Delete branches after merging
 

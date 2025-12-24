@@ -22,6 +22,7 @@ rk
 *.swp
 *.swo
 *~
+tags
 
 # OS
 .DS_Store
