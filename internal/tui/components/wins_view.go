@@ -76,6 +76,9 @@ func (wv *WinsView) Update(msg tea.Msg) (*WinsView, tea.Cmd) {
 
 // View renders the wins view
 func (wv *WinsView) View() string {
+	if len(wv.list.Items()) == 0 {
+		return "Wins\n\nNo wins yet - press w to add one"
+	}
 	return wv.list.View()
 }
 
