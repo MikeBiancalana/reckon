@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
@@ -19,6 +20,12 @@ const (
 	SectionWins
 	SectionLogs
 	SectionCount // Keep this last to get the count
+)
+
+// Minimum terminal dimensions
+const (
+	MinTerminalWidth  = 80
+	MinTerminalHeight = 24
 )
 
 // Model represents the main TUI state
@@ -43,6 +50,9 @@ type Model struct {
 	inputType string // "intention", "win", "log"
 	helpMode  bool
 	lastError error
+
+	// Terminal size validation
+	terminalTooSmall bool
 }
 
 // NewModel creates a new TUI model
@@ -101,22 +111,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// Check if terminal meets minimum dimensions
+		m.terminalTooSmall = msg.Width < MinTerminalWidth || msg.Height < MinTerminalHeight
+
 		if m.statusBar != nil {
 			m.statusBar.SetWidth(msg.Width)
 		}
-		// Calculate pane dimensions
-		paneWidthIntentions := int(float64(msg.Width) * 0.25)
-		paneWidthWins := paneWidthIntentions
-		paneWidthLogs := msg.Width - 2*paneWidthIntentions
-		paneHeight := msg.Height - 2
-		if m.intentionList != nil {
-			m.intentionList.SetSize(paneWidthIntentions, paneHeight)
-		}
-		if m.winsView != nil {
-			m.winsView.SetSize(paneWidthWins, paneHeight)
-		}
-		if m.logView != nil {
-			m.logView.SetSize(paneWidthLogs, paneHeight)
+
+		// Only calculate pane dimensions if terminal is large enough
+		if !m.terminalTooSmall {
+			// Calculate pane dimensions
+			paneWidthIntentions := int(float64(msg.Width) * 0.25)
+			paneWidthWins := paneWidthIntentions
+			paneWidthLogs := msg.Width - 2*paneWidthIntentions
+			paneHeight := msg.Height - 2
+			if m.intentionList != nil {
+				m.intentionList.SetSize(paneWidthIntentions, paneHeight)
+			}
+			if m.winsView != nil {
+				m.winsView.SetSize(paneWidthWins, paneHeight)
+			}
+			if m.logView != nil {
+				m.logView.SetSize(paneWidthLogs, paneHeight)
+			}
 		}
 		return m, nil
 
@@ -265,6 +283,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the TUI
 func (m *Model) View() string {
+	// Handle terminal too small case
+	if m.terminalTooSmall {
+		return m.terminalTooSmallView()
+	}
+
 	if m.currentJournal == nil {
 		return "Loading..."
 	}
@@ -365,6 +388,28 @@ Press ? to exit help.`
 	}
 
 	return helpText + "\n\n" + status
+}
+
+// terminalTooSmallView renders the message when terminal is too small
+func (m *Model) terminalTooSmallView() string {
+	title := "Terminal Too Small"
+	currentSize := fmt.Sprintf("Current: %dx%d", m.width, m.height)
+	requiredSize := fmt.Sprintf("Required: %dx%d or larger", MinTerminalWidth, MinTerminalHeight)
+
+	style := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Align(lipgloss.Center, lipgloss.Center)
+
+	content := fmt.Sprintf(
+		"%s\n\n%s\n\n%s\n\nResize your terminal and restart Reckon.",
+		title,
+		currentSize,
+		requiredSize,
+	)
+
+	return style.Render(content)
 }
 
 // Helper functions for navigation

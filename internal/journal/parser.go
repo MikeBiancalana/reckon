@@ -153,15 +153,13 @@ func parseIntention(line string, position int) *Intention {
 
 	// Check for carried intention [>]
 	if match := intentionCarriedRe.FindStringSubmatch(line); match != nil {
-		text := strings.TrimSpace(match[1])
+		fullText := strings.TrimSpace(match[1])
 		// Extract carried date if present in format "(carried from YYYY-MM-DD)"
+		text := fullText
 		carriedFrom := ""
-		if strings.Contains(text, "carried from") {
-			parts := strings.Split(text, "carried from")
-			if len(parts) > 1 {
-				text = strings.TrimSpace(parts[0])
-				carriedFrom = strings.Trim(strings.TrimSpace(parts[1]), "()")
-			}
+		if idx := strings.Index(fullText, " (carried from "); idx != -1 {
+			text = strings.TrimSpace(fullText[:idx])
+			carriedFrom = strings.Trim(strings.TrimSpace(fullText[idx+len(" (carried from "):]), ")")
 		}
 		intention := NewCarriedIntention(text, carriedFrom, position)
 		return intention

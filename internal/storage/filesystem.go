@@ -141,3 +141,57 @@ func (fs *FileStore) DeleteJournal(date string) error {
 
 	return nil
 }
+
+// GetTasksPath returns the file path for the tasks file
+func (fs *FileStore) GetTasksPath() (string, error) {
+	dataDir, err := config.DataDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dataDir, "tasks.md"), nil
+}
+
+// ReadTasksFile reads the tasks file and returns its content and metadata
+func (fs *FileStore) ReadTasksFile() (content string, info FileInfo, err error) {
+	filePath, err := fs.GetTasksPath()
+	if err != nil {
+		return "", FileInfo{}, err
+	}
+
+	// Check if file exists
+	fileInfo, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		return "", FileInfo{Path: filePath, Exists: false}, nil
+	}
+	if err != nil {
+		return "", FileInfo{}, fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	// Read file content
+	contentBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", FileInfo{}, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	return string(contentBytes), FileInfo{
+		Path:         filePath,
+		LastModified: fileInfo.ModTime(),
+		Exists:       true,
+	}, nil
+}
+
+// WriteTasksFile writes content to the tasks file
+func (fs *FileStore) WriteTasksFile(content string) error {
+	filePath, err := fs.GetTasksPath()
+	if err != nil {
+		return err
+	}
+
+	// Write to file
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
+}
