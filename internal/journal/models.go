@@ -15,6 +15,15 @@ const (
 	IntentionCarried IntentionStatus = "carried"
 )
 
+// TaskStatus represents the status of a task
+type TaskStatus string
+
+const (
+	TaskOpen     TaskStatus = "open"
+	TaskDone     TaskStatus = "done"
+	TaskArchived TaskStatus = "archived"
+)
+
 // EntryType represents the type of a log entry
 type EntryType string
 
@@ -92,22 +101,80 @@ func NewWin(text string, position int) *Win {
 	}
 }
 
+// Task represents a global task
+type Task struct {
+	ID        string     `json:"id"`
+	Text      string     `json:"text"`
+	Status    TaskStatus `json:"status"`
+	Notes     []TaskNote `json:"notes"`
+	Position  int        `json:"position"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+// NewTask creates a new task with a generated ID
+func NewTask(text string, position int) *Task {
+	return &Task{
+		ID:        xid.New().String(),
+		Text:      text,
+		Status:    TaskOpen,
+		Notes:     make([]TaskNote, 0),
+		Position:  position,
+		CreatedAt: time.Now(),
+	}
+}
+
+// TaskNote represents a note attached to a task
+type TaskNote struct {
+	ID       string `json:"id"`
+	Text     string `json:"text"`
+	Position int    `json:"position"`
+}
+
+// NewTaskNote creates a new task note with a generated ID
+func NewTaskNote(text string, position int) *TaskNote {
+	return &TaskNote{
+		ID:       xid.New().String(),
+		Text:     text,
+		Position: position,
+	}
+}
+
+// ScheduleItem represents a scheduled item in a journal
+type ScheduleItem struct {
+	ID       string    `json:"id"`
+	Time     time.Time `json:"time"`
+	Content  string    `json:"content"`
+	Position int       `json:"position"`
+}
+
+// NewScheduleItem creates a new schedule item with a generated ID
+func NewScheduleItem(time time.Time, content string, position int) *ScheduleItem {
+	return &ScheduleItem{
+		ID:       xid.New().String(),
+		Time:     time,
+		Content:  content,
+		Position: position,
+	}
+}
+
 // Journal represents a daily journal entry
 type Journal struct {
-	Date         string      `json:"date"` // YYYY-MM-DD format
-	Intentions   []Intention `json:"intentions"`
-	Wins         []Win       `json:"wins"`
-	LogEntries   []LogEntry  `json:"log_entries"`
-	FilePath     string      `json:"file_path"`
-	LastModified time.Time   `json:"last_modified"`
+	Date          string         `json:"date"` // YYYY-MM-DD format
+	Intentions    []Intention    `json:"intentions"`
+	Wins          []Win          `json:"wins"`
+	LogEntries    []LogEntry     `json:"log_entries"`
+	ScheduleItems []ScheduleItem `json:"schedule_items"`
+	FilePath      string         `json:"file_path"`
+	LastModified  time.Time      `json:"last_modified"`
 }
 
 // NewJournal creates a new empty journal for the given date
 func NewJournal(date string) *Journal {
 	return &Journal{
-		Date:       date,
-		Intentions: make([]Intention, 0),
-		Wins:       make([]Win, 0),
-		LogEntries: make([]LogEntry, 0),
+		Date:          date,
+		Intentions:    make([]Intention, 0),
+		Wins:          make([]Win, 0),
+		LogEntries:    make([]LogEntry, 0),
+		ScheduleItems: make([]ScheduleItem, 0),
 	}
 }
