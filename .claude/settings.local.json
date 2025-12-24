@@ -24,7 +24,8 @@
       "Bash(git fetch:*)",
       "Bash(git checkout:*)",
       "Bash(go build:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(gh pr view:*)"
     ]
   }
 }
