@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/sync"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +24,7 @@ const (
 // Model represents the main TUI state
 type Model struct {
 	service        *journal.Service
+	watcher        *sync.Watcher
 	currentDate    string
 	currentJournal *journal.Journal
 	focusedSection Section
@@ -51,8 +53,16 @@ func NewModel(service *journal.Service) *Model {
 	ti.CharLimit = 200
 	ti.Width = 50
 
+	// Create watcher
+	watcher, err := sync.NewWatcher(service)
+	if err != nil {
+		// Log error but continue without watcher
+		watcher = nil
+	}
+
 	return &Model{
 		service:        service,
+		watcher:        watcher,
 		currentDate:    time.Now().Format("2006-01-02"),
 		focusedSection: SectionIntentions,
 		textInput:      ti,
@@ -62,7 +72,16 @@ func NewModel(service *journal.Service) *Model {
 
 // Init initializes the model
 func (m *Model) Init() tea.Cmd {
-	return m.loadJournal()
+	cmds := []tea.Cmd{m.loadJournal()}
+
+	// Start watcher
+	if m.watcher != nil {
+		if err := m.watcher.Start(); err == nil {
+			cmds = append(cmds, m.waitForFileChange())
+		}
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // loadJournal loads the journal for the current date
@@ -117,6 +136,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.loadJournal()
 
+	case fileChangedMsg:
+		// Reload journal if the changed file is for the current date
+		var cmd tea.Cmd
+		if msg.date == m.currentDate {
+			cmd = tea.Batch(m.loadJournal(), m.waitForFileChange())
+		} else {
+			cmd = m.waitForFileChange()
+		}
+		return m, cmd
+
 	case errMsg:
 		// Reset input state and store error for display
 		if m.inputMode {
@@ -151,6 +180,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal mode
 		switch msg.String() {
 		case "q", "ctrl+c":
+			// Stop watcher on quit
+			if m.watcher != nil {
+				m.watcher.Stop()
+			}
 			return m, tea.Quit
 		case "tab":
 			m.focusedSection = (m.focusedSection + 1) % SectionCount
@@ -402,6 +435,22 @@ type journalLoadedMsg struct {
 
 type journalUpdatedMsg struct{}
 
+type fileChangedMsg struct {
+	date string
+}
+
 type errMsg struct {
 	err error
+}
+
+// waitForFileChange waits for file change events from the watcher
+func (m *Model) waitForFileChange() tea.Cmd {
+	if m.watcher == nil {
+		return nil
+	}
+
+	return func() tea.Msg {
+		event := <-m.watcher.Changes()
+		return fileChangedMsg{date: event.Date}
+	}
 }
