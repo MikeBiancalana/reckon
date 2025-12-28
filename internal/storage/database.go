@@ -142,6 +142,11 @@ func NewDatabase(path string) (*Database, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	// Enable foreign keys (required for CASCADE to work)
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
 	// Initialize schema
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
