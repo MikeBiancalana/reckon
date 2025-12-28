@@ -71,7 +71,7 @@ func (s *TaskService) ToggleTask(taskID string) error {
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
-	// Find and toggle the task
+	// Find and toggle task
 	found := false
 	for i := range tasks {
 		if tasks[i].ID == taskID {
@@ -105,7 +105,7 @@ func (s *TaskService) AddTaskNote(taskID, noteText string) error {
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
-	// Find the task and add the note
+	// Find task and add note
 	found := false
 	for i := range tasks {
 		if tasks[i].ID == taskID {
@@ -137,13 +137,13 @@ func (s *TaskService) DeleteTaskNote(taskID, noteID string) error {
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
-	// Find the task and remove the note
+	// Find task and remove note
 	taskFound := false
 	noteFound := false
 	for i := range tasks {
 		if tasks[i].ID == taskID {
 			taskFound = true
-			// Find and remove the note
+			// Find and remove note
 			for j, note := range tasks[i].Notes {
 				if note.ID == noteID {
 					// Remove note from slice
@@ -173,6 +173,11 @@ func (s *TaskService) DeleteTaskNote(taskID, noteID string) error {
 	}
 
 	return nil
+}
+
+// GetTaskByID retrieves a single task by ID using the repository
+func (s *TaskService) GetTaskByID(id string) (*Task, error) {
+	return s.repo.GetTaskByID(id)
 }
 
 // save persists tasks to both file and database
