@@ -15,6 +15,26 @@ func WriteJournal(j *Journal) string {
 	sb.WriteString(fmt.Sprintf("date: %s\n", j.Date))
 	sb.WriteString("---\n\n")
 
+	// Write Schedule section
+	sb.WriteString("## Schedule\n\n")
+	if len(j.ScheduleItems) > 0 {
+		sortedSchedule := make([]ScheduleItem, len(j.ScheduleItems))
+		copy(sortedSchedule, j.ScheduleItems)
+		sort.Slice(sortedSchedule, func(i, j int) bool {
+			return sortedSchedule[i].Position < sortedSchedule[j].Position
+		})
+
+		for _, item := range sortedSchedule {
+			if !item.Time.IsZero() {
+				timeStr := item.Time.Format("15:04")
+				sb.WriteString(fmt.Sprintf("- %s %s\n", timeStr, item.Content))
+			} else {
+				sb.WriteString(fmt.Sprintf("- %s\n", item.Content))
+			}
+		}
+	}
+	sb.WriteString("\n")
+
 	// Write Intentions section
 	sb.WriteString("## Intentions\n\n")
 	if len(j.Intentions) > 0 {
