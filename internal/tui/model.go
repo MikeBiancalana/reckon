@@ -55,7 +55,11 @@ type Model struct {
 	textInput     textinput.Model
 	statusBar     *components.StatusBar
 
-	// Task components
+	// New components for 40-40-18 layout
+	taskList     *components.TaskList
+	scheduleView *components.ScheduleView
+
+	// Task components (legacy Phase 2)
 	currentTask  *task.Task
 	taskView     *components.TaskView
 	taskPicker   *components.TaskPicker
@@ -63,12 +67,12 @@ type Model struct {
 	showingTasks bool // Two-pane mode enabled
 
 	// State for input modes
-	inputMode       bool
-	inputType       string // "intention", "win", "log", "task", "task_log"
-	helpMode        bool
-	taskPickerMode  bool
+	inputMode        bool
+	inputType        string // "intention", "win", "log", "task", "task_log"
+	helpMode         bool
+	taskPickerMode   bool
 	taskCreationMode bool
-	lastError       error
+	lastError        error
 
 	// Terminal size validation
 	terminalTooSmall bool
@@ -170,6 +174,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.intentionList = components.NewIntentionList(msg.journal.Intentions)
 		m.winsView = components.NewWinsView(msg.journal.Wins)
 		m.logView = components.NewLogView(msg.journal.LogEntries)
+
+		// Initialize new components for 40-40-18 layout
+		m.scheduleView = components.NewScheduleView(msg.journal.ScheduleItems)
+		m.taskList = components.NewTaskList([]journal.Task{}) // Start with empty, will be loaded separately
+
 		return m, nil
 
 	case journalUpdatedMsg:
@@ -437,7 +446,7 @@ func (m *Model) View() string {
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("12")).
 			Padding(1, 2).
-			Width(m.width/2)
+			Width(m.width / 2)
 
 		return lipgloss.Place(
 			m.width,
@@ -458,6 +467,11 @@ func (m *Model) View() string {
 
 	if m.helpMode {
 		return m.helpView()
+	}
+
+	// Check if new 40-40-18 layout components are available
+	if m.taskList != nil && m.scheduleView != nil {
+		return m.renderNewLayout()
 	}
 
 	var content string
@@ -536,6 +550,72 @@ func (m *Model) View() string {
 		)
 	}
 
+	status := ""
+	if m.statusBar != nil {
+		m.statusBar.SetDate(m.currentDate)
+		status = m.statusBar.View()
+	}
+
+	return content + "\n" + status
+}
+
+// renderNewLayout renders the 40-40-18 layout: Logs | Tasks | Schedule/Intentions/Wins
+func (m *Model) renderNewLayout() string {
+	dims := CalculatePaneDimensions(m.width, m.height)
+
+	// Size components
+	if m.taskList != nil {
+		m.taskList.SetSize(dims.TasksWidth, dims.TasksHeight)
+	}
+	if m.scheduleView != nil {
+		m.scheduleView.SetSize(dims.RightWidth, dims.ScheduleHeight)
+	}
+	if m.intentionList != nil {
+		m.intentionList.SetSize(dims.RightWidth, dims.IntentionsHeight)
+	}
+	if m.winsView != nil {
+		m.winsView.SetSize(dims.RightWidth, dims.WinsHeight)
+	}
+	if m.logView != nil {
+		m.logView.SetSize(dims.LogsWidth, dims.LogsHeight)
+	}
+
+	// Get pane views
+	logsView := ""
+	if m.logView != nil {
+		logsView = m.logView.View()
+	}
+
+	tasksView := ""
+	if m.taskList != nil {
+		tasksView = m.taskList.View()
+	}
+
+	// Stack right sidebar vertically
+	rightSidebar := ""
+	if m.scheduleView != nil && m.intentionList != nil && m.winsView != nil {
+		scheduleView := m.scheduleView.View()
+		intentionsView := m.intentionList.View()
+		winsView := m.winsView.View()
+
+		rightSidebar = lipgloss.JoinVertical(
+			lipgloss.Top,
+			scheduleView,
+			intentionsView,
+			winsView,
+		)
+	}
+
+	// Join main panes horizontally
+	borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
+	content := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		borderStyle.Render(logsView),
+		borderStyle.Render(tasksView),
+		rightSidebar,
+	)
+
+	// Add status bar
 	status := ""
 	if m.statusBar != nil {
 		m.statusBar.SetDate(m.currentDate)
