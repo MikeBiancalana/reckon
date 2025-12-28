@@ -225,6 +225,7 @@ func parseLogEntry(line string, date string, position int) *LogEntry {
 // Accepts two patterns:
 //   - With time: "- HH:MM Content" (e.g., "- 09:00 Morning standup")
 //   - Without time: "- Content" (e.g., "- Review PR")
+//
 // Returns nil if the line is not a valid bullet point or has empty content.
 // When time parsing fails for a line with HH:MM prefix, the entire line
 // (including the time string) is treated as content with no timestamp.

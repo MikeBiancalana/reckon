@@ -3,12 +3,15 @@ package journal
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/storage"
 )
 
-// Service handles journal business logic
+// Service handles journal business logic.
+// Note: Service methods are not thread-safe. If concurrent access is required,
+// external synchronization must be provided by the caller.
 type Service struct {
 	repo      *Repository
 	fileStore *storage.FileStore
@@ -60,6 +63,13 @@ func (s *Service) GetByDate(date string) (*Journal, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse journal: %w", err)
 		}
+
+		// Load schedule items from database (database is source of truth for schedule items)
+		scheduleItems, err := s.repo.GetScheduleItems(date)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load schedule items from database: %w", err)
+		}
+		j.ScheduleItems = scheduleItems
 	}
 
 	return j, nil
@@ -120,6 +130,75 @@ func (s *Service) AddWin(j *Journal, text string) error {
 	j.Wins = append(j.Wins, *win)
 
 	return s.save(j)
+}
+
+// AddScheduleItem adds a new schedule item to the journal
+func (s *Service) AddScheduleItem(j *Journal, timeStr string, content string) error {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return fmt.Errorf("schedule item content cannot be empty")
+	}
+
+	position := len(j.ScheduleItems)
+
+	// Parse time if provided (HH:MM format)
+	var timestamp time.Time
+	if timeStr != "" {
+		parsedTime, err := s.parseScheduleTime(j.Date, timeStr)
+		if err != nil {
+			return fmt.Errorf("failed to parse time %s: %w", timeStr, err)
+		}
+		timestamp = parsedTime
+	}
+
+	item := NewScheduleItem(timestamp, content, position)
+	j.ScheduleItems = append(j.ScheduleItems, *item)
+
+	return s.save(j)
+}
+
+// reindexSchedulePositions updates position fields to match slice indices
+func reindexSchedulePositions(items []ScheduleItem) {
+	for i := range items {
+		items[i].Position = i
+	}
+}
+
+// DeleteScheduleItem removes a schedule item by ID and re-indexes positions
+func (s *Service) DeleteScheduleItem(j *Journal, itemID string) error {
+	// Find and remove the item
+	found := false
+	for i, item := range j.ScheduleItems {
+		if item.ID == itemID {
+			j.ScheduleItems = append(j.ScheduleItems[:i], j.ScheduleItems[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("schedule item not found: %s", itemID)
+	}
+
+	// Re-index positions
+	reindexSchedulePositions(j.ScheduleItems)
+
+	return s.save(j)
+}
+
+// parseScheduleTime converts a date string and time string to time.Time
+func (s *Service) parseScheduleTime(date string, timeStr string) (time.Time, error) {
+	// Handle both HH:MM and HH:MM:SS formats
+	var layout string
+	if strings.Count(timeStr, ":") == 1 {
+		layout = "2006-01-02 15:04"
+		timeStr = date + " " + timeStr
+	} else {
+		layout = "2006-01-02 15:04:05"
+		timeStr = date + " " + timeStr
+	}
+
+	return time.Parse(layout, timeStr)
 }
 
 // save saves a journal to both filesystem and database

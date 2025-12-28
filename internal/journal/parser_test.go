@@ -143,38 +143,38 @@ func TestParseDuration(t *testing.T) {
 func TestParseScheduleItem(t *testing.T) {
 	date := "2023-12-01"
 	tests := []struct {
-		name         string
-		line         string
-		expectNil    bool
-		expectTime   string // HH:MM format, empty if no time
+		name          string
+		line          string
+		expectNil     bool
+		expectTime    string // HH:MM format, empty if no time
 		expectContent string
 	}{
 		{
-			name:         "schedule item with time",
-			line:         "- 09:00 Morning standup",
-			expectNil:    false,
-			expectTime:   "09:00",
+			name:          "schedule item with time",
+			line:          "- 09:00 Morning standup",
+			expectNil:     false,
+			expectTime:    "09:00",
 			expectContent: "Morning standup",
 		},
 		{
-			name:         "schedule item with time and complex content",
-			line:         "- 14:00 Client meeting",
-			expectNil:    false,
-			expectTime:   "14:00",
+			name:          "schedule item with time and complex content",
+			line:          "- 14:00 Client meeting",
+			expectNil:     false,
+			expectTime:    "14:00",
 			expectContent: "Client meeting",
 		},
 		{
-			name:         "schedule item without time",
-			line:         "- Review PR",
-			expectNil:    false,
-			expectTime:   "",
+			name:          "schedule item without time",
+			line:          "- Review PR",
+			expectNil:     false,
+			expectTime:    "",
 			expectContent: "Review PR",
 		},
 		{
-			name:         "schedule item without time - complex",
-			line:         "- Review PR (no time)",
-			expectNil:    false,
-			expectTime:   "",
+			name:          "schedule item without time - complex",
+			line:          "- Review PR (no time)",
+			expectNil:     false,
+			expectTime:    "",
 			expectContent: "Review PR (no time)",
 		},
 		{
