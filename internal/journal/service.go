@@ -122,6 +122,19 @@ func (s *Service) AddWin(j *Journal, text string) error {
 	return s.save(j)
 }
 
+// AddScheduleItem adds a new schedule item to the journal
+func (s *Service) AddScheduleItem(j *Journal, text string) error {
+	// Parse the text as a schedule item line
+	line := "- " + text
+	item := parseScheduleItem(line, j.Date, len(j.ScheduleItems))
+	if item == nil {
+		return fmt.Errorf("invalid schedule item format: %s", text)
+	}
+
+	j.ScheduleItems = append(j.ScheduleItems, *item)
+	return s.save(j)
+}
+
 // save saves a journal to both filesystem and database
 func (s *Service) save(j *Journal) error {
 	// Serialize to markdown
