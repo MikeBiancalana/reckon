@@ -39,6 +39,9 @@ var (
 
 	// Wins (just bullet points under Wins section)
 	winRe = regexp.MustCompile(`^-\s+(.+)$`)
+
+	// Schedule items - matches "HH:MM Content" pattern after bullet
+	scheduleItemRe = regexp.MustCompile(`^(\d{1,2}:\d{2})\s+(.+)$`)
 )
 
 type Section string
@@ -48,16 +51,18 @@ const (
 	SectionIntentions Section = "intentions"
 	SectionWins       Section = "wins"
 	SectionLog        Section = "log"
+	SectionSchedule   Section = "schedule"
 )
 
 // ParseJournal parses a markdown journal file and returns a Journal object
 func ParseJournal(content string, filePath string, lastModified time.Time) (*Journal, error) {
 	j := &Journal{
-		FilePath:     filePath,
-		LastModified: lastModified,
-		Intentions:   make([]Intention, 0),
-		Wins:         make([]Win, 0),
-		LogEntries:   make([]LogEntry, 0),
+		FilePath:      filePath,
+		LastModified:  lastModified,
+		Intentions:    make([]Intention, 0),
+		Wins:          make([]Win, 0),
+		LogEntries:    make([]LogEntry, 0),
+		ScheduleItems: make([]ScheduleItem, 0),
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
@@ -66,6 +71,7 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 	intentionPos := 0
 	winPos := 0
 	logPos := 0
+	schedulePos := 0
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -94,6 +100,8 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 				currentSection = SectionWins
 			case "log":
 				currentSection = SectionLog
+			case "schedule":
+				currentSection = SectionSchedule
 			default:
 				currentSection = SectionNone
 			}
@@ -124,6 +132,12 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 			if entry := parseLogEntry(trimmed, j.Date, logPos); entry != nil {
 				j.LogEntries = append(j.LogEntries, *entry)
 				logPos++
+			}
+
+		case SectionSchedule:
+			if item := parseScheduleItem(trimmed, j.Date, schedulePos); item != nil {
+				j.ScheduleItems = append(j.ScheduleItems, *item)
+				schedulePos++
 			}
 		}
 	}
@@ -205,6 +219,44 @@ func parseLogEntry(line string, date string, position int) *LogEntry {
 	entry.DurationMinutes = parseDuration(content)
 
 	return entry
+}
+
+// parseScheduleItem parses a schedule item line and returns a ScheduleItem.
+// Accepts two patterns:
+//   - With time: "- HH:MM Content" (e.g., "- 09:00 Morning standup")
+//   - Without time: "- Content" (e.g., "- Review PR")
+// Returns nil if the line is not a valid bullet point or has empty content.
+// When time parsing fails for a line with HH:MM prefix, the entire line
+// (including the time string) is treated as content with no timestamp.
+func parseScheduleItem(line string, date string, position int) *ScheduleItem {
+	// First check if it's a bullet point
+	if !strings.HasPrefix(line, "- ") {
+		return nil
+	}
+
+	// Remove the bullet point
+	content := strings.TrimSpace(line[2:])
+	if content == "" {
+		return nil
+	}
+
+	// Try to parse time at the beginning (HH:MM format)
+	if match := scheduleItemRe.FindStringSubmatch(content); match != nil {
+		timeStr := match[1]
+		itemContent := strings.TrimSpace(match[2])
+
+		// Parse the time
+		timestamp, err := parseTime(date, timeStr)
+		if err != nil {
+			// If time parsing fails, treat entire content as non-timed item
+			return NewScheduleItem(time.Time{}, content, position)
+		}
+
+		return NewScheduleItem(timestamp, itemContent, position)
+	}
+
+	// No time found, create item with zero time
+	return NewScheduleItem(time.Time{}, content, position)
 }
 
 // parseTime converts a date string and time string to time.Time
