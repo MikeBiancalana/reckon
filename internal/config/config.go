@@ -12,7 +12,16 @@ const (
 
 // DataDir returns the path to the reckon data directory (~/.reckon/)
 // Creates the directory if it doesn't exist
+// Can be overridden with RECKON_DATA_DIR environment variable (primarily for testing)
 func DataDir() (string, error) {
+	// Check for test override
+	if dataDir := os.Getenv("RECKON_DATA_DIR"); dataDir != "" {
+		if err := os.MkdirAll(dataDir, 0755); err != nil {
+			return "", err
+		}
+		return dataDir, nil
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
