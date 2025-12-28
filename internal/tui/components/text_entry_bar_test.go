@@ -171,9 +171,9 @@ func TestViewAlwaysVisible(t *testing.T) {
 	teb.SetWidth(80)
 
 	states := []struct {
-		name     string
-		mode     EntryMode
-		focused  bool
+		name    string
+		mode    EntryMode
+		focused bool
 	}{
 		{"inactive unfocused", ModeInactive, false},
 		{"task focused", ModeTask, true},

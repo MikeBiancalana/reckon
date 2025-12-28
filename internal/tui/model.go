@@ -23,6 +23,26 @@ const (
 	SectionCount // Keep this last to get the count
 )
 
+const (
+	SectionNameIntentions = "Intentions"
+	SectionNameWins       = "Wins"
+	SectionNameLogs       = "Logs"
+)
+
+// sectionName returns the display name for a section
+func sectionName(s Section) string {
+	switch s {
+	case SectionIntentions:
+		return SectionNameIntentions
+	case SectionWins:
+		return SectionNameWins
+	case SectionLogs:
+		return SectionNameLogs
+	default:
+		return "Unknown"
+	}
+}
+
 // Pane represents which pane is active in two-pane mode
 type Pane int
 
@@ -93,6 +113,10 @@ func NewModel(service *journal.Service) *Model {
 		watcher = nil
 	}
 
+	sb := components.NewStatusBar()
+	sb.SetSection(SectionNameIntentions)
+	sb.SetInputMode(false)
+
 	return &Model{
 		service:        service,
 		taskService:    nil, // Will be set via SetTaskService
@@ -100,7 +124,7 @@ func NewModel(service *journal.Service) *Model {
 		currentDate:    time.Now().Format("2006-01-02"),
 		focusedSection: SectionIntentions,
 		textInput:      ti,
-		statusBar:      components.NewStatusBar(),
+		statusBar:      sb,
 		activePane:     PaneJournal,
 		showingTasks:   false,
 	}
@@ -187,6 +211,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputMode = false
 			m.textInput.SetValue("")
 			m.textInput.Blur()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(false)
+			}
 		}
 		return m, m.loadJournal()
 
@@ -203,6 +230,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputMode = false
 			m.textInput.SetValue("")
 			m.textInput.Blur()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(false)
+			}
 		}
 		m.currentTask = &msg.task
 		m.taskView = components.NewTaskView(&msg.task)
@@ -221,6 +251,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputMode = false
 			m.textInput.SetValue("")
 			m.textInput.Blur()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(false)
+			}
 		}
 		return m, tea.Batch(cmds...)
 
@@ -240,6 +273,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputMode = false
 			m.textInput.SetValue("")
 			m.textInput.Blur()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(false)
+			}
 		}
 		m.lastError = msg.err
 		return m, nil
@@ -283,6 +319,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputMode = false
 				m.textInput.SetValue("")
 				m.textInput.Blur()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(false)
+				}
 				return m, nil
 			default:
 				// Delegate to textinput for editing
@@ -312,9 +351,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Otherwise cycle sections
 			m.focusedSection = (m.focusedSection + 1) % SectionCount
+			if m.statusBar != nil {
+				m.statusBar.SetSection(sectionName(m.focusedSection))
+			}
 			return m, nil
 		case "shift+tab":
 			m.focusedSection = (m.focusedSection + SectionCount - 1) % SectionCount
+			if m.statusBar != nil {
+				m.statusBar.SetSection(sectionName(m.focusedSection))
+			}
 			return m, nil
 		case "ctrl+t":
 			// Open task picker
@@ -331,6 +376,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Placeholder = "Enter task title"
 				m.textInput.SetValue("")
 				m.textInput.Focus()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
 				return m, textinput.Blink
 			}
 			return m, nil
@@ -360,6 +408,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Placeholder = "What do you intend to accomplish?"
 			m.textInput.SetValue("")
 			m.textInput.Focus()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(true)
+			}
 			return m, textinput.Blink
 		case "w":
 			// Add win
@@ -369,6 +420,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Placeholder = "What did you accomplish?"
 			m.textInput.SetValue("")
 			m.textInput.Focus()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(true)
+			}
 			return m, textinput.Blink
 		case "L":
 			// Add log - if in task pane and task is loaded, log to task
@@ -379,6 +433,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Placeholder = "What did you do?"
 				m.textInput.SetValue("")
 				m.textInput.Focus()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
 				return m, textinput.Blink
 			}
 			// Otherwise log to journal
@@ -388,6 +445,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Placeholder = "What did you do?"
 			m.textInput.SetValue("")
 			m.textInput.Focus()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(true)
+			}
 			return m, textinput.Blink
 		case "enter":
 			// Handle enter key for toggling intentions
