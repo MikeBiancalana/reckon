@@ -12,8 +12,8 @@ import (
 
 // Service handles task business logic
 type Service struct {
-	repo          *Repository
-	journalSvc    *journal.Service
+	repo       *Repository
+	journalSvc *journal.Service
 }
 
 // NewService creates a new task service

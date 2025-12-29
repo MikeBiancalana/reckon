@@ -23,6 +23,26 @@ const (
 	SectionCount // Keep this last to get the count
 )
 
+const (
+	SectionNameIntentions = "Intentions"
+	SectionNameWins       = "Wins"
+	SectionNameLogs       = "Logs"
+)
+
+// sectionName returns the display name for a section
+func sectionName(s Section) string {
+	switch s {
+	case SectionIntentions:
+		return SectionNameIntentions
+	case SectionWins:
+		return SectionNameWins
+	case SectionLogs:
+		return SectionNameLogs
+	default:
+		return "Unknown"
+	}
+}
+
 // Pane represents which pane is active in two-pane mode
 type Pane int
 
@@ -55,7 +75,11 @@ type Model struct {
 	textInput     textinput.Model
 	statusBar     *components.StatusBar
 
-	// Task components
+	// New components for 40-40-18 layout
+	taskList     *components.TaskList
+	scheduleView *components.ScheduleView
+
+	// Task components (legacy Phase 2)
 	currentTask  *task.Task
 	taskView     *components.TaskView
 	taskPicker   *components.TaskPicker
@@ -63,12 +87,12 @@ type Model struct {
 	showingTasks bool // Two-pane mode enabled
 
 	// State for input modes
-	inputMode       bool
-	inputType       string // "intention", "win", "log", "task", "task_log"
-	helpMode        bool
-	taskPickerMode  bool
+	inputMode        bool
+	inputType        string // "intention", "win", "log", "task", "task_log"
+	helpMode         bool
+	taskPickerMode   bool
 	taskCreationMode bool
-	lastError       error
+	lastError        error
 
 	// Terminal size validation
 	terminalTooSmall bool
@@ -89,6 +113,10 @@ func NewModel(service *journal.Service) *Model {
 		watcher = nil
 	}
 
+	sb := components.NewStatusBar()
+	sb.SetSection(SectionNameIntentions)
+	sb.SetInputMode(false)
+
 	return &Model{
 		service:        service,
 		taskService:    nil, // Will be set via SetTaskService
@@ -96,7 +124,7 @@ func NewModel(service *journal.Service) *Model {
 		currentDate:    time.Now().Format("2006-01-02"),
 		focusedSection: SectionIntentions,
 		textInput:      ti,
-		statusBar:      components.NewStatusBar(),
+		statusBar:      sb,
 		activePane:     PaneJournal,
 		showingTasks:   false,
 	}
@@ -170,6 +198,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.intentionList = components.NewIntentionList(msg.journal.Intentions)
 		m.winsView = components.NewWinsView(msg.journal.Wins)
 		m.logView = components.NewLogView(msg.journal.LogEntries)
+
+		// Initialize new components for 40-40-18 layout
+		m.scheduleView = components.NewScheduleView(msg.journal.ScheduleItems)
+		m.taskList = components.NewTaskList([]journal.Task{}) // Start with empty, will be loaded separately
+
 		return m, nil
 
 	case journalUpdatedMsg:
@@ -178,6 +211,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputMode = false
 			m.textInput.SetValue("")
 			m.textInput.Blur()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(false)
+			}
 		}
 		return m, m.loadJournal()
 
@@ -194,6 +230,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputMode = false
 			m.textInput.SetValue("")
 			m.textInput.Blur()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(false)
+			}
 		}
 		m.currentTask = &msg.task
 		m.taskView = components.NewTaskView(&msg.task)
@@ -212,6 +251,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputMode = false
 			m.textInput.SetValue("")
 			m.textInput.Blur()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(false)
+			}
 		}
 		return m, tea.Batch(cmds...)
 
@@ -231,6 +273,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputMode = false
 			m.textInput.SetValue("")
 			m.textInput.Blur()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(false)
+			}
 		}
 		m.lastError = msg.err
 		return m, nil
@@ -274,6 +319,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputMode = false
 				m.textInput.SetValue("")
 				m.textInput.Blur()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(false)
+				}
 				return m, nil
 			default:
 				// Delegate to textinput for editing
@@ -303,9 +351,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Otherwise cycle sections
 			m.focusedSection = (m.focusedSection + 1) % SectionCount
+			if m.statusBar != nil {
+				m.statusBar.SetSection(sectionName(m.focusedSection))
+			}
 			return m, nil
 		case "shift+tab":
 			m.focusedSection = (m.focusedSection + SectionCount - 1) % SectionCount
+			if m.statusBar != nil {
+				m.statusBar.SetSection(sectionName(m.focusedSection))
+			}
 			return m, nil
 		case "ctrl+t":
 			// Open task picker
@@ -322,6 +376,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Placeholder = "Enter task title"
 				m.textInput.SetValue("")
 				m.textInput.Focus()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
 				return m, textinput.Blink
 			}
 			return m, nil
@@ -351,6 +408,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Placeholder = "What do you intend to accomplish?"
 			m.textInput.SetValue("")
 			m.textInput.Focus()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(true)
+			}
 			return m, textinput.Blink
 		case "w":
 			// Add win
@@ -360,6 +420,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Placeholder = "What did you accomplish?"
 			m.textInput.SetValue("")
 			m.textInput.Focus()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(true)
+			}
 			return m, textinput.Blink
 		case "L":
 			// Add log - if in task pane and task is loaded, log to task
@@ -370,6 +433,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Placeholder = "What did you do?"
 				m.textInput.SetValue("")
 				m.textInput.Focus()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
 				return m, textinput.Blink
 			}
 			// Otherwise log to journal
@@ -379,6 +445,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Placeholder = "What did you do?"
 			m.textInput.SetValue("")
 			m.textInput.Focus()
+			if m.statusBar != nil {
+				m.statusBar.SetInputMode(true)
+			}
 			return m, textinput.Blink
 		case "enter":
 			// Handle enter key for toggling intentions
@@ -437,7 +506,7 @@ func (m *Model) View() string {
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("12")).
 			Padding(1, 2).
-			Width(m.width/2)
+			Width(m.width / 2)
 
 		return lipgloss.Place(
 			m.width,
@@ -458,6 +527,11 @@ func (m *Model) View() string {
 
 	if m.helpMode {
 		return m.helpView()
+	}
+
+	// Check if new 40-40-18 layout components are available
+	if m.taskList != nil && m.scheduleView != nil {
+		return m.renderNewLayout()
 	}
 
 	var content string
@@ -536,6 +610,72 @@ func (m *Model) View() string {
 		)
 	}
 
+	status := ""
+	if m.statusBar != nil {
+		m.statusBar.SetDate(m.currentDate)
+		status = m.statusBar.View()
+	}
+
+	return content + "\n" + status
+}
+
+// renderNewLayout renders the 40-40-18 layout: Logs | Tasks | Schedule/Intentions/Wins
+func (m *Model) renderNewLayout() string {
+	dims := CalculatePaneDimensions(m.width, m.height)
+
+	// Size components
+	if m.taskList != nil {
+		m.taskList.SetSize(dims.TasksWidth, dims.TasksHeight)
+	}
+	if m.scheduleView != nil {
+		m.scheduleView.SetSize(dims.RightWidth, dims.ScheduleHeight)
+	}
+	if m.intentionList != nil {
+		m.intentionList.SetSize(dims.RightWidth, dims.IntentionsHeight)
+	}
+	if m.winsView != nil {
+		m.winsView.SetSize(dims.RightWidth, dims.WinsHeight)
+	}
+	if m.logView != nil {
+		m.logView.SetSize(dims.LogsWidth, dims.LogsHeight)
+	}
+
+	// Get pane views
+	logsView := ""
+	if m.logView != nil {
+		logsView = m.logView.View()
+	}
+
+	tasksView := ""
+	if m.taskList != nil {
+		tasksView = m.taskList.View()
+	}
+
+	// Stack right sidebar vertically
+	rightSidebar := ""
+	if m.scheduleView != nil && m.intentionList != nil && m.winsView != nil {
+		scheduleView := m.scheduleView.View()
+		intentionsView := m.intentionList.View()
+		winsView := m.winsView.View()
+
+		rightSidebar = lipgloss.JoinVertical(
+			lipgloss.Top,
+			scheduleView,
+			intentionsView,
+			winsView,
+		)
+	}
+
+	// Join main panes horizontally
+	borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
+	content := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		borderStyle.Render(logsView),
+		borderStyle.Render(tasksView),
+		rightSidebar,
+	)
+
+	// Add status bar
 	status := ""
 	if m.statusBar != nil {
 		m.statusBar.SetDate(m.currentDate)

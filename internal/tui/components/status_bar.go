@@ -21,8 +21,10 @@ var (
 
 // StatusBar represents the status bar component
 type StatusBar struct {
-	width       int
-	currentDate string
+	width          int
+	currentDate    string
+	focusedSection string
+	inputMode      bool
 }
 
 // NewStatusBar creates a new status bar
@@ -40,11 +42,42 @@ func (sb *StatusBar) SetDate(date string) {
 	sb.currentDate = date
 }
 
+// SetSection sets the currently focused section
+func (sb *StatusBar) SetSection(section string) {
+	sb.focusedSection = section
+}
+
+// SetInputMode sets whether the TUI is in input mode
+func (sb *StatusBar) SetInputMode(inputMode bool) {
+	sb.inputMode = inputMode
+}
+
+// generateHints generates context-sensitive hints based on current section and input mode
+func (sb *StatusBar) generateHints() string {
+	if sb.inputMode {
+		return "enter:submit esc:cancel"
+	}
+
+	// Section-specific hints
+	switch sb.focusedSection {
+	case "Intentions":
+		return "Intentions | q:quit tab:switch enter:toggle j/k:nav i:add h/l:day t:today ?:help"
+	case "Wins":
+		return "Wins | q:quit tab:switch w:add j/k:nav h/l:day t:today ?:help"
+	case "Logs":
+		return "Logs | q:quit tab:switch L:add j/k:nav h/l:day t:today ?:help"
+	default:
+		return "q:quit tab:switch i:intention w:win L:log h/l:nav t:today ?:help enter:toggle"
+	}
+}
+
 // View renders the status bar
 func (sb *StatusBar) View() string {
 	// Format the date display
 	dateDisplay := sb.formatDate()
-	hints := "q:quit tab:switch i:intention w:win L:log h/l:nav t:today ?:help enter:toggle"
+
+	// Generate context-sensitive hints
+	hints := sb.generateHints()
 
 	// Calculate available space
 	dateLen := lipgloss.Width(dateDisplay)

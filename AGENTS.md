@@ -3,6 +3,7 @@
 ## Build/Lint/Test Commands
 - **Build**: `go build -o rk ./cmd/rk`
 - **Test all**: `go test ./...`
+- **Test integration**: `go test -tags integration ./tests/`
 - **Test single**: `go test -run TestName ./path/to/package`
 - **Lint**: `go vet ./...`
 - **Format**: `go fmt ./...`
