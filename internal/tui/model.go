@@ -751,14 +751,24 @@ func (m *Model) terminalTooSmallView() string {
 
 // Helper functions for navigation
 func (m *Model) prevDay() tea.Cmd {
-	date, _ := time.Parse("2006-01-02", m.currentDate)
+	date, err := time.Parse("2006-01-02", m.currentDate)
+	if err != nil {
+		// If current date is corrupted, fall back to today
+		m.currentDate = time.Now().Format("2006-01-02")
+		return m.loadJournal()
+	}
 	newDate := date.AddDate(0, 0, -1).Format("2006-01-02")
 	m.currentDate = newDate
 	return m.loadJournal()
 }
 
 func (m *Model) nextDay() tea.Cmd {
-	date, _ := time.Parse("2006-01-02", m.currentDate)
+	date, err := time.Parse("2006-01-02", m.currentDate)
+	if err != nil {
+		// If current date is corrupted, fall back to today
+		m.currentDate = time.Now().Format("2006-01-02")
+		return m.loadJournal()
+	}
 	today := time.Now().Format("2006-01-02")
 	newDate := date.AddDate(0, 0, 1).Format("2006-01-02")
 
