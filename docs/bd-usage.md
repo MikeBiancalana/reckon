@@ -34,16 +34,38 @@ bd show <issue-id>
 # List issues by status
 bd list --status in_progress
 bd list --status open
+
+# Show only pinned (assigned) issues
+bd list --pinned
+```
+
+### Work Assignment (Pinning)
+```bash
+# Assign work to yourself and start working
+bd pin <issue-id> --for me --start
+
+# Assign work to another agent
+bd pin <issue-id> --for <agent-name>
+
+# Just mark as pinned (assigned) without starting
+bd pin <issue-id>
+
+# View what's assigned to you (your "hook")
+bd hook
+
+# View another agent's assignments
+bd hook --agent <agent-name>
 ```
 
 ## Workflow for Agents
 
 ### Starting Work on an Issue
-1. **Check current issues**: `bd list --status open` or `bd list --status in_progress`
-2. **Pick an issue**: Choose based on priority (P0 = critical, P4 = nice-to-have)
-3. **Start working**: `bd update <issue-id> --status in_progress`
-4. **Work on the code** following standard development practices
-5. **Mark complete**: `bd update <issue-id> --status done`
+1. **Check current assignments**: `bd hook` to see what's pinned to you
+2. **Check available issues**: `bd list --status open` or `bd list --status in_progress`
+3. **Pick an issue**: Choose based on priority (P0 = critical, P4 = nice-to-have)
+4. **Assign work to yourself**: `bd pin <issue-id> --for me --start` (pins and sets status to in_progress)
+5. **Work on the code** following standard development practices
+6. **Mark complete**: `bd update <issue-id> --status done`
 
 ### During Development
 - **Add comments**: `bd comment <issue-id> "Working on the database schema"`
@@ -69,6 +91,12 @@ git push
 - **done**: When implementation is complete and tested
 - **Never leave issues in_progress** across sessions without good reason
 
+### Work Assignment (Pinning)
+- **Pin work**: Use `bd pin` to assign issues to specific agents (including yourself)
+- **Check assignments**: Use `bd hook` to see what work is assigned to you or others
+- **Combined action**: Use `bd pin --for me --start` to assign and start work in one command
+- **Coordination**: Pinning helps coordinate work across multiple agents
+
 ### Comments & Tracking
 - **Add progress comments**: Track what you've done and what's next
 - **Note blockers**: If stuck, comment about dependencies or issues
@@ -84,7 +112,7 @@ git push
 ### Bug Fixes
 ```bash
 bd create "Fix null pointer in login handler" --type bug --priority P1
-bd update <id> --status in_progress
+bd pin <id> --for me --start  # Assign and start work
 # Fix the bug
 bd update <id> --status done
 bd sync
@@ -93,7 +121,7 @@ bd sync
 ### Feature Implementation
 ```bash
 bd create "Add dark mode toggle" --type feature --priority P2
-bd update <id> --status in_progress
+bd pin <id> --for me --start  # Assign and start work
 # Implement feature across multiple files
 bd comment <id> "Completed UI component, working on state management"
 bd update <id> --status done
@@ -103,7 +131,7 @@ bd sync
 ### Multi-step Tasks
 ```bash
 bd create "Refactor authentication module" --type task --priority P2
-bd update <id> --status in_progress
+bd pin <id> --for me --start  # Assign and start work
 bd comment <id> "Step 1: Extract interface"
 bd comment <id> "Step 2: Update implementations"
 bd update <id> --status done
