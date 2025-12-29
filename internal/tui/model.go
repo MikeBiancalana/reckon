@@ -799,38 +799,35 @@ func (m *Model) helpView() string {
 Navigation:
   h, ←       Previous day
   l, →       Next day
-  T          Jump to today (uppercase T)
-  tab        Next section / Switch panes (in two-pane mode)
+  T          Jump to today
+  tab        Next section
   shift+tab  Previous section
+  j, k       Navigate within section
 
 Actions:
   t          Add task
-  n          Add note to task (if task selected)
   i          Add intention
   w          Add win
   L          Add log entry
-  enter      Toggle intention (in intentions section)
-  space      Toggle task status (in tasks section)
+  space      Toggle task completion (Tasks section)
+  enter      Toggle intention / Expand task (Intentions/Tasks section)
   d          Delete selected item (with confirmation)
 
-Task Management (Legacy):
-  ctrl+t     Open task picker
-  ctrl+n     Create new task
-  ctrl+w     Close task (exit two-pane mode)
-
-Input Mode:
-  enter      Submit
-  esc        Cancel
-  backspace  Delete character
-  any key    Add character
-
-Confirmation Mode:
-  y          Confirm deletion
-  n, esc     Cancel deletion
+Text Entry:
+  enter      Submit entry
+  esc        Cancel entry
+  any key    Type character
 
 General:
   q, ctrl+c  Quit
   ?          Toggle help
+
+Sections:
+  - Logs: Activity log with timestamps
+  - Tasks: General todo list with collapsible notes
+  - Schedule: Upcoming items for the day
+  - Intentions: 1-3 focus tasks for today
+  - Wins: Daily accomplishments
 
 Press ? to exit help.`
 
