@@ -20,7 +20,7 @@
 - **Comments**: Document all exported functions/types
 - **Enums**: Use iota for constants
 
-Use 'bd' for task tracking
+Use 'bd' for task tracking - see [docs/bd-usage.md](docs/bd-usage.md) for detailed instructions
 
 ## Branch Management
 
