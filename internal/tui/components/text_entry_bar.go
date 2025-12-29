@@ -136,6 +136,11 @@ func (teb *TextEntryBar) SetMode(mode EntryMode) {
 	}
 }
 
+// GetMode returns the current entry mode
+func (teb *TextEntryBar) GetMode() EntryMode {
+	return teb.mode
+}
+
 // GetValue returns the current input value
 func (teb *TextEntryBar) GetValue() string {
 	return teb.textInput.Value()

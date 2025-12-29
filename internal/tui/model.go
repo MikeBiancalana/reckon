@@ -8,7 +8,6 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/sync"
 	"github.com/MikeBiancalana/reckon/internal/task"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -20,6 +19,8 @@ const (
 	SectionIntentions Section = iota
 	SectionWins
 	SectionLogs
+	SectionTasks
+	SectionSchedule
 	SectionCount // Keep this last to get the count
 )
 
@@ -27,6 +28,8 @@ const (
 	SectionNameIntentions = "Intentions"
 	SectionNameWins       = "Wins"
 	SectionNameLogs       = "Logs"
+	SectionNameTasks      = "Tasks"
+	SectionNameSchedule   = "Schedule"
 )
 
 // sectionName returns the display name for a section
@@ -38,6 +41,10 @@ func sectionName(s Section) string {
 		return SectionNameWins
 	case SectionLogs:
 		return SectionNameLogs
+	case SectionTasks:
+		return SectionNameTasks
+	case SectionSchedule:
+		return SectionNameSchedule
 	default:
 		return "Unknown"
 	}
@@ -60,7 +67,7 @@ const (
 // Model represents the main TUI state
 type Model struct {
 	service        *journal.Service
-	taskService    *task.Service
+	taskService    *journal.TaskService
 	watcher        *sync.Watcher
 	currentDate    string
 	currentJournal *journal.Journal
@@ -72,23 +79,25 @@ type Model struct {
 	intentionList *components.IntentionList
 	winsView      *components.WinsView
 	logView       *components.LogView
-	textInput     textinput.Model
+	textEntryBar  *components.TextEntryBar
 	statusBar     *components.StatusBar
 
 	// New components for 40-40-18 layout
 	taskList     *components.TaskList
 	scheduleView *components.ScheduleView
 
-	// Task components (legacy Phase 2)
-	currentTask  *task.Task
-	taskView     *components.TaskView
-	taskPicker   *components.TaskPicker
-	activePane   Pane
-	showingTasks bool // Two-pane mode enabled
+	// Cached data
+	tasks []journal.Task
 
-	// State for input modes
-	inputMode        bool
-	inputType        string // "intention", "win", "log", "task", "task_log", "edit_intention", "edit_win", "edit_log"
+	// Legacy Phase 2 task components (kept for backward compatibility)
+	legacyTaskService *task.Service
+	currentTask       *task.Task
+	taskView          *components.TaskView
+	taskPicker        *components.TaskPicker
+	activePane        Pane
+	showingTasks      bool // Two-pane mode enabled
+
+	// State for modes
 	helpMode         bool
 	taskPickerMode   bool
 	taskCreationMode bool
@@ -104,12 +113,6 @@ type Model struct {
 
 // NewModel creates a new TUI model
 func NewModel(service *journal.Service) *Model {
-	ti := textinput.New()
-	ti.Prompt = ""
-	ti.Placeholder = ""
-	ti.CharLimit = 200
-	ti.Width = 50
-
 	// Create watcher
 	watcher, err := sync.NewWatcher(service)
 	if err != nil {
@@ -122,26 +125,37 @@ func NewModel(service *journal.Service) *Model {
 	sb.SetInputMode(false)
 
 	return &Model{
-		service:        service,
-		taskService:    nil, // Will be set via SetTaskService
-		watcher:        watcher,
-		currentDate:    time.Now().Format("2006-01-02"),
-		focusedSection: SectionIntentions,
-		textInput:      ti,
-		statusBar:      sb,
-		activePane:     PaneJournal,
-		showingTasks:   false,
+		service:           service,
+		taskService:       nil, // Will be set via SetTaskService
+		legacyTaskService: nil, // Will be set via SetTaskService
+		watcher:           watcher,
+		currentDate:       time.Now().Format("2006-01-02"),
+		focusedSection:    SectionIntentions,
+		textEntryBar:      components.NewTextEntryBar(),
+		statusBar:         sb,
+		activePane:        PaneJournal,
+		showingTasks:      false,
 	}
 }
 
-// SetTaskService sets the task service for task management features
+// SetTaskService sets the legacy task service for task management features (backward compatibility)
 func (m *Model) SetTaskService(taskService *task.Service) {
+	m.legacyTaskService = taskService
+}
+
+// SetJournalTaskService sets the new journal task service
+func (m *Model) SetJournalTaskService(taskService *journal.TaskService) {
 	m.taskService = taskService
 }
 
 // Init initializes the model
 func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.loadJournal()}
+
+	// Load tasks if taskService is available
+	if m.taskService != nil {
+		cmds = append(cmds, m.loadTasks())
+	}
 
 	// Start watcher
 	if m.watcher != nil {
@@ -205,39 +219,57 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Initialize new components for 40-40-18 layout
 		m.scheduleView = components.NewScheduleView(msg.journal.ScheduleItems)
-		m.taskList = components.NewTaskList([]journal.Task{}) // Start with empty, will be loaded separately
+		// Initialize taskList with cached tasks (if available) or empty
+		if m.taskList == nil {
+			m.taskList = components.NewTaskList(m.tasks)
+		} else {
+			m.taskList.UpdateTasks(m.tasks)
+		}
 
 		return m, nil
 
 	case journalUpdatedMsg:
-		// Reset input state after successful submission
-		if m.inputMode {
-			m.inputMode = false
-			m.textInput.SetValue("")
-			m.textInput.Blur()
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(false)
-			}
-		}
+		// Reload journal after update
 		return m, m.loadJournal()
 
 	case tasksLoadedMsg:
-		// Tasks loaded, show task picker
+		// New journal tasks loaded, update task list
+		m.tasks = msg.tasks
+		if m.taskList != nil {
+			m.taskList.UpdateTasks(msg.tasks)
+		} else {
+			m.taskList = components.NewTaskList(msg.tasks)
+		}
+		return m, nil
+
+	case components.TaskToggleMsg:
+		// Task toggled, update in service
+		if m.taskService != nil {
+			return m, m.toggleTask(msg.TaskID)
+		}
+		return m, nil
+
+	case taskToggledMsg:
+		// Task toggled successfully, reload tasks
+		return m, m.loadTasks()
+
+	case taskAddedMsg:
+		// Task added successfully, reload tasks
+		return m, m.loadTasks()
+
+	case noteAddedMsg:
+		// Note added successfully, reload tasks
+		return m, m.loadTasks()
+
+	case legacyTasksLoadedMsg:
+		// Legacy tasks loaded, show task picker
 		m.taskPicker = components.NewTaskPicker(msg.tasks)
 		m.taskPicker.SetSize(m.width/2, m.height-4)
 		m.taskPickerMode = true
 		return m, nil
 
 	case taskLoadedMsg:
-		// Task loaded, switch to two-pane mode
-		if m.inputMode {
-			m.inputMode = false
-			m.textInput.SetValue("")
-			m.textInput.Blur()
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(false)
-			}
-		}
+		// Task loaded, switch to two-pane mode (legacy)
 		m.currentTask = &msg.task
 		m.taskView = components.NewTaskView(&msg.task)
 		m.showingTasks = true
@@ -246,18 +278,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case taskUpdatedMsg:
-		// Task updated, reload task and journal
+		// Task updated, reload task and journal (legacy)
 		cmds := []tea.Cmd{
 			m.loadTask(msg.taskID),
 			m.loadJournal(),
-		}
-		if m.inputMode {
-			m.inputMode = false
-			m.textInput.SetValue("")
-			m.textInput.Blur()
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(false)
-			}
 		}
 		return m, tea.Batch(cmds...)
 
@@ -272,15 +296,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case errMsg:
-		// Reset input state and store error for display
-		if m.inputMode {
-			m.inputMode = false
-			m.textInput.SetValue("")
-			m.textInput.Blur()
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(false)
-			}
-		}
+		// Store error for display
 		m.lastError = msg.err
 		return m, nil
 
@@ -312,25 +328,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Handle input mode
-		if m.inputMode {
+		// Handle text entry bar mode
+		if m.textEntryBar != nil && m.textEntryBar.IsFocused() {
 			switch msg.String() {
 			case "enter":
-				// Submit input
-				return m, m.submitInput()
+				// Submit text entry
+				cmd := m.submitTextEntry()
+				// Reset text entry bar
+				m.textEntryBar.Clear()
+				m.textEntryBar.Blur()
+				m.textEntryBar.SetMode(components.ModeInactive)
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(false)
+				}
+				return m, cmd
 			case "esc":
-				// Cancel input
-				m.inputMode = false
-				m.textInput.SetValue("")
-				m.textInput.Blur()
+				// Cancel text entry
+				m.textEntryBar.Clear()
+				m.textEntryBar.Blur()
+				m.textEntryBar.SetMode(components.ModeInactive)
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
 				return m, nil
 			default:
-				// Delegate to textinput for editing
+				// Delegate to text entry bar
 				var cmd tea.Cmd
-				m.textInput, cmd = m.textInput.Update(msg)
+				m.textEntryBar, cmd = m.textEntryBar.Update(msg)
 				return m, cmd
 			}
 		}
@@ -383,24 +407,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "ctrl+t":
-			// Open task picker
-			if m.taskService != nil {
+			// Open task picker (legacy)
+			if m.legacyTaskService != nil {
 				return m, m.openTaskPicker()
 			}
 			return m, nil
 		case "ctrl+n":
-			// Create new task
-			if m.taskService != nil {
-				m.inputMode = true
-				m.inputType = "task"
-				m.textInput.Prompt = "New task title: "
-				m.textInput.Placeholder = "Enter task title"
-				m.textInput.SetValue("")
-				m.textInput.Focus()
+			// Create new task (legacy)
+			if m.legacyTaskService != nil {
+				m.textEntryBar.SetMode(components.ModeTask)
+				m.textEntryBar.Clear()
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(true)
 				}
-				return m, textinput.Blink
+				return m, m.textEntryBar.Focus()
 			}
 			return m, nil
 		case "ctrl+w":
@@ -416,60 +436,61 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.prevDay()
 		case "l", "right":
 			return m, m.nextDay()
-		case "t":
+		case "T":
+			// Jump to today (uppercase T)
 			return m, m.jumpToToday()
+		case "t":
+			// Add task
+			if m.textEntryBar != nil {
+				m.textEntryBar.SetMode(components.ModeTask)
+				m.textEntryBar.Clear()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
+				return m, m.textEntryBar.Focus()
+			}
+			return m, nil
+		case "n":
+			// Add note to task (if a task is selected)
+			// For now, we'll handle this similar to tasks
+			// TODO: Implement proper note-to-task workflow
+			return m, nil
 		case "?":
 			m.helpMode = !m.helpMode
 			return m, nil
 		case "i":
 			// Add intention
-			m.inputMode = true
-			m.inputType = "intention"
-			m.textInput.Prompt = "Add intention: "
-			m.textInput.Placeholder = "What do you intend to accomplish?"
-			m.textInput.SetValue("")
-			m.textInput.Focus()
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(true)
-			}
-			return m, textinput.Blink
-		case "w":
-			// Add win
-			m.inputMode = true
-			m.inputType = "win"
-			m.textInput.Prompt = "Add win: "
-			m.textInput.Placeholder = "What did you accomplish?"
-			m.textInput.SetValue("")
-			m.textInput.Focus()
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(true)
-			}
-			return m, textinput.Blink
-		case "L":
-			// Add log - if in task pane and task is loaded, log to task
-			if m.showingTasks && m.activePane == PaneTask && m.currentTask != nil {
-				m.inputMode = true
-				m.inputType = "task_log"
-				m.textInput.Prompt = "Log to task: "
-				m.textInput.Placeholder = "What did you do?"
-				m.textInput.SetValue("")
-				m.textInput.Focus()
+			if m.textEntryBar != nil {
+				m.textEntryBar.SetMode(components.ModeIntention)
+				m.textEntryBar.Clear()
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(true)
 				}
-				return m, textinput.Blink
+				return m, m.textEntryBar.Focus()
 			}
-			// Otherwise log to journal
-			m.inputMode = true
-			m.inputType = "log"
-			m.textInput.Prompt = "Add log entry: "
-			m.textInput.Placeholder = "What did you do?"
-			m.textInput.SetValue("")
-			m.textInput.Focus()
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(true)
+			return m, nil
+		case "w":
+			// Add win
+			if m.textEntryBar != nil {
+				m.textEntryBar.SetMode(components.ModeWin)
+				m.textEntryBar.Clear()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
+				return m, m.textEntryBar.Focus()
 			}
-			return m, textinput.Blink
+			return m, nil
+		case "L":
+			// Add log
+			if m.textEntryBar != nil {
+				m.textEntryBar.SetMode(components.ModeLog)
+				m.textEntryBar.Clear()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
+				return m, m.textEntryBar.Focus()
+			}
+			return m, nil
 		case "d":
 			// Delete selected item with confirmation
 			if m.confirmMode {
@@ -507,60 +528,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "e":
-			// Edit selected item
-			switch m.focusedSection {
-			case SectionIntentions:
-				if m.intentionList != nil {
-					intention := m.intentionList.SelectedIntention()
-					if intention != nil {
-						m.inputMode = true
-						m.inputType = "edit_intention"
-						m.editItemID = intention.ID
-						m.textInput.Prompt = "Edit intention: "
-						m.textInput.Placeholder = "Enter new text"
-						m.textInput.SetValue(intention.Text)
-						m.textInput.Focus()
-						if m.statusBar != nil {
-							m.statusBar.SetInputMode(true)
-						}
-						return m, textinput.Blink
-					}
-				}
-			case SectionWins:
-				if m.winsView != nil {
-					win := m.winsView.SelectedWin()
-					if win != nil {
-						m.inputMode = true
-						m.inputType = "edit_win"
-						m.editItemID = win.ID
-						m.textInput.Prompt = "Edit win: "
-						m.textInput.Placeholder = "Enter new text"
-						m.textInput.SetValue(win.Text)
-						m.textInput.Focus()
-						if m.statusBar != nil {
-							m.statusBar.SetInputMode(true)
-						}
-						return m, textinput.Blink
-					}
-				}
-			case SectionLogs:
-				if m.logView != nil {
-					entry := m.logView.SelectedLogEntry()
-					if entry != nil {
-						m.inputMode = true
-						m.inputType = "edit_log"
-						m.editItemID = entry.ID
-						m.textInput.Prompt = "Edit log: "
-						m.textInput.Placeholder = "Enter new content"
-						m.textInput.SetValue(entry.Content)
-						m.textInput.Focus()
-						if m.statusBar != nil {
-							m.statusBar.SetInputMode(true)
-						}
-						return m, textinput.Blink
-					}
-				}
-			}
+			// TODO: Edit functionality needs to be refactored to use TextEntryBar
+			// For now, edit is disabled
 			return m, nil
 		case "enter":
 			// Handle enter key for toggling intentions
@@ -591,6 +560,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.logView, cmd = m.logView.Update(msg)
 					return m, cmd
 				}
+			case SectionTasks:
+				if m.taskList != nil {
+					var cmd tea.Cmd
+					m.taskList, cmd = m.taskList.Update(msg)
+					return m, cmd
+				}
+			case SectionSchedule:
+				// ScheduleView doesn't have interactive elements yet
+				// So we don't delegate to it
 			}
 		}
 	}
@@ -628,14 +606,6 @@ func (m *Model) View() string {
 			lipgloss.Center,
 			pickerStyle.Render(pickerView),
 		)
-	}
-
-	if m.inputMode {
-		view := m.textInput.View() + "\n\n(Enter to submit, Esc to cancel)"
-		if m.lastError != nil {
-			view += "\n\nError: " + m.lastError.Error()
-		}
-		return view
 	}
 
 	if m.confirmMode {
@@ -805,6 +775,13 @@ func (m *Model) renderNewLayout() string {
 		rightSidebar,
 	)
 
+	// Add text entry bar
+	textEntry := ""
+	if m.textEntryBar != nil {
+		m.textEntryBar.SetWidth(m.width)
+		textEntry = m.textEntryBar.View()
+	}
+
 	// Add status bar
 	status := ""
 	if m.statusBar != nil {
@@ -812,7 +789,7 @@ func (m *Model) renderNewLayout() string {
 		status = m.statusBar.View()
 	}
 
-	return content + "\n" + status
+	return content + "\n" + textEntry + "\n" + status
 }
 
 // helpView renders the help overlay
@@ -822,19 +799,21 @@ func (m *Model) helpView() string {
 Navigation:
   h, ←       Previous day
   l, →       Next day
-  t          Jump to today
+  T          Jump to today (uppercase T)
   tab        Next section / Switch panes (in two-pane mode)
   shift+tab  Previous section
 
 Actions:
+  t          Add task
+  n          Add note to task (if task selected)
   i          Add intention
   w          Add win
-  L          Add log entry (or log to task if in task pane)
+  L          Add log entry
   enter      Toggle intention (in intentions section)
-  e          Edit selected item
+  space      Toggle task status (in tasks section)
   d          Delete selected item (with confirmation)
 
-Task Management:
+Task Management (Legacy):
   ctrl+t     Open task picker
   ctrl+n     Create new task
   ctrl+w     Close task (exit two-pane mode)
@@ -932,52 +911,13 @@ func (m *Model) toggleIntention(intentionID string) tea.Cmd {
 	}
 }
 
+// submitInput is a legacy function for backward compatibility with old task mode
+// This should eventually be removed when legacy task functionality is fully deprecated
 func (m *Model) submitInput() tea.Cmd {
-	inputText := m.textInput.Value()
-	if inputText == "" {
-		return nil
-	}
-
+	// This function is no longer used with the new text entry bar
+	// It's kept for backward compatibility with legacy task mode only
 	return func() tea.Msg {
-		var err error
-		switch m.inputType {
-		case "intention":
-			err = m.service.AddIntention(m.currentJournal, inputText)
-		case "win":
-			err = m.service.AddWin(m.currentJournal, inputText)
-		case "log":
-			err = m.service.AppendLog(m.currentJournal, inputText)
-		case "edit_intention":
-			err = m.service.UpdateIntention(m.currentJournal, m.editItemID, inputText)
-		case "edit_win":
-			err = m.service.UpdateWin(m.currentJournal, m.editItemID, inputText)
-		case "edit_log":
-			err = m.service.UpdateLogEntry(m.currentJournal, m.editItemID, inputText)
-		case "task":
-			// Create new task
-			if m.taskService != nil {
-				t, err := m.taskService.Create(inputText, []string{})
-				if err != nil {
-					return errMsg{err}
-				}
-				return taskLoadedMsg{task: *t}
-			}
-		case "task_log":
-			// Log to current task
-			if m.taskService != nil && m.currentTask != nil {
-				err = m.taskService.AppendLog(m.currentTask.ID, inputText)
-				if err != nil {
-					return errMsg{err}
-				}
-				// Reload both task and journal
-				return taskUpdatedMsg{taskID: m.currentTask.ID}
-			}
-		}
-
-		if err != nil {
-			return errMsg{err}
-		}
-		return journalUpdatedMsg{}
+		return errMsg{fmt.Errorf("submitInput is deprecated - use submitTextEntry instead")}
 	}
 }
 
@@ -1006,32 +946,32 @@ func (m *Model) deleteItem() tea.Cmd {
 	}
 }
 
-// openTaskPicker loads active tasks and opens the task picker
+// openTaskPicker loads active tasks and opens the task picker (legacy)
 func (m *Model) openTaskPicker() tea.Cmd {
 	return func() tea.Msg {
-		if m.taskService == nil {
+		if m.legacyTaskService == nil {
 			return errMsg{fmt.Errorf("task service not available")}
 		}
 
 		// Get active tasks
 		status := task.StatusActive
-		tasks, err := m.taskService.List(&status, []string{})
+		tasks, err := m.legacyTaskService.List(&status, []string{})
 		if err != nil {
 			return errMsg{err}
 		}
 
-		return tasksLoadedMsg{tasks: tasks}
+		return legacyTasksLoadedMsg{tasks: tasks}
 	}
 }
 
-// loadTask loads a task by ID
+// loadTask loads a task by ID (legacy)
 func (m *Model) loadTask(taskID string) tea.Cmd {
 	return func() tea.Msg {
-		if m.taskService == nil {
+		if m.legacyTaskService == nil {
 			return errMsg{fmt.Errorf("task service not available")}
 		}
 
-		t, err := m.taskService.GetByID(taskID)
+		t, err := m.legacyTaskService.GetByID(taskID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -1055,7 +995,8 @@ type errMsg struct {
 	err error
 }
 
-type tasksLoadedMsg struct {
+// Legacy task messages for backward compatibility
+type legacyTasksLoadedMsg struct {
 	tasks []task.Task
 }
 
@@ -1065,6 +1006,102 @@ type taskLoadedMsg struct {
 
 type taskUpdatedMsg struct {
 	taskID string
+}
+
+// New journal task messages
+type tasksLoadedMsg struct {
+	tasks []journal.Task
+}
+
+type taskToggledMsg struct{}
+
+type taskAddedMsg struct{}
+
+type noteAddedMsg struct{}
+
+// loadTasks loads all tasks from the task service
+func (m *Model) loadTasks() tea.Cmd {
+	return func() tea.Msg {
+		if m.taskService == nil {
+			return errMsg{fmt.Errorf("task service not available")}
+		}
+
+		tasks, err := m.taskService.GetAllTasks()
+		if err != nil {
+			return errMsg{err}
+		}
+
+		return tasksLoadedMsg{tasks: tasks}
+	}
+}
+
+// toggleTask toggles a task's status
+func (m *Model) toggleTask(taskID string) tea.Cmd {
+	return func() tea.Msg {
+		if m.taskService == nil {
+			return errMsg{fmt.Errorf("task service not available")}
+		}
+
+		err := m.taskService.ToggleTask(taskID)
+		if err != nil {
+			return errMsg{err}
+		}
+
+		return taskToggledMsg{}
+	}
+}
+
+// submitTextEntry submits the text entry based on the current mode
+func (m *Model) submitTextEntry() tea.Cmd {
+	if m.textEntryBar == nil {
+		return nil
+	}
+
+	inputText := m.textEntryBar.GetValue()
+	if inputText == "" {
+		return nil
+	}
+
+	mode := m.textEntryBar.GetMode()
+
+	return func() tea.Msg {
+		var err error
+
+		switch mode {
+		case components.ModeTask:
+			// Add task
+			if m.taskService != nil {
+				err = m.taskService.AddTask(inputText)
+				if err != nil {
+					return errMsg{err}
+				}
+				// Reload tasks
+				tasks, errGetTasks := m.taskService.GetAllTasks()
+				if errGetTasks != nil {
+					return errMsg{errGetTasks}
+				}
+				return tasksLoadedMsg{tasks: tasks}
+			}
+			return errMsg{fmt.Errorf("task service not available")}
+
+		case components.ModeIntention:
+			err = m.service.AddIntention(m.currentJournal, inputText)
+
+		case components.ModeWin:
+			err = m.service.AddWin(m.currentJournal, inputText)
+
+		case components.ModeLog:
+			err = m.service.AppendLog(m.currentJournal, inputText)
+
+		default:
+			return errMsg{fmt.Errorf("unknown entry mode")}
+		}
+
+		if err != nil {
+			return errMsg{err}
+		}
+		return journalUpdatedMsg{}
+	}
 }
 
 // waitForFileChange waits for file change events from the watcher
