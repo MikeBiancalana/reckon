@@ -37,6 +37,21 @@ bd list --status open
 
 # Show only pinned (assigned) issues
 bd list --pinned
+
+# Show work ready to start (no blockers)
+bd ready
+
+# Show blocked issues (waiting on dependencies)
+bd blocked
+
+# Search issues by content
+bd search "authentication"
+
+# Get project overview and statistics
+bd status
+
+# Show issues not updated recently (potential stale work)
+bd stale --days 30
 ```
 
 ### Work Assignment (Pinning)
@@ -57,15 +72,28 @@ bd hook
 bd hook --agent <agent-name>
 ```
 
+### Workflow Management
+```bash
+# Defer work for later (postpone without closing)
+bd defer <issue-id>
+
+# Bring back deferred work
+bd undefer <issue-id>
+
+# Link related issues (loose "see also" relationship)
+bd relate <issue-id1> <issue-id2>
+```
+
 ## Workflow for Agents
 
 ### Starting Work on an Issue
-1. **Check current assignments**: `bd hook` to see what's pinned to you
-2. **Check available issues**: `bd list --status open` or `bd list --status in_progress`
-3. **Pick an issue**: Choose based on priority (P0 = critical, P4 = nice-to-have)
-4. **Assign work to yourself**: `bd pin <issue-id> --for me --start` (pins and sets status to in_progress)
-5. **Work on the code** following standard development practices
-6. **Mark complete**: `bd update <issue-id> --status done`
+1. **Check project status**: `bd status` for overall project health
+2. **Check current assignments**: `bd hook` to see what's pinned to you
+3. **Find ready work**: `bd ready` to see issues with no blockers
+4. **Pick an issue**: Choose based on priority (P0 = critical, P4 = nice-to-have)
+5. **Assign work to yourself**: `bd pin <issue-id> --for me --start` (pins and sets status to in_progress)
+6. **Work on the code** following standard development practices
+7. **Mark complete**: `bd update <issue-id> --status done`
 
 ### During Development
 - **Add comments**: `bd comment <issue-id> "Working on the database schema"`
@@ -96,6 +124,15 @@ git push
 - **Check assignments**: Use `bd hook` to see what work is assigned to you or others
 - **Combined action**: Use `bd pin --for me --start` to assign and start work in one command
 - **Coordination**: Pinning helps coordinate work across multiple agents
+
+### Workflow Intelligence
+- **Ready work**: Use `bd ready` to find issues that can actually be started (no blockers)
+- **Blocked issues**: Use `bd blocked` to identify work waiting on dependencies
+- **Stale work**: Use `bd stale` to find potentially abandoned issues
+- **Search**: Use `bd search` to find issues by content or keywords
+- **Status overview**: Use `bd status` for project health at a glance
+- **Defer/Undefer**: Use `bd defer` for work that's not currently priority, `bd undefer` to bring it back
+- **Relationships**: Use `bd relate` to link related issues for better context
 
 ### Comments & Tracking
 - **Add progress comments**: Track what you've done and what's next
@@ -136,6 +173,16 @@ bd comment <id> "Step 1: Extract interface"
 bd comment <id> "Step 2: Update implementations"
 bd update <id> --status done
 bd sync
+```
+
+### Dependency Management
+```bash
+bd create "Implement user API" --type task --priority P2
+bd create "Build frontend client" --type task --priority P2
+bd relate <api-id> <frontend-id>  # Link related issues
+# If frontend blocks on API completion, use dependency commands
+bd blocked  # Check for blocked work
+bd ready    # See what's available to work on
 ```
 
 ## Integration with Git
