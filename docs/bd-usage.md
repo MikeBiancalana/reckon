@@ -134,6 +134,20 @@ git push
 - **Defer/Undefer**: Use `bd defer` for work that's not currently priority, `bd undefer` to bring it back
 - **Relationships**: Use `bd relate` to link related issues for better context
 
+### System Maintenance & Hygiene
+- **Health check**: Use `bd doctor` to diagnose system issues and get auto-fix recommendations
+- **Auto-fix issues**: Use `bd doctor --fix` to automatically resolve detected problems
+- **Unpin completed work**: Use `bd unpin` to remove assignment from closed issues
+- **Cleanup old issues**: Use `bd cleanup --older-than 30 --force` to remove closed issues older than 30 days
+- **Compact storage**: Use `bd compact --prune` to remove expired tombstones and reduce file size
+- **Performance check**: Use `bd doctor --perf` for performance diagnostics
+
+### Preventing Hygiene Issues
+- **Unpin when closing**: Always unpin issues when marking them as done to prevent accumulation of pinned closed tasks
+- **Regular cleanup**: Run `bd cleanup` periodically to remove old closed issues
+- **Health monitoring**: Run `bd doctor` regularly to catch configuration issues early
+- **Stale issue review**: Use `bd stale` to identify work that may need attention or closure
+
 ### Comments & Tracking
 - **Add progress comments**: Track what you've done and what's next
 - **Note blockers**: If stuck, comment about dependencies or issues
@@ -183,6 +197,24 @@ bd relate <api-id> <frontend-id>  # Link related issues
 # If frontend blocks on API completion, use dependency commands
 bd blocked  # Check for blocked work
 bd ready    # See what's available to work on
+```
+
+### System Maintenance
+```bash
+# Regular health check
+bd doctor
+
+# Auto-fix detected issues
+bd doctor --fix
+
+# Clean up pinned closed issues
+bd unpin <closed-issue-id>
+
+# Remove old closed issues (after 30 days)
+bd cleanup --older-than 30 --force
+
+# Reduce storage size by pruning tombstones
+bd compact --prune
 ```
 
 ## Integration with Git
