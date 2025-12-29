@@ -106,3 +106,18 @@ func (lv *LogView) UpdateLogEntries(logEntries []journal.LogEntry) {
 	}
 	lv.list.SetItems(items)
 }
+
+// SelectedLogEntry returns the currently selected log entry
+func (lv *LogView) SelectedLogEntry() *journal.LogEntry {
+	item := lv.list.SelectedItem()
+	if item == nil {
+		return nil
+	}
+	logItem, ok := item.(LogEntryItem)
+	if !ok {
+		return nil
+	}
+	// Create a copy and return pointer to it
+	entry := logItem.entry
+	return &entry
+}

@@ -132,6 +132,108 @@ func (s *Service) AddWin(j *Journal, text string) error {
 	return s.save(j)
 }
 
+// DeleteIntention removes an intention by ID and re-indexes positions
+func (s *Service) DeleteIntention(j *Journal, intentionID string) error {
+	found := false
+	for i, intention := range j.Intentions {
+		if intention.ID == intentionID {
+			j.Intentions = append(j.Intentions[:i], j.Intentions[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("intention not found: %s", intentionID)
+	}
+
+	// Re-index positions
+	for i := range j.Intentions {
+		j.Intentions[i].Position = i
+	}
+
+	return s.save(j)
+}
+
+// DeleteWin removes a win by ID and re-indexes positions
+func (s *Service) DeleteWin(j *Journal, winID string) error {
+	found := false
+	for i, win := range j.Wins {
+		if win.ID == winID {
+			j.Wins = append(j.Wins[:i], j.Wins[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("win not found: %s", winID)
+	}
+
+	// Re-index positions
+	for i := range j.Wins {
+		j.Wins[i].Position = i
+	}
+
+	return s.save(j)
+}
+
+// DeleteLogEntry removes a log entry by ID and re-indexes positions
+func (s *Service) DeleteLogEntry(j *Journal, logEntryID string) error {
+	found := false
+	for i, entry := range j.LogEntries {
+		if entry.ID == logEntryID {
+			j.LogEntries = append(j.LogEntries[:i], j.LogEntries[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("log entry not found: %s", logEntryID)
+	}
+
+	// Re-index positions
+	for i := range j.LogEntries {
+		j.LogEntries[i].Position = i
+	}
+
+	return s.save(j)
+}
+
+// UpdateIntention updates the text of an intention by ID
+func (s *Service) UpdateIntention(j *Journal, intentionID string, newText string) error {
+	for i := range j.Intentions {
+		if j.Intentions[i].ID == intentionID {
+			j.Intentions[i].Text = newText
+			return s.save(j)
+		}
+	}
+	return fmt.Errorf("intention not found: %s", intentionID)
+}
+
+// UpdateWin updates the text of a win by ID
+func (s *Service) UpdateWin(j *Journal, winID string, newText string) error {
+	for i := range j.Wins {
+		if j.Wins[i].ID == winID {
+			j.Wins[i].Text = newText
+			return s.save(j)
+		}
+	}
+	return fmt.Errorf("win not found: %s", winID)
+}
+
+// UpdateLogEntry updates the content of a log entry by ID
+func (s *Service) UpdateLogEntry(j *Journal, logEntryID string, newContent string) error {
+	for i := range j.LogEntries {
+		if j.LogEntries[i].ID == logEntryID {
+			j.LogEntries[i].Content = newContent
+			return s.save(j)
+		}
+	}
+	return fmt.Errorf("log entry not found: %s", logEntryID)
+}
+
 // AddScheduleItem adds a new schedule item to the journal
 func (s *Service) AddScheduleItem(j *Journal, timeStr string, content string) error {
 	content = strings.TrimSpace(content)
