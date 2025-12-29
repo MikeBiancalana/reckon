@@ -88,10 +88,14 @@ type Model struct {
 
 	// State for input modes
 	inputMode        bool
-	inputType        string // "intention", "win", "log", "task", "task_log"
+	inputType        string // "intention", "win", "log", "task", "task_log", "edit_intention", "edit_win", "edit_log"
 	helpMode         bool
 	taskPickerMode   bool
 	taskCreationMode bool
+	confirmMode      bool
+	confirmItemType  string // "intention", "win", "log"
+	confirmItemID    string
+	editItemID       string // ID of item being edited
 	lastError        error
 
 	// Terminal size validation
@@ -331,6 +335,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Handle confirmation mode
+		if m.confirmMode {
+			switch msg.String() {
+			case "y", "Y":
+				// Confirm deletion
+				return m, m.deleteItem()
+			case "n", "N", "esc":
+				// Cancel deletion
+				m.confirmMode = false
+				m.confirmItemType = ""
+				m.confirmItemID = ""
+				return m, nil
+			}
+			// Ignore other keys in confirm mode
+			return m, nil
+		}
+
 		// Normal mode
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -449,6 +470,98 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusBar.SetInputMode(true)
 			}
 			return m, textinput.Blink
+		case "d":
+			// Delete selected item with confirmation
+			if m.confirmMode {
+				// Already in confirm mode, ignore
+				return m, nil
+			}
+			switch m.focusedSection {
+			case SectionIntentions:
+				if m.intentionList != nil {
+					intention := m.intentionList.SelectedIntention()
+					if intention != nil {
+						m.confirmMode = true
+						m.confirmItemType = "intention"
+						m.confirmItemID = intention.ID
+					}
+				}
+			case SectionWins:
+				if m.winsView != nil {
+					win := m.winsView.SelectedWin()
+					if win != nil {
+						m.confirmMode = true
+						m.confirmItemType = "win"
+						m.confirmItemID = win.ID
+					}
+				}
+			case SectionLogs:
+				if m.logView != nil {
+					entry := m.logView.SelectedLogEntry()
+					if entry != nil {
+						m.confirmMode = true
+						m.confirmItemType = "log"
+						m.confirmItemID = entry.ID
+					}
+				}
+			}
+			return m, nil
+		case "e":
+			// Edit selected item
+			switch m.focusedSection {
+			case SectionIntentions:
+				if m.intentionList != nil {
+					intention := m.intentionList.SelectedIntention()
+					if intention != nil {
+						m.inputMode = true
+						m.inputType = "edit_intention"
+						m.editItemID = intention.ID
+						m.textInput.Prompt = "Edit intention: "
+						m.textInput.Placeholder = "Enter new text"
+						m.textInput.SetValue(intention.Text)
+						m.textInput.Focus()
+						if m.statusBar != nil {
+							m.statusBar.SetInputMode(true)
+						}
+						return m, textinput.Blink
+					}
+				}
+			case SectionWins:
+				if m.winsView != nil {
+					win := m.winsView.SelectedWin()
+					if win != nil {
+						m.inputMode = true
+						m.inputType = "edit_win"
+						m.editItemID = win.ID
+						m.textInput.Prompt = "Edit win: "
+						m.textInput.Placeholder = "Enter new text"
+						m.textInput.SetValue(win.Text)
+						m.textInput.Focus()
+						if m.statusBar != nil {
+							m.statusBar.SetInputMode(true)
+						}
+						return m, textinput.Blink
+					}
+				}
+			case SectionLogs:
+				if m.logView != nil {
+					entry := m.logView.SelectedLogEntry()
+					if entry != nil {
+						m.inputMode = true
+						m.inputType = "edit_log"
+						m.editItemID = entry.ID
+						m.textInput.Prompt = "Edit log: "
+						m.textInput.Placeholder = "Enter new content"
+						m.textInput.SetValue(entry.Content)
+						m.textInput.Focus()
+						if m.statusBar != nil {
+							m.statusBar.SetInputMode(true)
+						}
+						return m, textinput.Blink
+					}
+				}
+			}
+			return m, nil
 		case "enter":
 			// Handle enter key for toggling intentions
 			if m.focusedSection == SectionIntentions && m.intentionList != nil {
@@ -519,6 +632,23 @@ func (m *Model) View() string {
 
 	if m.inputMode {
 		view := m.textInput.View() + "\n\n(Enter to submit, Esc to cancel)"
+		if m.lastError != nil {
+			view += "\n\nError: " + m.lastError.Error()
+		}
+		return view
+	}
+
+	if m.confirmMode {
+		var itemType string
+		switch m.confirmItemType {
+		case "intention":
+			itemType = "intention"
+		case "win":
+			itemType = "win"
+		case "log":
+			itemType = "log entry"
+		}
+		view := fmt.Sprintf("Delete this %s? (y/n)", itemType)
 		if m.lastError != nil {
 			view += "\n\nError: " + m.lastError.Error()
 		}
@@ -701,6 +831,8 @@ Actions:
   w          Add win
   L          Add log entry (or log to task if in task pane)
   enter      Toggle intention (in intentions section)
+  e          Edit selected item
+  d          Delete selected item (with confirmation)
 
 Task Management:
   ctrl+t     Open task picker
@@ -712,6 +844,10 @@ Input Mode:
   esc        Cancel
   backspace  Delete character
   any key    Add character
+
+Confirmation Mode:
+  y          Confirm deletion
+  n, esc     Cancel deletion
 
 General:
   q, ctrl+c  Quit
@@ -811,6 +947,12 @@ func (m *Model) submitInput() tea.Cmd {
 			err = m.service.AddWin(m.currentJournal, inputText)
 		case "log":
 			err = m.service.AppendLog(m.currentJournal, inputText)
+		case "edit_intention":
+			err = m.service.UpdateIntention(m.currentJournal, m.editItemID, inputText)
+		case "edit_win":
+			err = m.service.UpdateWin(m.currentJournal, m.editItemID, inputText)
+		case "edit_log":
+			err = m.service.UpdateLogEntry(m.currentJournal, m.editItemID, inputText)
 		case "task":
 			// Create new task
 			if m.taskService != nil {
@@ -831,6 +973,31 @@ func (m *Model) submitInput() tea.Cmd {
 				return taskUpdatedMsg{taskID: m.currentTask.ID}
 			}
 		}
+
+		if err != nil {
+			return errMsg{err}
+		}
+		return journalUpdatedMsg{}
+	}
+}
+
+// deleteItem deletes the item in confirmation mode
+func (m *Model) deleteItem() tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		switch m.confirmItemType {
+		case "intention":
+			err = m.service.DeleteIntention(m.currentJournal, m.confirmItemID)
+		case "win":
+			err = m.service.DeleteWin(m.currentJournal, m.confirmItemID)
+		case "log":
+			err = m.service.DeleteLogEntry(m.currentJournal, m.confirmItemID)
+		}
+
+		// Reset confirmation state
+		m.confirmMode = false
+		m.confirmItemType = ""
+		m.confirmItemID = ""
 
 		if err != nil {
 			return errMsg{err}

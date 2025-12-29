@@ -95,3 +95,18 @@ func (wv *WinsView) UpdateWins(wins []journal.Win) {
 	}
 	wv.list.SetItems(items)
 }
+
+// SelectedWin returns the currently selected win
+func (wv *WinsView) SelectedWin() *journal.Win {
+	item := wv.list.SelectedItem()
+	if item == nil {
+		return nil
+	}
+	winItem, ok := item.(WinItem)
+	if !ok {
+		return nil
+	}
+	// Create a copy and return pointer to it
+	win := winItem.win
+	return &win
+}

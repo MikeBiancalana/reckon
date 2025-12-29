@@ -125,7 +125,9 @@ func (il *IntentionList) SelectedIntention() *journal.Intention {
 	if !ok {
 		return nil
 	}
-	return &intentionItem.intention
+	// Create a copy and return pointer to it
+	intention := intentionItem.intention
+	return &intention
 }
 
 // UpdateIntentions updates the list with new intentions
