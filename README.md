@@ -41,10 +41,35 @@ Launch the terminal UI by simply running:
 rk
 ```
 
-The TUI provides an interactive interface with three main sections:
-- **Intentions**: Your daily tasks and goals
-- **Log**: Timestamped entries of what you're working on
-- **Wins**: End-of-day accomplishments
+The TUI provides an interactive interface with a modern three-column layout:
+
+**Left Column (40%)**: Activity log with timestamps showing what you're working on throughout the day
+
+**Center Column (40%)**: General task list with support for collapsible notes
+
+**Right Column (18%)**: Stacked sections for:
+- **Schedule**: Upcoming items for the day
+- **Intentions**: 1-3 focus tasks for today
+- **Wins**: Daily accomplishments
+
+#### Key Bindings
+
+**Navigation:**
+- `h/←`, `l/→` - Previous/next day
+- `T` - Jump to today
+- `tab/shift+tab` - Cycle through sections
+- `j/k` - Navigate within section
+
+**Actions:**
+- `t` - Add task
+- `i` - Add intention
+- `w` - Add win
+- `L` - Add log entry
+- `space` - Toggle task completion (Tasks section)
+- `enter` - Toggle intention / Expand task (Intentions/Tasks section)
+- `d` - Delete item (with confirmation)
+- `?` - Toggle help
+- `q` - Quit
 
 ### CLI Commands
 

@@ -22,7 +22,6 @@
 ### New Keyboard Shortcuts
 
 - `t` - Add task
-- `n` - Add note to selected task
 - `enter` - Expand/collapse task (in Tasks section)
 
 ### Updated Sections
