@@ -734,6 +734,11 @@ func (m *Model) View() string {
 	return content + "\n" + status
 }
 
+// centerView centers a view within given dimensions
+func centerView(width, height int, view string) string {
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, view)
+}
+
 // renderNewLayout renders the 40-40-18 layout: Logs | Tasks | Schedule/Intentions/Wins
 func (m *Model) renderNewLayout() string {
 	dims := CalculatePaneDimensions(m.width, m.height)
@@ -770,44 +775,25 @@ func (m *Model) renderNewLayout() string {
 		tasksView = m.taskList.View()
 	}
 
-	// Wrap Logs pane in bordered box
-	logsBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder())
-	logsBox := logsBoxStyle.Render(logsView)
+	// Calculate inner dimensions for centering
+	logsInnerWidth := dims.LogsWidth - borderWidth
+	logsInnerHeight := dims.LogsHeight - borderHeight
+	tasksInnerWidth := dims.TasksWidth - borderWidth
+	tasksInnerHeight := dims.TasksHeight - borderHeight
+	rightInnerWidth := dims.RightWidth - borderWidth
 
-	// Wrap Tasks pane in bordered box
-	tasksBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder())
-	tasksBox := tasksBoxStyle.Render(tasksView)
-	// Stack right sidebar vertically with bordered boxes
-	rightSidebar := ""
-	if m.scheduleView != nil && m.intentionList != nil && m.winsView != nil {
-		scheduleView := m.scheduleView.View()
-		intentionsView := m.intentionList.View()
-		winsView := m.winsView.View()
+	// Center and box Logs pane
+	logsBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(
+		centerView(logsInnerWidth, logsInnerHeight, logsView),
+	)
 
-		// Wrap Schedule in bordered box
-		scheduleBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder())
-		scheduleBox := scheduleBoxStyle.Render(scheduleView)
+	// Center and box Tasks pane
+	tasksBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(
+		centerView(tasksInnerWidth, tasksInnerHeight, tasksView),
+	)
 
-		// Wrap Intentions in bordered box
-		intentionsBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder())
-		intentionsBox := intentionsBoxStyle.Render(intentionsView)
-
-		// Wrap Wins in bordered box
-		winsBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder())
-		winsBox := winsBoxStyle.Render(winsView)
-
-		rightSidebar = lipgloss.JoinVertical(
-			lipgloss.Top,
-			scheduleBox,
-			intentionsBox,
-			winsBox,
-		)
-	}
+	// Build right sidebar with centered, boxed components
+	rightSidebar := m.buildRightSidebar(dims, rightInnerWidth, borderHeight)
 
 	// Join main panes horizontally
 	content := lipgloss.JoinHorizontal(
@@ -839,6 +825,23 @@ func (m *Model) renderNewLayout() string {
 	}
 
 	return content + "\n" + textEntry + "\n" + summary + "\n" + status
+}
+
+// buildRightSidebar constructs the vertically stacked right sidebar
+func (m *Model) buildRightSidebar(dims PaneDimensions, rightInnerWidth, borderHeight int) string {
+	if m.scheduleView == nil || m.intentionList == nil || m.winsView == nil {
+		return ""
+	}
+
+	scheduleView := centerView(rightInnerWidth, dims.ScheduleHeight-borderHeight, m.scheduleView.View())
+	intentionsView := centerView(rightInnerWidth, dims.IntentionsHeight-borderHeight, m.intentionList.View())
+	winsView := centerView(rightInnerWidth, dims.WinsHeight-borderHeight, m.winsView.View())
+
+	scheduleBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(scheduleView)
+	intentionsBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(intentionsView)
+	winsBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(winsView)
+
+	return lipgloss.JoinVertical(lipgloss.Top, scheduleBox, intentionsBox, winsBox)
 }
 
 // helpView renders the help overlay
