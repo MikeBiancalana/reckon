@@ -2,9 +2,25 @@ package journal
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
+	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/storage"
+	"github.com/rs/xid"
+	"gopkg.in/yaml.v3"
 )
+
+// TaskFrontmatter represents the YAML frontmatter in task files
+type TaskFrontmatter struct {
+	ID      string   `yaml:"id"`
+	Title   string   `yaml:"title"`
+	Created string   `yaml:"created"`
+	Status  string   `yaml:"status"`
+	Tags    []string `yaml:"tags,omitempty"`
+}
 
 // TaskService handles business logic for task management
 type TaskService struct {
@@ -20,27 +36,123 @@ func NewTaskService(repo *TaskRepository, store *storage.FileStore) *TaskService
 	}
 }
 
-// GetAllTasks loads tasks from file (source of truth)
-// The file is the authoritative source; DB is just an index/cache
+// GetAllTasks loads tasks from individual task files (source of truth)
+// The files are the authoritative source; DB is just an index/cache
 func (s *TaskService) GetAllTasks() ([]Task, error) {
-	// Read tasks file
-	content, info, err := s.store.ReadTasksFile()
+	// Get tasks directory
+	tasksDir, err := config.TasksDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read tasks file: %w", err)
+		return nil, fmt.Errorf("failed to get tasks directory: %w", err)
 	}
 
-	// If file doesn't exist, return empty list
-	if !info.Exists {
-		return []Task{}, nil
+	// Read all .md files from tasks directory
+	files, err := os.ReadDir(tasksDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Task{}, nil
+		}
+		return nil, fmt.Errorf("failed to read tasks directory: %w", err)
 	}
 
-	// Parse content
-	tasks, err := ParseTasksFile(content)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse tasks file: %w", err)
+	var tasks []Task
+	position := 0
+
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ".md") || file.IsDir() {
+			continue
+		}
+
+		filePath := filepath.Join(tasksDir, file.Name())
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			continue // Skip files that can't be read
+		}
+
+		// Parse file
+		frontmatter, notes, err := parseTaskFile(string(content))
+		if err != nil {
+			continue // Skip invalid files
+		}
+
+		// Create task
+		status := TaskOpen
+		if frontmatter.Status == "done" {
+			status = TaskDone
+		}
+
+		createdAt := time.Now()
+		if frontmatter.Created != "" {
+			if parsed, err := time.Parse("2006-01-02", frontmatter.Created); err == nil {
+				createdAt = parsed
+			}
+		}
+
+		task := Task{
+			ID:        frontmatter.ID,
+			Text:      frontmatter.Title,
+			Status:    status,
+			Notes:     notes,
+			Position:  position,
+			CreatedAt: createdAt,
+		}
+
+		tasks = append(tasks, task)
+		position++
 	}
 
 	return tasks, nil
+}
+
+// parseTaskFile extracts and parses the YAML frontmatter and notes from task content
+func parseTaskFile(content string) (*TaskFrontmatter, []TaskNote, error) {
+	parts := strings.Split(content, "---")
+	if len(parts) < 3 {
+		return nil, nil, fmt.Errorf("invalid frontmatter format")
+	}
+
+	var fm TaskFrontmatter
+	if err := yaml.Unmarshal([]byte(parts[1]), &fm); err != nil {
+		return nil, nil, err
+	}
+
+	body := parts[2]
+	notes := parseNotesFromBody(body)
+
+	return &fm, notes, nil
+}
+
+// parseNotesFromBody parses notes from the task file body
+func parseNotesFromBody(body string) []TaskNote {
+	lines := strings.Split(body, "\n")
+	var notes []TaskNote
+	inLog := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "## Log" {
+			inLog = true
+			continue
+		}
+		if inLog && strings.HasPrefix(trimmed, "### ") {
+			// date line, skip
+			continue
+		}
+		if inLog && strings.HasPrefix(line, "  - ") {
+			noteText := strings.TrimPrefix(line, "  - ")
+			id, text := extractID(noteText)
+			if id == "" {
+				id = xid.New().String()
+			}
+			note := TaskNote{
+				ID:       id,
+				Text:     text,
+				Position: len(notes),
+			}
+			notes = append(notes, note)
+		}
+	}
+
+	return notes
 }
 
 // AddTask creates a new task and persists it
@@ -175,15 +287,22 @@ func (s *TaskService) DeleteTaskNote(taskID, noteID string) error {
 	return nil
 }
 
-// save persists tasks to both file and database
-// File is source of truth, DB is index/cache for querying
+// save persists tasks to both individual files and database
+// Files are source of truth, DB is index/cache for querying
 func (s *TaskService) save(tasks []Task) error {
-	// Serialize to markdown
-	content := WriteTasksFile(tasks)
+	// Get tasks directory
+	tasksDir, err := config.TasksDir()
+	if err != nil {
+		return fmt.Errorf("failed to get tasks directory: %w", err)
+	}
 
-	// Write to file first (source of truth)
-	if err := s.store.WriteTasksFile(content); err != nil {
-		return fmt.Errorf("failed to write tasks file: %w", err)
+	// Write each task to individual file
+	for _, task := range tasks {
+		content := writeTaskFile(task)
+		filePath := filepath.Join(tasksDir, task.ID+".md")
+		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write task file %s: %w", filePath, err)
+		}
 	}
 
 	// Write to DB for indexing/querying
@@ -192,4 +311,32 @@ func (s *TaskService) save(tasks []Task) error {
 	}
 
 	return nil
+}
+
+// writeTaskFile serializes a task to markdown format with frontmatter
+func writeTaskFile(task Task) string {
+	status := "open"
+	if task.Status == TaskDone {
+		status = "done"
+	}
+
+	frontmatter := TaskFrontmatter{
+		ID:      task.ID,
+		Title:   task.Text,
+		Created: task.CreatedAt.Format("2006-01-02"),
+		Status:  status,
+		Tags:    []string{}, // TODO: add tags if available
+	}
+
+	yamlData, _ := yaml.Marshal(frontmatter)
+
+	logSection := "## Log\n\n"
+	if len(task.Notes) > 0 {
+		logSection += fmt.Sprintf("### %s\n", task.CreatedAt.Format("2006-01-02"))
+		for _, note := range task.Notes {
+			logSection += fmt.Sprintf("  - %s %s\n", note.ID, note.Text)
+		}
+	}
+
+	return fmt.Sprintf("---\n%s---\n\n## Description\n\n%s", string(yamlData), logSection)
 }

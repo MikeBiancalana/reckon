@@ -741,6 +741,22 @@ func centerView(width, height int, view string) string {
 	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, view)
 }
 
+// getBorderStyle returns a border style with focus color if the section is focused
+func (m *Model) getBorderStyle(section Section) lipgloss.Style {
+	style := lipgloss.NewStyle().Border(lipgloss.NormalBorder())
+	if m.focusedSection == section {
+		style = style.BorderForeground(lipgloss.Color("39")) // blue color for focus
+	}
+	return style
+}
+
+// isRightPaneFocused returns true if any right pane section is focused
+func (m *Model) isRightPaneFocused() bool {
+	return m.focusedSection == SectionIntentions ||
+		m.focusedSection == SectionWins ||
+		m.focusedSection == SectionSchedule
+}
+
 // renderNewLayout renders the 40-40-18 layout: Logs | Tasks | Schedule/Intentions/Wins
 func (m *Model) renderNewLayout() string {
 	dims := CalculatePaneDimensions(m.width, m.height)
@@ -785,12 +801,12 @@ func (m *Model) renderNewLayout() string {
 	rightInnerWidth := dims.RightWidth - borderWidth
 
 	// Center and box Logs pane
-	logsBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(
+	logsBox := m.getBorderStyle(SectionLogs).Render(
 		centerView(logsInnerWidth, logsInnerHeight, logsView),
 	)
 
 	// Center and box Tasks pane
-	tasksBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(
+	tasksBox := m.getBorderStyle(SectionTasks).Render(
 		centerView(tasksInnerWidth, tasksInnerHeight, tasksView),
 	)
 
@@ -839,9 +855,9 @@ func (m *Model) buildRightSidebar(dims PaneDimensions, rightInnerWidth, borderHe
 	intentionsView := centerView(rightInnerWidth, dims.IntentionsHeight-borderHeight, m.intentionList.View())
 	winsView := centerView(rightInnerWidth, dims.WinsHeight-borderHeight, m.winsView.View())
 
-	scheduleBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(scheduleView)
-	intentionsBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(intentionsView)
-	winsBox := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Render(winsView)
+	scheduleBox := m.getBorderStyle(SectionSchedule).Render(scheduleView)
+	intentionsBox := m.getBorderStyle(SectionIntentions).Render(intentionsView)
+	winsBox := m.getBorderStyle(SectionWins).Render(winsView)
 
 	return lipgloss.JoinVertical(lipgloss.Top, scheduleBox, intentionsBox, winsBox)
 }

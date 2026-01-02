@@ -55,16 +55,39 @@ func TestGetAllTasks_EmptyFile(t *testing.T) {
 }
 
 func TestGetAllTasks_WithTasks(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
-	// Create test file content
-	content := `# Tasks
+	// Create task files
+	task1Content := `---
+id: task-1
+title: First task
+created: 2025-01-01
+status: open
+---
 
-- [ ] task-1 First task
+## Description
+
+## Log
+
+### 2025-01-01
   - note-1 First note
-- [x] task-2 Second task
 `
-	err := store.WriteTasksFile(content)
+	task2Content := `---
+id: task-2
+title: Second task
+created: 2025-01-02
+status: done
+---
+
+## Description
+
+## Log
+`
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	os.MkdirAll(tasksDir, 0755)
+	err := os.WriteFile(filepath.Join(tasksDir, "task-1.md"), []byte(task1Content), 0644)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(tasksDir, "task-2.md"), []byte(task2Content), 0644)
 	require.NoError(t, err)
 
 	// Get all tasks
