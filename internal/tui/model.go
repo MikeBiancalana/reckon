@@ -766,6 +766,19 @@ func (m *Model) renderNewLayout() string {
 		tasksView = m.taskList.View()
 	}
 
+	// Wrap panes in bordered boxes
+	logsBoxStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		Width(dims.LogsWidth - 2). // Account for border
+		Height(dims.LogsHeight - 2)
+	logsBox := logsBoxStyle.Render(logsView)
+
+	tasksBoxStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		Width(dims.TasksWidth - 2).
+		Height(dims.TasksHeight - 2)
+	tasksBox := tasksBoxStyle.Render(tasksView)
+
 	// Stack right sidebar vertically
 	rightSidebar := ""
 	if m.scheduleView != nil && m.intentionList != nil && m.winsView != nil {
@@ -785,8 +798,8 @@ func (m *Model) renderNewLayout() string {
 	borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		borderStyle.Render(logsView),
-		borderStyle.Render(tasksView),
+		borderStyle.Render(logsBox),
+		borderStyle.Render(tasksBox),
 		rightSidebar,
 	)
 
