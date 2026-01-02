@@ -1,231 +1,687 @@
-# Beads (bd) Usage for Agents
+# Beads (bd) Usage for Agents - v0.43.0
 
 ## Overview
-Beads is an AI-native issue tracking system that lives in your codebase. Use `bd` commands to track work and maintain issue state during coding sessions.
+Beads is an AI-native issue tracking system that lives in your codebase. Version 0.43.0 introduces powerful features for multi-agent coordination, including atomic work claiming, worktree support, and swarm management.
+
+**Key Features for Agents:**
+- Atomic work claiming (`--claim`) prevents duplicate work
+- Git worktrees enable parallel development without conflicts
+- Shared `.beads` database across worktrees for consistent state
+- Swarm management for structured epic-based parallelism
+- Auto-sync with git (hooks handle synchronization)
+
+## Quick Reference
+
+```bash
+# Finding and claiming work
+bd ready                          # Show unblocked issues
+bd update <id> --claim            # Atomically claim (assignee + in_progress)
+bd show <id>                      # View issue details
+
+# Creating and managing issues
+bd create "Title" --type task --priority 2
+bd update <id> --status done      # or: bd close <id>
+bd dep add <a> <b>                # A depends on B (B blocks A)
+
+# Sync and health
+bd sync                           # Sync with git remote
+bd doctor                         # Check installation health
+bd prime                          # Show workflow context
+```
+
+## Core Concepts
+
+### Issue Lifecycle
+```
+open → in_progress → done/closed
+```
+
+### Atomic Work Claiming (New in v0.42.0)
+The `--claim` flag provides work queue semantics:
+```bash
+bd update <id> --claim
+```
+- Atomically sets `assignee` to you and `status` to `in_progress`
+- Fails if already claimed by another agent
+- Perfect for multi-agent coordination
+- Works across worktrees (shared database)
+
+### Priority System
+Use numeric priorities (0-4):
+- **P0**: Critical/blocking
+- **P1**: High priority
+- **P2**: Medium (default)
+- **P3**: Low priority
+- **P4**: Backlog/nice-to-have
+
+### Dependency Types
+- **blocks**: Hard dependency (B must complete before A can start)
+- **parent-child**: Epic/subtask hierarchical relationship
+- **related**: Soft connection, doesn't block progress
+- **discovered-from**: Auto-created when AI discovers related work
 
 ## Essential Commands
 
+### Finding Work
+
+**Show ready work (no blockers):**
+```bash
+bd ready                          # All unblocked issues
+bd ready --parent <epic-id>       # Ready work scoped to epic
+bd ready --json                   # JSON output for parsing
+```
+
+**List issues:**
+```bash
+bd list                           # All non-closed issues (limit 50)
+bd list --status open             # Filter by status
+bd list --status in_progress      # Your active work
+bd list --priority 0              # Critical issues only
+bd list --assignee alice          # Issues assigned to alice
+bd list --label bug               # Filter by label
+bd list --sort priority           # Sort by priority
+bd list --reverse                 # Reverse sort order
+```
+
+**Search issues:**
+```bash
+bd search "authentication"        # Text search
+bd search "login" --priority 1    # Search with filters
+bd search "api" --after 2025-01-01  # Date filters
+```
+
+**Show blocked issues:**
+```bash
+bd blocked                        # All blocked issues
+bd blocked --parent <epic-id>     # Blocked work in epic
+```
+
 ### Creating Issues
+
+**Basic creation:**
 ```bash
-bd create "Implement user authentication"
-bd create "Fix login form validation" --priority P1 --type bug
+bd create "Fix login bug"
+bd create "Add auth" --priority 1 --type feature
+bd create "Write tests" --type task --assignee alice
+bd create "Epic name" --type epic  # For multi-issue work
 ```
 
-### Status Management
+**Quick capture (output only ID):**
 ```bash
-# Start working on an issue
-bd update <issue-id> --status in_progress
-
-# Mark as completed
-bd update <issue-id> --status done
-
-# Close without completing (cancelled/discarded)
-bd close <issue-id>
+ID=$(bd q "Quick task")           # Captures ID for scripting
 ```
 
-### Viewing Issues
+**Batch creation from markdown:**
 ```bash
-# List all issues
-bd list
-
-# Show specific issue details
-bd show <issue-id>
-
-# List issues by status
-bd list --status in_progress
-bd list --status open
-
-# Show only pinned (assigned) issues
-bd list --pinned
-
-# Show work ready to start (no blockers)
-bd ready
-
-# Show blocked issues (waiting on dependencies)
-bd blocked
-
-# Search issues by content
-bd search "authentication"
-
-# Get project overview and statistics
-bd status
-
-# Show issues not updated recently (potential stale work)
-bd stale --days 30
+bd create -f tasks.md             # Create multiple from file
 ```
 
-### Work Assignment (Pinning)
+**Creating with parent (subtask of epic):**
 ```bash
-# Assign work to yourself and start working
-bd pin <issue-id> --for me --start
-
-# Assign work to another agent
-bd pin <issue-id> --for <agent-name>
-
-# Just mark as pinned (assigned) without starting
-bd pin <issue-id>
-
-# View what's assigned to you (your "hook")
-bd hook
-
-# View another agent's assignments
-bd hook --agent <agent-name>
+bd create "Subtask" --parent <epic-id>
 ```
 
-### Workflow Management
+### Updating Issues
+
+**Basic updates:**
 ```bash
-# Defer work for later (postpone without closing)
-bd defer <issue-id>
-
-# Bring back deferred work
-bd undefer <issue-id>
-
-# Link related issues (loose "see also" relationship)
-bd relate <issue-id1> <issue-id2>
+bd update <id> --status in_progress
+bd update <id> --priority 0
+bd update <id> --assignee bob
+bd update <id> --description "New description"
 ```
 
-## Workflow for Agents
-
-### Starting Work on an Issue
-1. **Check project status**: `bd status` for overall project health
-2. **Check current assignments**: `bd hook` to see what's pinned to you
-3. **Find ready work**: `bd ready` to see issues with no blockers
-4. **Pick an issue**: Choose based on priority (P0 = critical, P4 = nice-to-have)
-5. **Assign work to yourself**: `bd pin <issue-id> --for me --start` (pins and sets status to in_progress)
-6. **Work on the code** following standard development practices
-7. **Mark complete**: `bd update <issue-id> --status done`
-
-### During Development
-- **Add comments**: `bd comment <issue-id> "Working on the database schema"`
-- **Update progress**: Use comments to track sub-tasks or blockers
-- **Reference in commits**: Include issue ID in commit messages (e.g., "reckon-123: Implement auth")
-
-### Session Completion (MANDATORY)
-**CRITICAL: Always sync before ending work**
+**Atomic claiming (v0.42.0+):**
 ```bash
+bd update <id> --claim            # Atomically claim work
+# Fails if already claimed - prevents duplicate work!
+```
+
+**Defer for later:**
+```bash
+bd update <id> --defer 2025-02-01  # Hidden from bd ready until date
+bd undefer <id>                    # Restore to ready state
+```
+
+### Closing Issues
+
+**Simple close:**
+```bash
+bd close <id>
+bd close <id> --reason "Fixed in PR #42"
+bd close <id1> <id2> <id3>        # Close multiple
+```
+
+**Close and see newly unblocked work:**
+```bash
+bd close <id> --suggest-next      # Shows what's now ready
+```
+
+### Dependencies
+
+**Add dependency:**
+```bash
+bd dep add <a> <b>                # A depends on B (B blocks A)
+bd dep add task-1 task-2 task-3   # Multiple deps at once
+```
+
+**Remove dependency:**
+```bash
+bd dep remove <a> <b>
+```
+
+**View dependency tree:**
+```bash
+bd dep tree <id>                  # Show full tree
+bd dep cycles                     # Detect circular deps
+bd graph                          # Visualize all deps
+```
+
+### Comments
+
+**Add comments:**
+```bash
+bd comments <id> --add "Progress update"
+bd comments <id> --add "Blocked on API"
+```
+
+**View comments:**
+```bash
+bd show <id>                      # Includes comments
+bd comments <id>                  # List all comments
+```
+
+## Multi-Agent Workflows
+
+### Atomic Work Claiming
+
+When multiple agents work on the same project, use `--claim` to prevent duplicate work:
+
+```bash
+# Agent 1
+bd ready                          # See available work
+bd update reckon-abc --claim      # Claim atomically
+# ✓ Success - you now own this issue
+
+# Agent 2 (simultaneously)
+bd update reckon-abc --claim      # Try to claim same issue
+# ✗ Error: already claimed by Agent 1
+bd ready                          # Find different work
+```
+
+**How --claim works:**
+1. Checks current assignee and status
+2. If unclaimed (assignee=null or status=open), claims it
+3. Sets assignee=you, status=in_progress atomically
+4. If already claimed, fails with error
+5. Works across worktrees (shared database)
+
+### Git Worktrees for Parallel Development
+
+**Why use worktrees?**
+- Multiple agents work on different issues simultaneously
+- No git checkout conflicts
+- Shared `.beads` database ensures consistent issue state
+- Each agent has isolated working directory
+- Clean branch-per-issue workflow
+
+**Creating a worktree:**
+```bash
+# From main repo directory
+bd worktree create reckon-abc     # Creates ../reckon-abc/
+bd worktree create bugfix --branch fix-validation
+```
+
+This creates:
+- New directory at `../reckon-abc/`
+- Branch `reckon-abc` checked out from `origin/main`
+- `.beads/redirect` file pointing to shared database
+- Ready-to-use working tree
+
+**Working in a worktree:**
+```bash
+cd ../reckon-abc                  # Switch to worktree
+bd ready                          # See work (shared DB)
+bd update reckon-abc --claim      # Claim your issue
+# ... do the work ...
+git add .
+git commit -m "feat: implement feature"
+bd sync                           # Sync beads
+git push -u origin reckon-abc     # Push your branch
+gh pr create --base main          # Create PR
+```
+
+**Cleaning up:**
+```bash
+# After PR is merged
+cd ../reckon                      # Return to main repo
+bd worktree remove reckon-abc     # Safely remove worktree
+```
+
+**Worktree commands:**
+```bash
+bd worktree list                  # Show all worktrees
+bd worktree info                  # Current worktree details
+bd worktree create <name>         # Create new worktree
+bd worktree remove <name>         # Remove worktree
+bd where                          # Show active beads location
+```
+
+### Swarm Management for Structured Parallelism
+
+**What is a swarm?**
+A swarm is a structured epic with dependency-aware task distribution. Perfect for coordinating multiple agents on large features.
+
+**Creating a swarm:**
+```bash
+# 1. Create an epic with subtasks
+bd create "Feature X" --type epic
+EPIC_ID=<epic-id>
+
+bd create "Design API" --type task --parent $EPIC_ID
+bd create "Implement backend" --type task --parent $EPIC_ID
+bd create "Build frontend" --type task --parent $EPIC_ID
+bd create "Write tests" --type task --parent $EPIC_ID
+
+# 2. Add dependencies
+bd dep add <frontend-id> <backend-id>   # Frontend depends on backend
+bd dep add <tests-id> <backend-id>      # Tests depend on backend
+
+# 3. Create the swarm
+bd swarm create $EPIC_ID
+```
+
+**Working with swarms:**
+```bash
+# View swarm status
+bd swarm status                   # All active swarms
+bd swarm list                     # List swarm molecules
+
+# Validate epic structure
+bd swarm validate <epic-id>       # Check DAG validity
+
+# Find ready work in swarm
+bd ready --parent <epic-id>       # Unblocked tasks in epic
+
+# Agents claim work
+bd update <task-id> --claim       # Each agent claims a task
+```
+
+**Swarm benefits:**
+- Automatic dependency tracking
+- Parallel work coordination
+- Progress visibility for all agents
+- Structured completion tracking
+- Prevents dependency violations
+
+### Parallel Agent Workflow Example
+
+**Scenario:** 3 agents working on "User Authentication" feature
+
+```bash
+# === Setup (Human or Lead Agent) ===
+bd create "User Authentication" --type epic
+AUTH_EPIC=<epic-id>
+
+bd create "Database schema" --type task --parent $AUTH_EPIC
+bd create "API endpoints" --type task --parent $AUTH_EPIC
+bd create "Frontend UI" --type task --parent $AUTH_EPIC
+bd create "Integration tests" --type task --parent $AUTH_EPIC
+
+# Add dependencies
+bd dep add <api-id> <schema-id>      # API needs schema
+bd dep add <ui-id> <api-id>          # UI needs API
+bd dep add <tests-id> <api-id>       # Tests need API
+
+# Create swarm for coordination
+bd swarm create $AUTH_EPIC
+
+# === Agent 1: Database Schema ===
+bd worktree create reckon-schema
+cd ../reckon-schema
+bd update reckon-schema --claim      # Claims database schema task
+# ... implement schema ...
+git commit && git push
+bd close reckon-schema
+# This automatically unblocks API task
+
+# === Agent 2: API Endpoints (waits for schema) ===
+bd ready                             # Sees API is now ready
+bd worktree create reckon-api
+cd ../reckon-api
+bd update reckon-api --claim         # Claims API task
+# ... implement API ...
+git commit && git push
+bd close reckon-api
+# This unblocks UI and tests
+
+# === Agent 3 & 4: Frontend and Tests (parallel) ===
+# Both now ready after API completes
+bd worktree create reckon-ui
+cd ../reckon-ui
+bd update reckon-ui --claim
+
+# Simultaneously, Agent 4:
+bd worktree create reckon-tests
+cd ../reckon-tests
+bd update reckon-tests --claim
+
+# Both work in parallel, no conflicts
+```
+
+## Sync & Collaboration
+
+### Git Integration
+
+**Auto-sync (default):**
+bd automatically syncs with git:
+- Exports to `.beads/issues.jsonl` after CRUD operations (5s debounce)
+- Imports from JSONL when newer than database (after git pull)
+- Git hooks handle pre-commit and pre-push validation
+
+**Manual sync:**
+```bash
+bd sync                           # Sync with remote
+bd sync --status                  # Check sync status
+bd sync --squash                  # Batch commits into one
+```
+
+**Sync workflow:**
+```bash
+# During work
+bd create "New task"              # Auto-exports after 5s
+
+# Before pushing
+bd sync                           # Ensure everything synced
+git push                          # Push code and issues
+
+# After pulling
+git pull                          # Auto-imports if JSONL newer
+```
+
+**Worktree sync:**
+- All worktrees share the same `.beads` database
+- Changes in one worktree visible in all others
+- Sync happens in the main repo's `.beads/` directory
+- Each worktree has a `.beads/redirect` file
+
+### Session End Protocol
+
+**MANDATORY steps before ending a session:**
+
+```bash
+# 1. Check git status
+git status
+
+# 2. Stage code changes
+git add <files>
+
+# 3. Sync beads
 bd sync
+
+# 4. Commit code
+git commit -m "feat: implement feature (reckon-abc)"
+
+# 5. Sync beads again (in case commit created new data)
+bd sync
+
+# 6. Push everything
 git push
+
+# 7. Verify push succeeded
+git status                        # Must show "up to date"
 ```
+
+**NEVER skip the push.** Work is not complete until pushed to remote.
+
+## Project Health
+
+### Status and Statistics
+
+**Project overview:**
+```bash
+bd status                         # Overview + stats
+bd stats                          # Alias for status
+```
+
+**Find problems:**
+```bash
+bd blocked                        # Blocked issues
+bd stale --days 30                # Not updated in 30 days
+bd orphans                        # In commits but not closed
+```
+
+### Health Checks
+
+**Run diagnostics:**
+```bash
+bd doctor                         # Full health check
+bd doctor --check-health          # Lightweight check (exit 0 if ok)
+bd doctor --fix                   # Auto-fix issues
+bd doctor --output report.txt     # Export diagnostics
+```
+
+**Common fixes:**
+- Stale database detection
+- Sync branch issues
+- Hook installation
+- Orphaned references
+- Database corruption
+
+### Database Maintenance
+
+**Admin commands:**
+```bash
+bd repair                         # Repair orphaned references
+bd admin compact                  # Reduce database size
+bd admin compact --purge-tombstones  # Remove old deletions
+```
+
+## Advanced Features
+
+### State Management (v0.42.0+)
+
+**Label-based operational state:**
+```bash
+bd state <dimension>              # Query current state
+bd set-state <dimension> <value>  # Set state (creates event + label)
+```
+
+Example:
+```bash
+bd state environment              # Check current env
+bd set-state environment staging  # Deploy to staging
+```
+
+### Gates for Async Coordination
+
+**Create coordination gates:**
+```bash
+bd gate create "Deploy approval" --type approval
+bd gate create "Load test done" --type timer --duration 1h
+```
+
+**Manage gates:**
+```bash
+bd gate show <gate-id>
+bd gate approve <gate-id>         # Approve human gates
+bd gate eval                      # Evaluate timer/GitHub gates
+bd gate wait <gate-id>            # Block until gate opens
+```
+
+### Preflight PR Checks (v0.42.0+)
+
+**Check PR readiness:**
+```bash
+bd preflight                      # Show PR readiness checklist
+```
+
+Validates:
+- All in_progress issues completed or blocked
+- No orphaned references
+- Database synced with JSONL
+- Tests passing (if configured)
+
+## Configuration
+
+**View config:**
+```bash
+bd config list                    # Show all settings
+```
+
+**Common settings:**
+```bash
+bd config set sync.branch beads-sync     # Use separate sync branch
+bd config set git.author "Agent <ai@example.com>"
+bd config set create.require-description true
+bd config set no-git-ops true            # Manual git control
+```
+
+## Tips for Efficient Agent Workflows
+
+### Work Queue Pattern
+```bash
+while true; do
+  TASK=$(bd ready --json | jq -r '.[0].id')
+  [ -z "$TASK" ] && break
+  bd update $TASK --claim || continue
+  # ... do work ...
+  bd close $TASK
+done
+```
+
+### Parallel Batch Processing
+```bash
+# Create tasks
+for item in task1 task2 task3; do
+  bd create "$item" --type task &
+done
+wait
+
+# Process in parallel (multiple agents/worktrees)
+bd ready | while read id; do
+  bd worktree create $id
+  # Spawn agent in worktree
+done
+```
+
+### Discovered Work Pattern
+```bash
+# During implementation, discover new task
+NEW=$(bd create "Fix validation bug" --type bug --priority 1 -q)
+bd dep add $CURRENT_TASK $NEW     # Current task blocked
+bd update $CURRENT_TASK --status blocked
+bd update $NEW --claim            # Switch to new task
+```
+
+### Epic Decomposition
+```bash
+# Break large work into coordinated pieces
+EPIC=$(bd create "Large Feature" --type epic -q)
+for subtask in design impl test docs; do
+  bd create "$subtask" --parent $EPIC --type task
+done
+bd swarm create $EPIC
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Can't claim issue:**
+```bash
+bd show <id>                      # Check current assignee
+# If claimed by you, just update status:
+bd update <id> --status in_progress
+```
+
+**Worktree database not syncing:**
+```bash
+bd where                          # Check database location
+cat .beads/redirect               # Verify redirect path
+bd doctor                         # Check for issues
+```
+
+**Sync conflicts:**
+```bash
+bd sync                           # Will auto-merge most conflicts
+# If fails, check:
+git status                        # Check for conflicts
+bd doctor --fix                   # Auto-fix database issues
+```
+
+**Stale database warning:**
+```bash
+bd sync                           # Sync with latest
+# If persists:
+bd doctor --fix                   # Repair database
+```
+
+### Getting Help
+
+```bash
+bd help <command>                 # Command-specific help
+bd human                          # Essential commands
+bd quickstart                     # Quick start guide
+bd prime                          # Workflow context
+bd info --whats-new               # Recent changes
+```
+
+## Migration from v0.38.0
+
+**Removed commands:**
+- `bd pin/unpin/hook` - Removed in v0.39.0 (use `gt mol` commands or `--claim`)
+
+**Replacements:**
+```bash
+# Old way (v0.38.0)
+bd pin <id> --for me --start
+
+# New way (v0.43.0)
+bd update <id> --claim            # Atomic claiming
+```
+
+**New features to adopt:**
+- Use `--claim` for atomic work queue semantics
+- Use `bd worktree` for parallel development
+- Use `bd swarm` for structured epic coordination
+- Use `bd preflight` for PR readiness checks
+- Use `bd state/set-state` for operational state management
 
 ## Best Practices
 
-### Issue Creation
-- **Descriptive titles**: Clear, actionable descriptions
-- **Appropriate priority**: P0 for blocking issues, P1 for important bugs/features
-- **Correct type**: bug, task, feature, or epic for multi-issue work
+1. **Always use `--claim` for multi-agent work** - Prevents duplicate effort
+2. **Use worktrees for parallel development** - Clean isolation, shared state
+3. **Create swarms for structured epics** - Coordinate dependencies
+4. **Run `bd sync` before session end** - Ensure everything pushed
+5. **Run `bd doctor` regularly** - Catch issues early
+6. **Use descriptive titles** - Clear, actionable issue names
+7. **Set appropriate priorities** - P0 for critical, P2 for normal
+8. **Add dependencies as discovered** - Keep dependency graph accurate
+9. **Close issues with reasons** - Audit trail for decisions
+10. **Check `bd ready` first** - Always work on unblocked issues
 
-### Status Updates
-- **in_progress**: When actively working on the issue
-- **done**: When implementation is complete and tested
-- **Never leave issues in_progress** across sessions without good reason
+## Reference
 
-### Work Assignment (Pinning)
-- **Pin work**: Use `bd pin` to assign issues to specific agents (including yourself)
-- **Check assignments**: Use `bd hook` to see what work is assigned to you or others
-- **Combined action**: Use `bd pin --for me --start` to assign and start work in one command
-- **Coordination**: Pinning helps coordinate work across multiple agents
+**Issue statuses:**
+- `open` - Not started
+- `in_progress` - Being worked on
+- `blocked` - Waiting on dependencies
+- `done` - Completed successfully
+- `deferred` - Postponed for later
+- `closed` - Final state
 
-### Workflow Intelligence
-- **Ready work**: Use `bd ready` to find issues that can actually be started (no blockers)
-- **Blocked issues**: Use `bd blocked` to identify work waiting on dependencies
-- **Stale work**: Use `bd stale` to find potentially abandoned issues
-- **Search**: Use `bd search` to find issues by content or keywords
-- **Status overview**: Use `bd status` for project health at a glance
-- **Defer/Undefer**: Use `bd defer` for work that's not currently priority, `bd undefer` to bring it back
-- **Relationships**: Use `bd relate` to link related issues for better context
+**Issue types:**
+- `task` - Standard work item
+- `bug` - Defect or error
+- `feature` - New functionality
+- `epic` - Multi-issue body of work
+- `gate` - Coordination primitive
 
-### System Maintenance & Hygiene
-- **Health check**: Use `bd doctor` to diagnose system issues and get auto-fix recommendations
-- **Auto-fix issues**: Use `bd doctor --fix` to automatically resolve detected problems
-- **Unpin completed work**: Use `bd unpin` to remove assignment from closed issues
-- **Cleanup old issues**: Use `bd cleanup --older-than 30 --force` to remove closed issues older than 30 days
-- **Compact storage**: Use `bd compact --prune` to remove expired tombstones and reduce file size
-- **Performance check**: Use `bd doctor --perf` for performance diagnostics
+**Dependency types:**
+- `blocks` - Hard blocker
+- `parent` - Epic/subtask hierarchy
+- `related` - Soft association
+- `discovered-from` - AI discovery trail
 
-### Preventing Hygiene Issues
-- **Unpin when closing**: Always unpin issues when marking them as done to prevent accumulation of pinned closed tasks
-- **Regular cleanup**: Run `bd cleanup` periodically to remove old closed issues
-- **Health monitoring**: Run `bd doctor` regularly to catch configuration issues early
-- **Stale issue review**: Use `bd stale` to identify work that may need attention or closure
-
-### Comments & Tracking
-- **Add progress comments**: Track what you've done and what's next
-- **Note blockers**: If stuck, comment about dependencies or issues
-- **Reference related work**: Link to commits, PRs, or other issues
-
-### Sync Requirements
-- **Always run `bd sync`** before ending a session
-- **Push changes** to remote repository
-- **Verify sync success** - check for errors in output
-
-## Common Patterns
-
-### Bug Fixes
-```bash
-bd create "Fix null pointer in login handler" --type bug --priority P1
-bd pin <id> --for me --start  # Assign and start work
-# Fix the bug
-bd update <id> --status done
-bd sync
-```
-
-### Feature Implementation
-```bash
-bd create "Add dark mode toggle" --type feature --priority P2
-bd pin <id> --for me --start  # Assign and start work
-# Implement feature across multiple files
-bd comment <id> "Completed UI component, working on state management"
-bd update <id> --status done
-bd sync
-```
-
-### Multi-step Tasks
-```bash
-bd create "Refactor authentication module" --type task --priority P2
-bd pin <id> --for me --start  # Assign and start work
-bd comment <id> "Step 1: Extract interface"
-bd comment <id> "Step 2: Update implementations"
-bd update <id> --status done
-bd sync
-```
-
-### Dependency Management
-```bash
-bd create "Implement user API" --type task --priority P2
-bd create "Build frontend client" --type task --priority P2
-bd relate <api-id> <frontend-id>  # Link related issues
-# If frontend blocks on API completion, use dependency commands
-bd blocked  # Check for blocked work
-bd ready    # See what's available to work on
-```
-
-### System Maintenance
-```bash
-# Regular health check
-bd doctor
-
-# Auto-fix detected issues
-bd doctor --fix
-
-# Clean up pinned closed issues
-bd unpin <closed-issue-id>
-
-# Remove old closed issues (after 30 days)
-bd cleanup --older-than 30 --force
-
-# Reduce storage size by pruning tombstones
-bd compact --prune
-```
-
-## Integration with Git
-- Issues are stored in `.beads/issues.jsonl`
-- `bd sync` commits changes to the `beads-sync` branch
-- Issue IDs can be referenced in commit messages
-- Changes sync automatically with git operations
-
-## Troubleshooting
-- **Can't find bd command**: Install from https://github.com/steveyegge/beads
-- **Sync fails**: Check git status, resolve conflicts if needed
-- **Database issues**: Run `bd doctor` to check health
-- **Lost work**: Issues are in git, check `.beads/issues.jsonl` history</content>
-<parameter name="filePath">docs/bd-usage.md
+For complete details: `bd --help` or visit https://github.com/steveyegge/beads
