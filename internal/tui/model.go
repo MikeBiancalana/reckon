@@ -786,11 +786,29 @@ func (m *Model) renderNewLayout() string {
 		intentionsView := m.intentionList.View()
 		winsView := m.winsView.View()
 
+		scheduleBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			Width(dims.RightWidth - 2).
+			Height(dims.ScheduleHeight - 2)
+		scheduleBox := scheduleBoxStyle.Render(scheduleView)
+
+		intentionsBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			Width(dims.RightWidth - 2).
+			Height(dims.IntentionsHeight - 2)
+		intentionsBox := intentionsBoxStyle.Render(intentionsView)
+
+		winsBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			Width(dims.RightWidth - 2).
+			Height(dims.WinsHeight - 2)
+		winsBox := winsBoxStyle.Render(winsView)
+
 		rightSidebar = lipgloss.JoinVertical(
 			lipgloss.Top,
-			scheduleView,
-			intentionsView,
-			winsView,
+			scheduleBox,
+			intentionsBox,
+			winsBox,
 		)
 	}
 
