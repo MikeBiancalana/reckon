@@ -2,11 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"time"
+	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/sync"
 	"github.com/MikeBiancalana/reckon/internal/task"
+	"github.com/MikeBiancalana/reckon/internal/time"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -85,6 +86,7 @@ type Model struct {
 	// New components for 40-40-18 layout
 	taskList     *components.TaskList
 	scheduleView *components.ScheduleView
+	summaryView  *components.SummaryView
 
 	// Cached data
 	tasks []journal.Task
@@ -129,12 +131,13 @@ func NewModel(service *journal.Service) *Model {
 		taskService:       nil, // Will be set via SetTaskService
 		legacyTaskService: nil, // Will be set via SetTaskService
 		watcher:           watcher,
-		currentDate:       time.Now().Format("2006-01-02"),
+		currentDate:       stdtime.Now().Format("2006-01-02"),
 		focusedSection:    SectionIntentions,
 		textEntryBar:      components.NewTextEntryBar(),
 		statusBar:         sb,
 		activePane:        PaneJournal,
 		showingTasks:      false,
+		summaryView:       components.NewSummaryView(),
 	}
 }
 
@@ -224,6 +227,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.taskList = components.NewTaskList(m.tasks)
 		} else {
 			m.taskList.UpdateTasks(m.tasks)
+		}
+
+		// Calculate time summary
+		daySummary := time.CalculateDaySummary(&msg.journal)
+		if m.summaryView != nil {
+			m.summaryView.SetSummary(&daySummary)
 		}
 
 		return m, nil
@@ -457,6 +466,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "?":
 			m.helpMode = !m.helpMode
+			return m, nil
+		case "s":
+			// Toggle time summary view
+			if m.summaryView != nil {
+				m.summaryView.Toggle()
+			}
 			return m, nil
 		case "i":
 			// Add intention
@@ -732,13 +747,13 @@ func (m *Model) renderNewLayout() string {
 		m.taskList.SetSize(dims.TasksWidth-borderWidth, dims.TasksHeight-borderHeight)
 	}
 	if m.scheduleView != nil {
-		m.scheduleView.SetSize(dims.RightWidth, dims.ScheduleHeight)
+		m.scheduleView.SetSize(dims.RightWidth-borderWidth, dims.ScheduleHeight-borderHeight)
 	}
 	if m.intentionList != nil {
-		m.intentionList.SetSize(dims.RightWidth, dims.IntentionsHeight)
+		m.intentionList.SetSize(dims.RightWidth-borderWidth, dims.IntentionsHeight-borderHeight)
 	}
 	if m.winsView != nil {
-		m.winsView.SetSize(dims.RightWidth, dims.WinsHeight)
+		m.winsView.SetSize(dims.RightWidth-borderWidth, dims.WinsHeight-borderHeight)
 	}
 	if m.logView != nil {
 		m.logView.SetSize(dims.LogsWidth-borderWidth, dims.LogsHeight-borderHeight)
@@ -764,19 +779,33 @@ func (m *Model) renderNewLayout() string {
 	tasksBoxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder())
 	tasksBox := tasksBoxStyle.Render(tasksView)
-
-	// Stack right sidebar vertically
+	// Stack right sidebar vertically with bordered boxes
 	rightSidebar := ""
 	if m.scheduleView != nil && m.intentionList != nil && m.winsView != nil {
 		scheduleView := m.scheduleView.View()
 		intentionsView := m.intentionList.View()
 		winsView := m.winsView.View()
 
+		// Wrap Schedule in bordered box
+		scheduleBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder())
+		scheduleBox := scheduleBoxStyle.Render(scheduleView)
+
+		// Wrap Intentions in bordered box
+		intentionsBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder())
+		intentionsBox := intentionsBoxStyle.Render(intentionsView)
+
+		// Wrap Wins in bordered box
+		winsBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder())
+		winsBox := winsBoxStyle.Render(winsView)
+
 		rightSidebar = lipgloss.JoinVertical(
 			lipgloss.Top,
-			scheduleView,
-			intentionsView,
-			winsView,
+			scheduleBox,
+			intentionsBox,
+			winsBox,
 		)
 	}
 
@@ -795,6 +824,13 @@ func (m *Model) renderNewLayout() string {
 		textEntry = m.textEntryBar.View()
 	}
 
+	// Add summary view
+	summary := ""
+	if m.summaryView != nil {
+		m.summaryView.SetWidth(m.width)
+		summary = m.summaryView.View()
+	}
+
 	// Add status bar
 	status := ""
 	if m.statusBar != nil {
@@ -802,7 +838,7 @@ func (m *Model) renderNewLayout() string {
 		status = m.statusBar.View()
 	}
 
-	return content + "\n" + textEntry + "\n" + status
+	return content + "\n" + textEntry + "\n" + summary + "\n" + status
 }
 
 // helpView renders the help overlay
@@ -836,7 +872,7 @@ General:
   ?          Toggle help
 
 Sections:
-  - Logs: Activity log with timestamps
+  - Logs: Activity log with stdtimestamps
   - Tasks: General todo list with collapsible notes
   - Schedule: Upcoming items for the day
   - Intentions: 1-3 focus tasks for today
@@ -876,10 +912,10 @@ func (m *Model) terminalTooSmallView() string {
 
 // Helper functions for navigation
 func (m *Model) prevDay() tea.Cmd {
-	date, err := time.Parse("2006-01-02", m.currentDate)
+	date, err := stdtime.Parse("2006-01-02", m.currentDate)
 	if err != nil {
 		// If current date is corrupted, fall back to today
-		m.currentDate = time.Now().Format("2006-01-02")
+		m.currentDate = stdtime.Now().Format("2006-01-02")
 		return m.loadJournal()
 	}
 	newDate := date.AddDate(0, 0, -1).Format("2006-01-02")
@@ -888,13 +924,13 @@ func (m *Model) prevDay() tea.Cmd {
 }
 
 func (m *Model) nextDay() tea.Cmd {
-	date, err := time.Parse("2006-01-02", m.currentDate)
+	date, err := stdtime.Parse("2006-01-02", m.currentDate)
 	if err != nil {
 		// If current date is corrupted, fall back to today
-		m.currentDate = time.Now().Format("2006-01-02")
+		m.currentDate = stdtime.Now().Format("2006-01-02")
 		return m.loadJournal()
 	}
-	today := time.Now().Format("2006-01-02")
+	today := stdtime.Now().Format("2006-01-02")
 	newDate := date.AddDate(0, 0, 1).Format("2006-01-02")
 
 	// Don't go beyond today
@@ -907,7 +943,7 @@ func (m *Model) nextDay() tea.Cmd {
 }
 
 func (m *Model) jumpToToday() tea.Cmd {
-	m.currentDate = time.Now().Format("2006-01-02")
+	m.currentDate = stdtime.Now().Format("2006-01-02")
 	return m.loadJournal()
 }
 
