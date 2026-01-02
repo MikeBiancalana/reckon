@@ -800,7 +800,7 @@ func (m *Model) renderNewLayout() string {
 	// Add summary view
 	summary := ""
 	if m.summaryView != nil {
-		m.summaryView.SetSize(m.width, 0)
+		m.summaryView.SetWidth(m.width)
 		summary = m.summaryView.View()
 	}
 

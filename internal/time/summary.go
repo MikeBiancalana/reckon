@@ -1,6 +1,7 @@
 package time
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
@@ -15,13 +16,14 @@ const (
 	CategoryLog     Category = "untracked"
 )
 
+const maxTaskDurationMinutes = 10 * 60 // 10 hours max
+
 type TimeSummary struct {
 	Meetings     int // minutes
 	Breaks       int // minutes
 	Tasks        int // minutes
 	Untracked    int // minutes
 	TotalTracked int // minutes
-	TotalLogged  int // minutes
 }
 
 func (s *TimeSummary) Add(other TimeSummary) {
@@ -30,7 +32,6 @@ func (s *TimeSummary) Add(other TimeSummary) {
 	s.Tasks += other.Tasks
 	s.Untracked += other.Untracked
 	s.TotalTracked += other.TotalTracked
-	s.TotalLogged += other.TotalLogged
 }
 
 func (s *TimeSummary) MeetingsFormatted() string {
@@ -51,10 +52,6 @@ func (s *TimeSummary) UntrackedFormatted() string {
 
 func (s *TimeSummary) TotalTrackedFormatted() string {
 	return formatDuration(s.TotalTracked)
-}
-
-func (s *TimeSummary) TotalLoggedFormatted() string {
-	return formatDuration(s.TotalLogged)
 }
 
 func formatDuration(minutes int) string {
@@ -92,38 +89,7 @@ func formatSingularOrPlural(count int, unit string) string {
 	if count == 1 {
 		return "1 " + unit
 	}
-	return formatNumber(count) + " " + unit + "s"
-}
-
-func formatNumber(n int) string {
-	if n < 60 {
-		return itoa(n)
-	}
-	hours := n / 60
-	mins := n % 60
-	if mins == 0 {
-		return itoa(hours)
-	}
-	return itoa(hours) + ":" + itoa2(mins)
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	result := ""
-	for n > 0 {
-		result = string(rune('0'+n%10)) + result
-		n /= 10
-	}
-	return result
-}
-
-func itoa2(n int) string {
-	if n < 10 {
-		return "0" + itoa(n)
-	}
-	return itoa(n)
+	return strconv.Itoa(count) + " " + unit + "s"
 }
 
 func CalculateDaySummary(journal *journal.Journal) TimeSummary {
@@ -154,14 +120,12 @@ func CalculateDaySummary(journal *journal.Journal) TimeSummary {
 			prevEntry := journal.LogEntries[i-1]
 			if prevEntry.TaskID != "" && entry.TaskID == "" {
 				elapsed := int(entry.Timestamp.Sub(prevEntry.Timestamp).Minutes())
-				if elapsed > 0 && elapsed < 600 {
+				if elapsed > 0 && elapsed < maxTaskDurationMinutes {
 					summary.Tasks += elapsed
 					summary.TotalTracked += elapsed
 				}
 			}
 		}
-
-		summary.TotalLogged += int(entry.Timestamp.Hour())*60 + int(entry.Timestamp.Minute())
 	}
 
 	return summary
@@ -185,7 +149,7 @@ func GetTaskDuration(journal *journal.Journal, taskID string) int {
 				nextEntry := journal.LogEntries[i+1]
 				if nextEntry.TaskID == "" && nextEntry.Timestamp.After(entry.Timestamp) {
 					elapsed := int(nextEntry.Timestamp.Sub(entry.Timestamp).Minutes())
-					if elapsed > 0 && elapsed < 600 {
+					if elapsed > 0 && elapsed < maxTaskDurationMinutes {
 						total += elapsed
 					}
 				}

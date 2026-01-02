@@ -14,7 +14,6 @@ var (
 type SummaryView struct {
 	summary *time.TimeSummary
 	width   int
-	height  int
 	visible bool
 }
 
@@ -22,7 +21,6 @@ func NewSummaryView() *SummaryView {
 	return &SummaryView{
 		summary: nil,
 		width:   0,
-		height:  0,
 		visible: false,
 	}
 }
@@ -45,9 +43,8 @@ func (sv *SummaryView) SetSummary(summary *time.TimeSummary) {
 	sv.summary = summary
 }
 
-func (sv *SummaryView) SetSize(width, height int) {
+func (sv *SummaryView) SetWidth(width int) {
 	sv.width = width
-	sv.height = height
 }
 
 func (sv *SummaryView) Toggle() {
