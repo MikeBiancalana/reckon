@@ -736,9 +736,9 @@ func (m *Model) View() string {
 	return content + "\n" + status
 }
 
-// centerView centers a view within given dimensions
+// centerView places a view within given dimensions (left-aligned, top-aligned)
 func centerView(width, height int, view string) string {
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, view)
+	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, view)
 }
 
 // renderNewLayout renders the 40-40-18 layout: Logs | Tasks | Schedule/Intentions/Wins

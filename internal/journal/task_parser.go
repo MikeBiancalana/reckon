@@ -19,13 +19,11 @@ var (
 	// Note pattern - matches lines with 2-space indentation
 	taskNoteRe = regexp.MustCompile(`^\s{2}-\s+(.+)$`)
 
-	// ID extraction pattern - matches IDs at the start of text
+	// ID token pattern - matches individual ID tokens
 	// Supports two formats:
 	// 1. Hyphenated IDs: prefix-suffix where prefix has 2+ chars (e.g., task-123, note-001)
 	// 2. XID format: 15+ alphanumeric characters (e.g., d58mbq96rjumohmic4dg which is 20 chars)
-	// This avoids matching regular words while supporting both ID formats
-	// Note: This does NOT support TaskArchived status - archived tasks are not supported in markdown format
-	idRe = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_]+-[a-zA-Z0-9_-]+|[a-zA-Z0-9]{15,})\s+(.+)$`)
+	idTokenRe = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_]+-[a-zA-Z0-9_-]+|[a-zA-Z0-9]{15,})$`)
 )
 
 // ParseTasksFile parses the tasks.md file content and returns a slice of tasks
@@ -130,12 +128,28 @@ func finalizePreviousTask(currentTask *Task, tasks *[]Task, taskPos *int) *Task 
 }
 
 // extractID extracts an ID from the beginning of text if present
-// Returns the ID and the remaining text, or empty ID and original text if no ID found
+// Handles multiple IDs before the actual text content
+// Returns the first ID and the remaining text, or empty ID and original text if no ID found
 func extractID(text string) (id string, remaining string) {
-	if match := idRe.FindStringSubmatch(text); match != nil {
-		return match[1], strings.TrimSpace(match[2])
+	parts := strings.Fields(text)
+	if len(parts) == 0 {
+		return "", text
 	}
-	return "", text
+
+	i := 0
+	for i < len(parts) {
+		if idTokenRe.MatchString(parts[i]) {
+			if id == "" {
+				id = parts[i]
+			}
+			i++
+		} else {
+			break
+		}
+	}
+
+	remaining = strings.Join(parts[i:], " ")
+	return id, remaining
 }
 
 // WriteTasksFile serializes tasks to markdown format
