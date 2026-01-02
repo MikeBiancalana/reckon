@@ -723,9 +723,13 @@ func (m *Model) View() string {
 func (m *Model) renderNewLayout() string {
 	dims := CalculatePaneDimensions(m.width, m.height)
 
-	// Size components
+	// Border overhead: 2 chars width (left + right), 2 chars height (top + bottom)
+	borderWidth := 2
+	borderHeight := 2
+
+	// Size components accounting for borders
 	if m.taskList != nil {
-		m.taskList.SetSize(dims.TasksWidth, dims.TasksHeight)
+		m.taskList.SetSize(dims.TasksWidth-borderWidth, dims.TasksHeight-borderHeight)
 	}
 	if m.scheduleView != nil {
 		m.scheduleView.SetSize(dims.RightWidth, dims.ScheduleHeight)
@@ -737,7 +741,7 @@ func (m *Model) renderNewLayout() string {
 		m.winsView.SetSize(dims.RightWidth, dims.WinsHeight)
 	}
 	if m.logView != nil {
-		m.logView.SetSize(dims.LogsWidth, dims.LogsHeight)
+		m.logView.SetSize(dims.LogsWidth-borderWidth, dims.LogsHeight-borderHeight)
 	}
 
 	// Get pane views
@@ -750,6 +754,16 @@ func (m *Model) renderNewLayout() string {
 	if m.taskList != nil {
 		tasksView = m.taskList.View()
 	}
+
+	// Wrap Logs pane in bordered box
+	logsBoxStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder())
+	logsBox := logsBoxStyle.Render(logsView)
+
+	// Wrap Tasks pane in bordered box
+	tasksBoxStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder())
+	tasksBox := tasksBoxStyle.Render(tasksView)
 
 	// Stack right sidebar vertically
 	rightSidebar := ""
@@ -767,11 +781,10 @@ func (m *Model) renderNewLayout() string {
 	}
 
 	// Join main panes horizontally
-	borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		borderStyle.Render(logsView),
-		borderStyle.Render(tasksView),
+		logsBox,
+		tasksBox,
 		rightSidebar,
 	)
 
