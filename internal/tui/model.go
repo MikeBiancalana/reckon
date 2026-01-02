@@ -158,6 +158,8 @@ func (m *Model) Init() tea.Cmd {
 	// Load tasks if taskService is available
 	if m.taskService != nil {
 		cmds = append(cmds, m.loadTasks())
+	} else {
+		// Debug: taskService is nil
 	}
 
 	// Start watcher

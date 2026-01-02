@@ -407,7 +407,7 @@ date: 2023-12-02
 	}
 
 	// Add a schedule item (this should work even on old journals)
-	err = journalSvc.AddScheduleItem(j, "10:00 Team meeting")
+	err = journalSvc.AddScheduleItem(j, "10:00", "Team meeting")
 	if err != nil {
 		t.Fatalf("Failed to add schedule item to old journal: %v", err)
 	}
@@ -444,6 +444,111 @@ date: 2023-12-02
 
 	if !strings.Contains(content, "- 10:00 Team meeting") {
 		t.Errorf("Expected journal file to contain the schedule item")
+	}
+}
+
+func TestJournalTaskServiceIntegration(t *testing.T) {
+	// Create temporary directory for test
+	tmpDir, err := os.MkdirTemp("", "reckon-integration-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Set up test environment
+	oldDataDir := os.Getenv("RECKON_DATA_DIR")
+	defer func() {
+		os.Setenv("RECKON_DATA_DIR", oldDataDir)
+	}()
+
+	testDataDir := filepath.Join(tmpDir, "data")
+	os.Setenv("RECKON_DATA_DIR", testDataDir)
+
+	// Initialize services
+	dbPath, err := config.DatabasePath()
+	if err != nil {
+		t.Fatalf("Failed to get database path: %v", err)
+	}
+
+	db, err := storage.NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	taskRepo := journal.NewTaskRepository(db)
+	fileStore := storage.NewFileStore()
+	journalTaskSvc := journal.NewTaskService(taskRepo, fileStore)
+
+	// Create a test tasks.md file
+	tasksContent := `# Tasks
+
+- [ ] test-task-1 Test task 1
+- [x] test-task-2 Test task 2 completed
+- [ ] test-task-3 Test task 3 with notes
+  - note-1 First note
+  - note-2 Second note
+`
+
+	err = fileStore.WriteTasksFile(tasksContent)
+	if err != nil {
+		t.Fatalf("Failed to write tasks file: %v", err)
+	}
+
+	// Test that GetAllTasks works
+	tasks, err := journalTaskSvc.GetAllTasks()
+	if err != nil {
+		t.Fatalf("Failed to get all tasks: %v", err)
+	}
+
+	if len(tasks) != 3 {
+		t.Errorf("Expected 3 tasks, got %d", len(tasks))
+	}
+
+	// Verify first task
+	if tasks[0].ID != "test-task-1" {
+		t.Errorf("Expected task ID 'test-task-1', got '%s'", tasks[0].ID)
+	}
+	if tasks[0].Text != "Test task 1" {
+		t.Errorf("Expected task text 'Test task 1', got '%s'", tasks[0].Text)
+	}
+	if tasks[0].Status != journal.TaskOpen {
+		t.Errorf("Expected task status Open, got %v", tasks[0].Status)
+	}
+
+	// Verify second task (completed)
+	if tasks[1].Status != journal.TaskDone {
+		t.Errorf("Expected second task to be Done, got %v", tasks[1].Status)
+	}
+
+	// Verify third task has notes
+	if len(tasks[2].Notes) != 2 {
+		t.Errorf("Expected 2 notes on third task, got %d", len(tasks[2].Notes))
+	}
+
+	// Test adding a new task
+	err = journalTaskSvc.AddTask("New integration test task")
+	if err != nil {
+		t.Fatalf("Failed to add task: %v", err)
+	}
+
+	// Verify task was added
+	tasks, err = journalTaskSvc.GetAllTasks()
+	if err != nil {
+		t.Fatalf("Failed to get tasks after adding: %v", err)
+	}
+
+	if len(tasks) != 4 {
+		t.Errorf("Expected 4 tasks after adding one, got %d", len(tasks))
+	}
+
+	// Verify the new task
+	newTask := tasks[3]
+	if newTask.Text != "New integration test task" {
+		t.Errorf("Expected new task text 'New integration test task', got '%s'", newTask.Text)
+	}
+	if newTask.Status != journal.TaskOpen {
+		t.Errorf("Expected new task to be Open, got %v", newTask.Status)
 	}
 }
 
