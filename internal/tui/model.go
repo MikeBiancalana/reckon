@@ -766,18 +766,18 @@ func (m *Model) renderNewLayout() string {
 		tasksView = m.taskList.View()
 	}
 
-	// Wrap panes in bordered boxes
+	// Wrap panes in bordered boxes and fill allocated space
 	logsBoxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		Width(dims.LogsWidth - 2). // Account for border
+		Width(dims.LogsWidth - 2).
 		Height(dims.LogsHeight - 2)
-	logsBox := logsBoxStyle.Render(logsView)
+	logsBox := lipgloss.Place(dims.LogsWidth-2, dims.LogsHeight-2, lipgloss.Center, lipgloss.Center, logsBoxStyle.Render(logsView))
 
 	tasksBoxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		Width(dims.TasksWidth - 2).
 		Height(dims.TasksHeight - 2)
-	tasksBox := tasksBoxStyle.Render(tasksView)
+	tasksBox := lipgloss.Place(dims.TasksWidth-2, dims.TasksHeight-2, lipgloss.Center, lipgloss.Center, tasksBoxStyle.Render(tasksView))
 
 	// Stack right sidebar vertically
 	rightSidebar := ""
@@ -790,19 +790,19 @@ func (m *Model) renderNewLayout() string {
 			Border(lipgloss.NormalBorder()).
 			Width(dims.RightWidth - 2).
 			Height(dims.ScheduleHeight - 2)
-		scheduleBox := scheduleBoxStyle.Render(scheduleView)
+		scheduleBox := lipgloss.Place(dims.RightWidth-2, dims.ScheduleHeight-2, lipgloss.Center, lipgloss.Center, scheduleBoxStyle.Render(scheduleView))
 
 		intentionsBoxStyle := lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			Width(dims.RightWidth - 2).
 			Height(dims.IntentionsHeight - 2)
-		intentionsBox := intentionsBoxStyle.Render(intentionsView)
+		intentionsBox := lipgloss.Place(dims.RightWidth-2, dims.IntentionsHeight-2, lipgloss.Center, lipgloss.Center, intentionsBoxStyle.Render(intentionsView))
 
 		winsBoxStyle := lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			Width(dims.RightWidth - 2).
 			Height(dims.WinsHeight - 2)
-		winsBox := winsBoxStyle.Render(winsView)
+		winsBox := lipgloss.Place(dims.RightWidth-2, dims.WinsHeight-2, lipgloss.Center, lipgloss.Center, winsBoxStyle.Render(winsView))
 
 		rightSidebar = lipgloss.JoinVertical(
 			lipgloss.Top,
