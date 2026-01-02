@@ -738,21 +738,25 @@ func (m *Model) View() string {
 func (m *Model) renderNewLayout() string {
 	dims := CalculatePaneDimensions(m.width, m.height)
 
-	// Size components
+	// Border overhead: 2 chars width (left + right), 2 chars height (top + bottom)
+	borderWidth := 2
+	borderHeight := 2
+
+	// Size components accounting for borders
 	if m.taskList != nil {
-		m.taskList.SetSize(dims.TasksWidth, dims.TasksHeight)
+		m.taskList.SetSize(dims.TasksWidth-borderWidth, dims.TasksHeight-borderHeight)
 	}
 	if m.scheduleView != nil {
-		m.scheduleView.SetSize(dims.RightWidth, dims.ScheduleHeight)
+		m.scheduleView.SetSize(dims.RightWidth-borderWidth, dims.ScheduleHeight-borderHeight)
 	}
 	if m.intentionList != nil {
-		m.intentionList.SetSize(dims.RightWidth, dims.IntentionsHeight)
+		m.intentionList.SetSize(dims.RightWidth-borderWidth, dims.IntentionsHeight-borderHeight)
 	}
 	if m.winsView != nil {
-		m.winsView.SetSize(dims.RightWidth, dims.WinsHeight)
+		m.winsView.SetSize(dims.RightWidth-borderWidth, dims.WinsHeight-borderHeight)
 	}
 	if m.logView != nil {
-		m.logView.SetSize(dims.LogsWidth, dims.LogsHeight)
+		m.logView.SetSize(dims.LogsWidth-borderWidth, dims.LogsHeight-borderHeight)
 	}
 
 	// Get pane views
@@ -766,43 +770,36 @@ func (m *Model) renderNewLayout() string {
 		tasksView = m.taskList.View()
 	}
 
-	// Wrap panes in bordered boxes and fill allocated space
+	// Wrap Logs pane in bordered box
 	logsBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		Width(dims.LogsWidth - 2).
-		Height(dims.LogsHeight - 2)
-	logsBox := lipgloss.Place(dims.LogsWidth-2, dims.LogsHeight-2, lipgloss.Center, lipgloss.Center, logsBoxStyle.Render(logsView))
+		Border(lipgloss.NormalBorder())
+	logsBox := logsBoxStyle.Render(logsView)
 
+	// Wrap Tasks pane in bordered box
 	tasksBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		Width(dims.TasksWidth - 2).
-		Height(dims.TasksHeight - 2)
-	tasksBox := lipgloss.Place(dims.TasksWidth-2, dims.TasksHeight-2, lipgloss.Center, lipgloss.Center, tasksBoxStyle.Render(tasksView))
-
-	// Stack right sidebar vertically
+		Border(lipgloss.NormalBorder())
+	tasksBox := tasksBoxStyle.Render(tasksView)
+	// Stack right sidebar vertically with bordered boxes
 	rightSidebar := ""
 	if m.scheduleView != nil && m.intentionList != nil && m.winsView != nil {
 		scheduleView := m.scheduleView.View()
 		intentionsView := m.intentionList.View()
 		winsView := m.winsView.View()
 
+		// Wrap Schedule in bordered box
 		scheduleBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			Width(dims.RightWidth - 2).
-			Height(dims.ScheduleHeight - 2)
-		scheduleBox := lipgloss.Place(dims.RightWidth-2, dims.ScheduleHeight-2, lipgloss.Center, lipgloss.Center, scheduleBoxStyle.Render(scheduleView))
+			Border(lipgloss.NormalBorder())
+		scheduleBox := scheduleBoxStyle.Render(scheduleView)
 
+		// Wrap Intentions in bordered box
 		intentionsBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			Width(dims.RightWidth - 2).
-			Height(dims.IntentionsHeight - 2)
-		intentionsBox := lipgloss.Place(dims.RightWidth-2, dims.IntentionsHeight-2, lipgloss.Center, lipgloss.Center, intentionsBoxStyle.Render(intentionsView))
+			Border(lipgloss.NormalBorder())
+		intentionsBox := intentionsBoxStyle.Render(intentionsView)
 
+		// Wrap Wins in bordered box
 		winsBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			Width(dims.RightWidth - 2).
-			Height(dims.WinsHeight - 2)
-		winsBox := lipgloss.Place(dims.RightWidth-2, dims.WinsHeight-2, lipgloss.Center, lipgloss.Center, winsBoxStyle.Render(winsView))
+			Border(lipgloss.NormalBorder())
+		winsBox := winsBoxStyle.Render(winsView)
 
 		rightSidebar = lipgloss.JoinVertical(
 			lipgloss.Top,
@@ -813,11 +810,10 @@ func (m *Model) renderNewLayout() string {
 	}
 
 	// Join main panes horizontally
-	borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		borderStyle.Render(logsBox),
-		borderStyle.Render(tasksBox),
+		logsBox,
+		tasksBox,
 		rightSidebar,
 	)
 
