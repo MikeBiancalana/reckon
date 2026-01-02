@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	service     *journal.Service
-	taskService *task.Service
+	service            *journal.Service
+	taskService        *task.Service
+	journalTaskService *journal.TaskService
 )
 
 // RootCmd is the root command for the CLI
@@ -28,6 +29,9 @@ var RootCmd = &cobra.Command{
 		model := tui.NewModel(service)
 		if taskService != nil {
 			model.SetTaskService(taskService)
+		}
+		if journalTaskService != nil {
+			model.SetJournalTaskService(journalTaskService)
 		}
 		p := tea.NewProgram(model, tea.WithAltScreen())
 		_, err := p.Run()
@@ -64,6 +68,10 @@ func initService() {
 	repo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
 	service = journal.NewService(repo, fileStore)
+
+	// Initialize journal task service
+	journalTaskRepo := journal.NewTaskRepository(db)
+	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
 
 	// Initialize task service
 	taskRepo := task.NewRepository(db)
