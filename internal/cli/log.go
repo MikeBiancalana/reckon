@@ -2,18 +2,34 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
 
 var logCmd = &cobra.Command{
-	Use:   "log [message]",
+	Use:   "log [message | -]",
 	Short: "Append a log entry to today's journal",
-	Long:  `Appends a timestamped log entry to today's journal.`,
+	Long:  `Appends a timestamped log entry to today's journal. Use - to read from stdin.`,
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		message := strings.Join(args, " ")
+		var message string
+
+		if len(args) == 1 && args[0] == "-" {
+			// Read from stdin
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("failed to read from stdin: %w", err)
+			}
+			message = strings.TrimSpace(string(data))
+			if message == "" {
+				return fmt.Errorf("no message provided via stdin")
+			}
+		} else {
+			message = strings.Join(args, " ")
+		}
 
 		j, err := service.GetToday()
 		if err != nil {

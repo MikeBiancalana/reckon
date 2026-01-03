@@ -2,11 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
-	"github.com/MikeBiancalana/reckon/internal/config"
-	"github.com/MikeBiancalana/reckon/internal/journal"
-	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/MikeBiancalana/reckon/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -31,14 +30,13 @@ var taskNewCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		title := strings.Join(args, " ")
 
-		// Initialize services
-		svc, err := initTaskService()
-		if err != nil {
-			return err
+		// Use global taskService
+		if taskService == nil {
+			return fmt.Errorf("task service not initialized")
 		}
 
 		// Create task
-		t, err := svc.Create(title, taskTagsFlag)
+		t, err := taskService.Create(title, taskTagsFlag)
 		if err != nil {
 			return fmt.Errorf("failed to create task: %w", err)
 		}
@@ -58,10 +56,9 @@ var taskListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List tasks",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize services
-		svc, err := initTaskService()
-		if err != nil {
-			return err
+		// Use global taskService
+		if taskService == nil {
+			return fmt.Errorf("task service not initialized")
 		}
 
 		// Parse status filter
@@ -72,7 +69,7 @@ var taskListCmd = &cobra.Command{
 		}
 
 		// List tasks
-		tasks, err := svc.List(statusFilter, taskTagsFlag)
+		tasks, err := taskService.List(statusFilter, taskTagsFlag)
 		if err != nil {
 			return fmt.Errorf("failed to list tasks: %w", err)
 		}
@@ -105,14 +102,13 @@ var taskShowCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		taskID := args[0]
 
-		// Initialize services
-		svc, err := initTaskService()
-		if err != nil {
-			return err
+		// Use global taskService
+		if taskService == nil {
+			return fmt.Errorf("task service not initialized")
 		}
 
 		// Get task
-		t, err := svc.GetByID(taskID)
+		t, err := taskService.GetByID(taskID)
 		if err != nil {
 			return fmt.Errorf("failed to get task: %w", err)
 		}
@@ -127,21 +123,35 @@ var taskShowCmd = &cobra.Command{
 
 // taskLogCmd appends a log entry to a task
 var taskLogCmd = &cobra.Command{
-	Use:   "log [task-id] [message]",
+	Use:   "log [task-id] [message | -]",
 	Short: "Append a log entry to a task",
+	Long:  `Append a log entry to a task. Use - to read message from stdin.`,
 	Args:  cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		taskID := args[0]
-		message := strings.Join(args[1:], " ")
+		var message string
 
-		// Initialize services
-		svc, err := initTaskService()
-		if err != nil {
-			return err
+		if len(args) == 2 && args[1] == "-" {
+			// Read from stdin
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("failed to read from stdin: %w", err)
+			}
+			message = strings.TrimSpace(string(data))
+			if message == "" {
+				return fmt.Errorf("no message provided via stdin")
+			}
+		} else {
+			message = strings.Join(args[1:], " ")
+		}
+
+		// Use global taskService
+		if taskService == nil {
+			return fmt.Errorf("task service not initialized")
 		}
 
 		// Append log
-		if err := svc.AppendLog(taskID, message); err != nil {
+		if err := taskService.AppendLog(taskID, message); err != nil {
 			return fmt.Errorf("failed to append log: %w", err)
 		}
 
@@ -160,14 +170,13 @@ var taskDoneCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		taskID := args[0]
 
-		// Initialize services
-		svc, err := initTaskService()
-		if err != nil {
-			return err
+		// Use global taskService
+		if taskService == nil {
+			return fmt.Errorf("task service not initialized")
 		}
 
 		// Update status
-		if err := svc.UpdateStatus(taskID, task.StatusDone); err != nil {
+		if err := taskService.UpdateStatus(taskID, task.StatusDone); err != nil {
 			return fmt.Errorf("failed to mark task as done: %w", err)
 		}
 
@@ -189,34 +198,6 @@ func init() {
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
 	taskListCmd.Flags().StringVar(&taskStatusFlag, "status", "", "Filter by status (active, done, waiting, someday)")
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
-}
-
-// initTaskService initializes the task service with all dependencies
-func initTaskService() (*task.Service, error) {
-	// Get database path
-	dbPath, err := config.DatabasePath()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database path: %w", err)
-	}
-
-	// Open database
-	db, err := storage.NewDatabase(dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	// Create repositories
-	taskRepo := task.NewRepository(db)
-	journalRepo := journal.NewRepository(db)
-
-	// Create file store
-	fileStore := storage.NewFileStore()
-
-	// Create services
-	journalSvc := journal.NewService(journalRepo, fileStore)
-	taskSvc := task.NewService(taskRepo, journalSvc)
-
-	return taskSvc, nil
 }
 
 // GetTaskCommand returns the task command
