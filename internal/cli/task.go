@@ -125,13 +125,24 @@ var taskShowCmd = &cobra.Command{
 var taskLogCmd = &cobra.Command{
 	Use:   "log [task-id] [message | -]",
 	Short: "Append a log entry to a task",
-	Long:  `Append a log entry to a task. Use - to read message from stdin.`,
-	Args:  cobra.MinimumNArgs(2),
+	Long:  `Append a log entry to a task. Use - to read message from stdin, or provide message as arguments. Runs interactively if only task-id given.`,
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		taskID := args[0]
 		var message string
 
-		if len(args) == 2 && args[1] == "-" {
+		if len(args) == 1 {
+			// Interactive mode: read message from stdin
+			fmt.Fprintf(os.Stderr, "Enter task log message (Ctrl+D to finish):\n")
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("failed to read from stdin: %w", err)
+			}
+			message = strings.TrimSpace(string(data))
+			if message == "" {
+				return fmt.Errorf("no message provided")
+			}
+		} else if len(args) == 2 && args[1] == "-" {
 			// Read from stdin
 			data, err := io.ReadAll(os.Stdin)
 			if err != nil {
