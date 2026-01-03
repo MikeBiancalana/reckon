@@ -82,6 +82,11 @@ func (s *Service) UpdateStatus(id string, status Status) error {
 	return s.save(task)
 }
 
+// FindStaleTasks finds tasks that haven't been updated in the specified number of days
+func (s *Service) FindStaleTasks(days int) ([]Task, error) {
+	return s.repo.FindStaleTasks(days)
+}
+
 // AppendLog adds a log entry to a task
 // This is the dual-write method - writes to both task file and today's journal
 func (s *Service) AppendLog(taskID string, content string) error {
