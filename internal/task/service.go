@@ -82,24 +82,9 @@ func (s *Service) UpdateStatus(id string, status Status) error {
 	return s.save(task)
 }
 
-// Update updates a task's editable fields
-func (s *Service) Update(id string, title *string, description *string, tags []string) error {
-	task, err := s.GetByID(id)
-	if err != nil {
-		return err
-	}
-
-	if title != nil {
-		task.Title = *title
-	}
-	if description != nil {
-		task.Description = *description
-	}
-	if tags != nil {
-		task.Tags = tags
-	}
-
-	return s.save(task)
+// FindStaleTasks finds tasks that haven't been updated in the specified number of days
+func (s *Service) FindStaleTasks(days int) ([]Task, error) {
+	return s.repo.FindStaleTasks(days)
 }
 
 // AppendLog adds a log entry to a task
