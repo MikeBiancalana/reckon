@@ -82,6 +82,26 @@ func (s *Service) UpdateStatus(id string, status Status) error {
 	return s.save(task)
 }
 
+// Update updates a task's editable fields
+func (s *Service) Update(id string, title *string, description *string, tags []string) error {
+	task, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if title != nil {
+		task.Title = *title
+	}
+	if description != nil {
+		task.Description = *description
+	}
+	if tags != nil {
+		task.Tags = tags
+	}
+
+	return s.save(task)
+}
+
 // AppendLog adds a log entry to a task
 // This is the dual-write method - writes to both task file and today's journal
 func (s *Service) AppendLog(taskID string, content string) error {
