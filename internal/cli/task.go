@@ -12,10 +12,13 @@ import (
 )
 
 var (
-	taskStatusFlag  string
-	taskTagsFlag    []string
-	taskCompactFlag bool
-	taskJsonFlag    bool
+	taskStatusFlag          string
+	taskTagsFlag            []string
+	taskCompactFlag         bool
+	taskJsonFlag            bool
+	taskEditTitleFlag       string
+	taskEditDescriptionFlag string
+	taskEditTagsFlag        []string
 )
 
 // taskCmd represents the task command
@@ -102,6 +105,17 @@ var taskListCmd = &cobra.Command{
 		fmt.Printf("Found %d task(s):\n\n", len(tasks))
 		for i, t := range tasks {
 			fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Title)
+			fmt.Printf("  ID: %s\n", t.ID)
+			fmt.Printf("  Created: %s\n", t.Created)
+			if len(t.Tags) > 0 {
+				fmt.Printf("  Tags: %s\n", strings.Join(t.Tags, ", "))
+			}
+			fmt.Println()
+		}
+
+		fmt.Printf("Found %d task(s):\n\n", len(tasks))
+		for _, t := range tasks {
+			fmt.Printf("[%s] %s\n", t.Status, t.Title)
 			fmt.Printf("  ID: %s\n", t.ID)
 			fmt.Printf("  Created: %s\n", t.Created)
 			if len(t.Tags) > 0 {
@@ -204,6 +218,54 @@ var taskDoneCmd = &cobra.Command{
 	},
 }
 
+// taskEditCmd edits a task's details
+var taskEditCmd = &cobra.Command{
+	Use:   "edit [task-id]",
+	Short: "Edit task details",
+	Long:  `Edit task title, description, and tags. Use flags to specify what to edit.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Use global taskService
+		if taskService == nil {
+			return fmt.Errorf("task service not initialized")
+		}
+
+		// Resolve task ID (supports numeric indices)
+		taskID, err := resolveTaskID(args[0], taskService)
+		if err != nil {
+			return err
+		}
+
+		// Check if any edit flags were provided
+		if taskEditTitleFlag == "" && taskEditDescriptionFlag == "" && len(taskEditTagsFlag) == 0 {
+			return fmt.Errorf("no changes specified. Use --title, --description, or --tags flags")
+		}
+
+		// Prepare update parameters
+		var title *string
+		var description *string
+		var tags []string
+
+		if taskEditTitleFlag != "" {
+			title = &taskEditTitleFlag
+		}
+		if taskEditDescriptionFlag != "" {
+			description = &taskEditDescriptionFlag
+		}
+		if len(taskEditTagsFlag) > 0 {
+			tags = taskEditTagsFlag
+		}
+
+		// Update task
+		if err := taskService.Update(taskID, title, description, tags); err != nil {
+			return fmt.Errorf("failed to update task: %w", err)
+		}
+
+		fmt.Printf("✓ Updated task %s\n", taskID)
+		return nil
+	},
+}
+
 func init() {
 	// Add subcommands
 	taskCmd.AddCommand(taskNewCmd)
@@ -211,6 +273,7 @@ func init() {
 	taskCmd.AddCommand(taskShowCmd)
 	taskCmd.AddCommand(taskLogCmd)
 	taskCmd.AddCommand(taskDoneCmd)
+	taskCmd.AddCommand(taskEditCmd)
 
 	// Flags
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
@@ -218,6 +281,9 @@ func init() {
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
 	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact output")
 	taskListCmd.Flags().BoolVar(&taskJsonFlag, "json", false, "Output as JSON")
+	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
+	taskEditCmd.Flags().StringVar(&taskEditDescriptionFlag, "description", "", "New task description")
+	taskEditCmd.Flags().StringSliceVar(&taskEditTagsFlag, "tags", []string{}, "New task tags (comma-separated)")
 }
 
 // resolveTaskID resolves a task identifier (numeric index or string ID) to a task ID
