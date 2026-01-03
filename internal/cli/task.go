@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/task"
@@ -80,8 +81,8 @@ var taskListCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Found %d task(s):\n\n", len(tasks))
-		for _, t := range tasks {
-			fmt.Printf("[%s] %s\n", t.Status, t.Title)
+		for i, t := range tasks {
+			fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Title)
 			fmt.Printf("  ID: %s\n", t.ID)
 			fmt.Printf("  Created: %s\n", t.Created)
 			if len(t.Tags) > 0 {
@@ -100,11 +101,15 @@ var taskShowCmd = &cobra.Command{
 	Short: "Show task details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		taskID := args[0]
-
 		// Use global taskService
 		if taskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Resolve task ID (supports numeric indices)
+		taskID, err := resolveTaskID(args[0], taskService)
+		if err != nil {
+			return err
 		}
 
 		// Get task
@@ -128,7 +133,17 @@ var taskLogCmd = &cobra.Command{
 	Long:  `Append a log entry to a task. Use - to read message from stdin, or provide message as arguments. Runs interactively if only task-id given.`,
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		taskID := args[0]
+		// Use global taskService
+		if taskService == nil {
+			return fmt.Errorf("task service not initialized")
+		}
+
+		// Resolve task ID (supports numeric indices)
+		taskID, err := resolveTaskID(args[0], taskService)
+		if err != nil {
+			return err
+		}
+
 		var message string
 
 		if len(args) == 1 {
@@ -156,11 +171,6 @@ var taskLogCmd = &cobra.Command{
 			message = strings.Join(args[1:], " ")
 		}
 
-		// Use global taskService
-		if taskService == nil {
-			return fmt.Errorf("task service not initialized")
-		}
-
 		// Append log
 		if err := taskService.AppendLog(taskID, message); err != nil {
 			return fmt.Errorf("failed to append log: %w", err)
@@ -179,11 +189,15 @@ var taskDoneCmd = &cobra.Command{
 	Short: "Mark a task as done",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		taskID := args[0]
-
 		// Use global taskService
 		if taskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Resolve task ID (supports numeric indices)
+		taskID, err := resolveTaskID(args[0], taskService)
+		if err != nil {
+			return err
 		}
 
 		// Update status
@@ -209,6 +223,24 @@ func init() {
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
 	taskListCmd.Flags().StringVar(&taskStatusFlag, "status", "", "Filter by status (active, done, waiting, someday)")
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
+}
+
+// resolveTaskID resolves a task identifier (numeric index or string ID) to a task ID
+func resolveTaskID(identifier string, svc *task.Service) (string, error) {
+	// Try to parse as number (1-based index)
+	if index, err := strconv.Atoi(identifier); err == nil && index > 0 {
+		// Get all tasks (unfiltered) to find by index
+		tasks, err := svc.List(nil, nil)
+		if err != nil {
+			return "", fmt.Errorf("failed to list tasks: %w", err)
+		}
+		if index > len(tasks) {
+			return "", fmt.Errorf("task index %d out of range (found %d tasks)", index, len(tasks))
+		}
+		return tasks[index-1].ID, nil
+	}
+	// Otherwise, treat as direct task ID
+	return identifier, nil
 }
 
 // GetTaskCommand returns the task command
