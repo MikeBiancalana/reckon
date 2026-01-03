@@ -58,16 +58,20 @@ func (sb *StatusBar) generateHints() string {
 		return "enter:submit esc:cancel"
 	}
 
-	// Section-specific hints
+	// Section-specific hints - aligned with help documentation
 	switch sb.focusedSection {
 	case "Intentions":
-		return "Intentions | q:quit tab:switch enter:toggle j/k:nav i:add h/l:day t:today ?:help"
+		return "Intentions | q:quit tab/shift+tab:section j/k:nav h/l:day T:today i:add enter:toggle d:delete ?:help"
 	case "Wins":
-		return "Wins | q:quit tab:switch w:add j/k:nav h/l:day t:today ?:help"
+		return "Wins | q:quit tab/shift+tab:section j/k:nav h/l:day T:today w:add d:delete ?:help"
 	case "Logs":
-		return "Logs | q:quit tab:switch L:add j/k:nav h/l:day t:today ?:help"
+		return "Logs | q:quit tab/shift+tab:section j/k:nav h/l:day T:today L:add d:delete ?:help"
+	case "Tasks":
+		return "Tasks | q:quit tab/shift+tab:section j/k:nav h/l:day T:today t:add space:toggle enter:expand d:delete ?:help"
+	case "Schedule":
+		return "Schedule | q:quit tab/shift+tab:section j/k:nav h/l:day T:today ?:help"
 	default:
-		return "q:quit tab:switch i:intention w:win L:log h/l:nav t:today ?:help enter:toggle"
+		return "q:quit tab/shift+tab:section j/k:nav h/l:day T:today t:task i:intention w:win L:log ?:help"
 	}
 }
 
