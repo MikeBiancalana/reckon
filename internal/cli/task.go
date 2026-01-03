@@ -1,8 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -12,8 +12,10 @@ import (
 )
 
 var (
-	taskStatusFlag string
-	taskTagsFlag   []string
+	taskStatusFlag  string
+	taskTagsFlag    []string
+	taskCompactFlag bool
+	taskJsonFlag    bool
 )
 
 // taskCmd represents the task command
@@ -75,11 +77,28 @@ var taskListCmd = &cobra.Command{
 			return fmt.Errorf("failed to list tasks: %w", err)
 		}
 
+		if taskJsonFlag {
+			// JSON output
+			if err := json.NewEncoder(os.Stdout).Encode(tasks); err != nil {
+				return fmt.Errorf("failed to encode tasks as JSON: %w", err)
+			}
+			return nil
+		}
+
 		if len(tasks) == 0 {
 			fmt.Println("No tasks found")
 			return nil
 		}
 
+		if taskCompactFlag {
+			// Compact output: number status title
+			for i, t := range tasks {
+				fmt.Printf("%d %s %s\n", i+1, t.Status, t.Title)
+			}
+			return nil
+		}
+
+		// Default verbose output with sequential numbers
 		fmt.Printf("Found %d task(s):\n\n", len(tasks))
 		for i, t := range tasks {
 			fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Title)
@@ -128,10 +147,9 @@ var taskShowCmd = &cobra.Command{
 
 // taskLogCmd appends a log entry to a task
 var taskLogCmd = &cobra.Command{
-	Use:   "log [task-id] [message | -]",
+	Use:   "log [task-id] [message]",
 	Short: "Append a log entry to a task",
-	Long:  `Append a log entry to a task. Use - to read message from stdin, or provide message as arguments. Runs interactively if only task-id given.`,
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Use global taskService
 		if taskService == nil {
@@ -144,32 +162,7 @@ var taskLogCmd = &cobra.Command{
 			return err
 		}
 
-		var message string
-
-		if len(args) == 1 {
-			// Interactive mode: read message from stdin
-			fmt.Fprintf(os.Stderr, "Enter task log message (Ctrl+D to finish):\n")
-			data, err := io.ReadAll(os.Stdin)
-			if err != nil {
-				return fmt.Errorf("failed to read from stdin: %w", err)
-			}
-			message = strings.TrimSpace(string(data))
-			if message == "" {
-				return fmt.Errorf("no message provided")
-			}
-		} else if len(args) == 2 && args[1] == "-" {
-			// Read from stdin
-			data, err := io.ReadAll(os.Stdin)
-			if err != nil {
-				return fmt.Errorf("failed to read from stdin: %w", err)
-			}
-			message = strings.TrimSpace(string(data))
-			if message == "" {
-				return fmt.Errorf("no message provided via stdin")
-			}
-		} else {
-			message = strings.Join(args[1:], " ")
-		}
+		message := strings.Join(args[1:], " ")
 
 		// Append log
 		if err := taskService.AppendLog(taskID, message); err != nil {
@@ -223,6 +216,8 @@ func init() {
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
 	taskListCmd.Flags().StringVar(&taskStatusFlag, "status", "", "Filter by status (active, done, waiting, someday)")
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
+	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact output")
+	taskListCmd.Flags().BoolVar(&taskJsonFlag, "json", false, "Output as JSON")
 }
 
 // resolveTaskID resolves a task identifier (numeric index or string ID) to a task ID
