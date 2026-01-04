@@ -181,12 +181,12 @@ func (r *Repository) FindStaleTasks(days int) ([]Task, error) {
 		AND NOT EXISTS (
 			SELECT 1 FROM phase2_task_log_entries le
 			WHERE le.task_id = t.id
-			AND date(le.timestamp) >= date('now', '-%d days')
+			AND date(le.timestamp) >= date('now', '-' || ? || ' days')
 		)
 		ORDER BY t.created DESC
 	`
 
-	rows, err := r.db.DB().Query(fmt.Sprintf(query, days))
+	rows, err := r.db.DB().Query(query, days)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find stale tasks: %w", err)
 	}
