@@ -113,17 +113,6 @@ var taskListCmd = &cobra.Command{
 			fmt.Println()
 		}
 
-		fmt.Printf("Found %d task(s):\n\n", len(tasks))
-		for _, t := range tasks {
-			fmt.Printf("[%s] %s\n", t.Status, t.Title)
-			fmt.Printf("  ID: %s\n", t.ID)
-			fmt.Printf("  Created: %s\n", t.Created)
-			if len(t.Tags) > 0 {
-				fmt.Printf("  Tags: %s\n", strings.Join(t.Tags, ", "))
-			}
-			fmt.Println()
-		}
-
 		return nil
 	},
 }

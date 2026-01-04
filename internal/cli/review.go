@@ -144,7 +144,8 @@ var reviewInteractiveCmd = &cobra.Command{
 				continue
 			case "q":
 				fmt.Printf("Review cancelled\n")
-				break
+				fmt.Printf("\nReview complete: %d reviewed, %d done, %d deferred, %d deleted\n", reviewed, done, deferred, deleted)
+				return nil
 			default:
 				fmt.Printf("Unknown action: %s\n", action)
 				continue
