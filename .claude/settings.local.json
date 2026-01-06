@@ -10,9 +10,6 @@
       "Bash(bd list:*)",
       "Bash(bd stats:*)",
       "Bash(bd create:*)",
-      "Bash(Tasks: 4h15m)",
-      "Bash(Breaks: 45m)",
-      "Bash(Untracked: 1h30m\"\n\n4. **Optional Start/Stop Timer**\n   - rk start <task-id> - log \"Started work on [task]\"\n   - rk stop - log \"Stopped\" \\(duration auto-calculated\\)\n   - TUI: Ctrl+S to start/stop timer on current task\n\n5. **CLI Commands**:\n   - rk summary - output today''s time breakdown\n   - rk summary --week - output week''s time breakdown\n   - rk start <task-id> - start timer on task\n   - rk stop - stop current timer\n\n**Acceptance Criteria**:\n- Log entries with 30m duration are parsed and stored\n- [meeting:name] Xm entries are categorized as meetings\n- [break] Xm entries are categorized as breaks\n- rk summary outputs time breakdown for today\n- TUI shows time summary \\(toggle with ''s''\\)\n- Task time calculated from log entry timestamps\n- Start/stop timer commands work\nEOF\n\\)\")",
       "Bash(bd dep add:*)",
       "Bash(git add:*)",
       "Bash(bd sync:*)",
@@ -25,7 +22,10 @@
       "Bash(git checkout:*)",
       "Bash(go build:*)",
       "Bash(go test:*)",
-      "Bash(gh pr view:*)"
+      "Bash(gh pr view:*)",
+      "Bash(git log:*)",
+      "Bash(cat:*)",
+      "Bash(git -C /home/chadd/repos/reckon-claude status)"
     ]
   }
 }
