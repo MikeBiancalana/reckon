@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/task"
 	"github.com/spf13/cobra"
@@ -84,6 +87,9 @@ var reviewInteractiveCmd = &cobra.Command{
 		deferred := 0
 		deleted := 0
 
+		reader := bufio.NewReader(os.Stdin)
+
+	reviewLoop:
 		for i, t := range staleTasks {
 			fmt.Printf("\n[%d/%d] %s\n", i+1, len(staleTasks), t.Title)
 			fmt.Printf("Status: %s | Created: %s", t.Status, t.Created)
@@ -94,7 +100,15 @@ var reviewInteractiveCmd = &cobra.Command{
 			fmt.Print("Action (d/s/w/n/x/space/q): ")
 
 			var action string
-			fmt.Scanln(&action)
+			_, err := fmt.Scanln(&action)
+			if err != nil {
+				if err == io.EOF {
+					fmt.Println("\nReview interrupted")
+					break reviewLoop
+				}
+				fmt.Printf("Error reading input: %v\n", err)
+				continue
+			}
 
 			switch action {
 			case "d":
@@ -113,25 +127,44 @@ var reviewInteractiveCmd = &cobra.Command{
 				}
 			case "w":
 				fmt.Print("Reason for waiting: ")
-				var reason string
-				if _, err := fmt.Scanln(&reason); err != nil {
+				reason, err := reader.ReadString('\n')
+				if err != nil {
+					if err == io.EOF {
+						fmt.Println("\nReview interrupted")
+						break reviewLoop
+					}
 					fmt.Printf("Error reading input: %v\n", err)
+					continue
+				}
+				reason = strings.TrimSpace(reason)
+				if reason == "" {
+					fmt.Printf("Error: reason cannot be empty\n")
 					continue
 				}
 				if err := taskService.UpdateStatus(t.ID, task.StatusWaiting); err != nil {
 					fmt.Printf("Error marking as waiting: %v\n", err)
 				} else {
 					if err := taskService.AppendLog(t.ID, "Waiting: "+reason); err != nil {
-						fmt.Printf("Error saving reason: %v\n", err)
+						fmt.Printf("Error: marked as waiting but failed to save reason: %v\n", err)
+					} else {
+						fmt.Printf("✓ Marked as waiting: %s\n", reason)
 					}
-					fmt.Printf("✓ Marked as waiting: %s\n", reason)
 					deferred++
 				}
 			case "n":
 				fmt.Print("Note to add: ")
-				var note string
-				if _, err := fmt.Scanln(&note); err != nil {
+				note, err := reader.ReadString('\n')
+				if err != nil {
+					if err == io.EOF {
+						fmt.Println("\nReview interrupted")
+						break reviewLoop
+					}
 					fmt.Printf("Error reading input: %v\n", err)
+					continue
+				}
+				note = strings.TrimSpace(note)
+				if note == "" {
+					fmt.Printf("Error: note cannot be empty\n")
 					continue
 				}
 				if err := taskService.AppendLog(t.ID, note); err != nil {
@@ -153,7 +186,7 @@ var reviewInteractiveCmd = &cobra.Command{
 				continue
 			case "q":
 				fmt.Printf("Review cancelled\n")
-				break
+				break reviewLoop
 			default:
 				fmt.Printf("Unknown action: %s\n", action)
 				continue
