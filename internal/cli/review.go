@@ -61,8 +61,8 @@ var reviewInteractiveCmd = &cobra.Command{
 		}
 
 		// Check if we're in a TTY
-		if !isTerminal(os.Stdin) {
-			return fmt.Errorf("interactive mode requires a terminal. Use 'rk review list' for non-interactive output")
+		if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
+			return fmt.Errorf("interactive mode requires both stdin and stdout to be terminals. Use 'rk review list' for non-interactive output")
 		}
 
 		staleTasks, err := taskService.FindStaleTasks(7)
@@ -172,5 +172,8 @@ func GetReviewCommand() *cobra.Command {
 
 // isTerminal checks if the given file descriptor is a terminal
 func isTerminal(f *os.File) bool {
+	if f == nil {
+		return false
+	}
 	return term.IsTerminal(int(f.Fd()))
 }
