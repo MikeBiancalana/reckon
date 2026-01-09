@@ -6,6 +6,7 @@ import (
 
 	"github.com/MikeBiancalana/reckon/internal/task"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var reviewCmd = &cobra.Command{
@@ -60,7 +61,7 @@ var reviewInteractiveCmd = &cobra.Command{
 		}
 
 		// Check if we're in a TTY
-		if !isTerminal(os.Stdout) {
+		if !isTerminal(os.Stdin) {
 			return fmt.Errorf("interactive mode requires a terminal. Use 'rk review list' for non-interactive output")
 		}
 
@@ -171,6 +172,5 @@ func GetReviewCommand() *cobra.Command {
 
 // isTerminal checks if the given file descriptor is a terminal
 func isTerminal(f *os.File) bool {
-	// Simple check - in a real implementation, you'd use unix.Isatty
-	return true // For now, assume it's a terminal
+	return term.IsTerminal(int(f.Fd()))
 }
