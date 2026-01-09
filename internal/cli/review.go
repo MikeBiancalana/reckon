@@ -114,17 +114,26 @@ var reviewInteractiveCmd = &cobra.Command{
 			case "w":
 				fmt.Print("Reason for waiting: ")
 				var reason string
-				fmt.Scanln(&reason)
+				if _, err := fmt.Scanln(&reason); err != nil {
+					fmt.Printf("Error reading input: %v\n", err)
+					continue
+				}
 				if err := taskService.UpdateStatus(t.ID, task.StatusWaiting); err != nil {
 					fmt.Printf("Error marking as waiting: %v\n", err)
 				} else {
+					if err := taskService.AppendLog(t.ID, "Waiting: "+reason); err != nil {
+						fmt.Printf("Error saving reason: %v\n", err)
+					}
 					fmt.Printf("✓ Marked as waiting: %s\n", reason)
 					deferred++
 				}
 			case "n":
 				fmt.Print("Note to add: ")
 				var note string
-				fmt.Scanln(&note)
+				if _, err := fmt.Scanln(&note); err != nil {
+					fmt.Printf("Error reading input: %v\n", err)
+					continue
+				}
 				if err := taskService.AppendLog(t.ID, note); err != nil {
 					fmt.Printf("Error adding note: %v\n", err)
 				} else {
