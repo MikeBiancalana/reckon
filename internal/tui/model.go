@@ -107,6 +107,7 @@ type Model struct {
 	confirmItemType  string // "intention", "win", "log"
 	confirmItemID    string
 	editItemID       string // ID of item being edited
+	noteTaskID       string // ID of task being noted
 	lastError        error
 
 	// Terminal size validation
@@ -349,6 +350,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textEntryBar.Clear()
 				m.textEntryBar.Blur()
 				m.textEntryBar.SetMode(components.ModeInactive)
+				m.noteTaskID = "" // Reset note task ID
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
@@ -358,6 +360,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textEntryBar.Clear()
 				m.textEntryBar.Blur()
 				m.textEntryBar.SetMode(components.ModeInactive)
+				m.noteTaskID = "" // Reset note task ID
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
@@ -462,9 +465,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "n":
-			// Add note to task (if a task is selected)
-			// For now, we'll handle this similar to tasks
-			// TODO: Implement proper note-to-task workflow
+			// Add note to selected task in Tasks section
+			if m.focusedSection == SectionTasks && m.taskList != nil {
+				selectedTask := m.taskList.SelectedTask()
+				if selectedTask != nil {
+					m.noteTaskID = selectedTask.ID
+					m.textEntryBar.SetMode(components.ModeNote)
+					m.textEntryBar.Clear()
+					if m.statusBar != nil {
+						m.statusBar.SetInputMode(true)
+					}
+					return m, m.textEntryBar.Focus()
+				}
+			}
 			return m, nil
 		case "?":
 			m.helpMode = !m.helpMode
@@ -1159,6 +1172,22 @@ func (m *Model) submitTextEntry() tea.Cmd {
 
 		case components.ModeLog:
 			err = m.service.AppendLog(m.currentJournal, inputText)
+
+		case components.ModeNote:
+			// Add note to the selected task
+			if m.taskService != nil && m.noteTaskID != "" {
+				err = m.taskService.AddTaskNote(m.noteTaskID, inputText)
+				if err != nil {
+					return errMsg{err}
+				}
+				// Reload tasks
+				tasks, errGetTasks := m.taskService.GetAllTasks()
+				if errGetTasks != nil {
+					return errMsg{errGetTasks}
+				}
+				return tasksLoadedMsg{tasks: tasks}
+			}
+			return errMsg{fmt.Errorf("task service not available or no task selected")}
 
 		default:
 			return errMsg{fmt.Errorf("unknown entry mode")}
