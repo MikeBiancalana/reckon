@@ -4,16 +4,84 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
+
+type logInputModel struct {
+	textInput textinput.Model
+	done      bool
+	cancelled bool
+}
+
+func initialLogModel() logInputModel {
+	ti := textinput.New()
+	ti.Placeholder = "Type your log entry..."
+	ti.Focus()
+	return logInputModel{
+		textInput: ti,
+		done:      false,
+		cancelled: false,
+	}
+}
+
+func (m logInputModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m logInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyEnter:
+			m.done = true
+			return m, tea.Quit
+		case tea.KeyEsc:
+			m.cancelled = true
+			return m, tea.Quit
+		}
+	}
+
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+func (m logInputModel) View() string {
+	if m.done || m.cancelled {
+		return ""
+	}
+	return fmt.Sprintf("Add log entry: %s\n\nEnter to submit, Esc to cancel", m.textInput.View())
+}
 
 var logCmd = &cobra.Command{
 	Use:   "log [message]",
 	Short: "Append a log entry to today's journal",
 	Long:  `Appends a timestamped log entry to today's journal.`,
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.RangeArgs(0, -1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		message := strings.Join(args, " ")
+		var message string
+
+		if len(args) == 0 {
+			// Interactive mode
+			p := tea.NewProgram(initialLogModel())
+			model, err := p.Run()
+			if err != nil {
+				return fmt.Errorf("interactive input failed: %w", err)
+			}
+			m := model.(logInputModel)
+			if m.cancelled {
+				return nil
+			}
+			message = m.textInput.Value()
+		} else {
+			message = strings.Join(args, " ")
+		}
+
+		if message == "" {
+			return fmt.Errorf("log message cannot be empty")
+		}
 
 		j, err := service.GetToday()
 		if err != nil {
