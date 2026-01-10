@@ -188,29 +188,12 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 			if selectedItem != nil {
 				taskItem, ok := selectedItem.(TaskItem)
 				if ok && !taskItem.isNote && len(taskItem.task.Notes) > 0 {
-					// Debug logging
-					fmt.Printf("Enter key pressed on task: %s\n", taskItem.task.Text)
-
-					isCollapsing := tl.collapsedMap[taskItem.task.ID]
 					// Toggle collapsed state
 					tl.collapsedMap[taskItem.task.ID] = !tl.collapsedMap[taskItem.task.ID]
 
 					// Rebuild items with new collapsed state
 					items := buildTaskItems(tl.tasks, tl.collapsedMap)
 					tl.list.SetItems(items)
-
-					// If collapsing and cursor was on a note, move cursor to the task
-					if isCollapsing {
-						// Check if selected item was a note (after rebuild, notes are gone)
-						// Since we rebuilt, and if it was collapsing, notes were removed
-						// The cursor should now be on the task, but to be safe, ensure it's on the task
-						for i, item := range tl.list.Items() {
-							if tItem, ok := item.(TaskItem); ok && !tItem.isNote && tItem.task.ID == taskItem.task.ID {
-								tl.list.Select(i)
-								break
-							}
-						}
-					}
 
 					// Update delegate with new collapsed map
 					delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
