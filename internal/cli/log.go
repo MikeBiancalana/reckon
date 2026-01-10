@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// logInputModel handles the Bubble Tea model for interactive log input.
 type logInputModel struct {
 	textInput textinput.Model
 	done      bool
@@ -59,7 +60,7 @@ var logCmd = &cobra.Command{
 	Use:   "log [message]",
 	Short: "Append a log entry to today's journal",
 	Long:  `Appends a timestamped log entry to today's journal.`,
-	Args:  cobra.RangeArgs(0, -1),
+	Args:  cobra.RangeArgs(0, -1), // Accepts 0 or more arguments
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var message string
 
@@ -74,9 +75,9 @@ var logCmd = &cobra.Command{
 			if m.cancelled {
 				return nil
 			}
-			message = m.textInput.Value()
+			message = strings.TrimSpace(m.textInput.Value())
 		} else {
-			message = strings.Join(args, " ")
+			message = strings.TrimSpace(strings.Join(args, " "))
 		}
 
 		if message == "" {
