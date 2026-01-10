@@ -103,9 +103,30 @@ var taskListCmd = &cobra.Command{
 			tasks = filtered
 		}
 
-		// Note: Tag filtering not yet supported in journal task system
+		// Filter by tags if specified
 		if len(taskTagsFlag) > 0 {
-			fmt.Println("Note: Tag filtering is not yet supported in the unified task system")
+			filtered := make([]journal.Task, 0)
+			for _, t := range tasks {
+				// Check if task has all specified tags (AND logic)
+				hasAllTags := true
+				for _, filterTag := range taskTagsFlag {
+					found := false
+					for _, taskTag := range t.Tags {
+						if strings.EqualFold(taskTag, filterTag) {
+							found = true
+							break
+						}
+					}
+					if !found {
+						hasAllTags = false
+						break
+					}
+				}
+				if hasAllTags {
+					filtered = append(filtered, t)
+				}
+			}
+			tasks = filtered
 		}
 
 		if taskJsonFlag {
@@ -135,6 +156,9 @@ var taskListCmd = &cobra.Command{
 			fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
 			fmt.Printf("  ID: %s\n", t.ID)
 			fmt.Printf("  Created: %s\n", t.CreatedAt.Format("2006-01-02"))
+			if len(t.Tags) > 0 {
+				fmt.Printf("  Tags: %s\n", strings.Join(t.Tags, ", "))
+			}
 			if len(t.Notes) > 0 {
 				fmt.Printf("  Notes: %d\n", len(t.Notes))
 			}
