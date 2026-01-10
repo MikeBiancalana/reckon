@@ -104,6 +104,20 @@ func WriteJournal(j *Journal) string {
 			}
 
 			sb.WriteString(fmt.Sprintf("- %s %s\n", timeStr, content))
+
+			// Write notes if present
+			if len(entry.Notes) > 0 {
+				// Sort notes by position
+				sortedNotes := make([]LogNote, len(entry.Notes))
+				copy(sortedNotes, entry.Notes)
+				sort.Slice(sortedNotes, func(i, j int) bool {
+					return sortedNotes[i].Position < sortedNotes[j].Position
+				})
+
+				for _, note := range sortedNotes {
+					sb.WriteString(fmt.Sprintf("  - %s %s\n", note.ID, note.Text))
+				}
+			}
 		}
 	}
 

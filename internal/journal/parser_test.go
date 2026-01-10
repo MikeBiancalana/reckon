@@ -24,7 +24,10 @@ date: 2023-12-01
 ## Log
 
 - 09:00 Started work
+  - note-1 First note on work
+  - note-2 Second note on work
 - 10:30 [meeting:standup] 30m Meeting notes
+  - meeting-note Discussed project timeline
 - 11:00 [task:abc123] Worked on feature
 - 12:00 [break] 45m Lunch break`
 
@@ -83,6 +86,40 @@ date: 2023-12-01
 	}
 	if journal.LogEntries[3].EntryType != EntryTypeBreak {
 		t.Errorf("Expected fourth entry type break, got %s", journal.LogEntries[3].EntryType)
+	}
+
+	// Test log entry notes
+	if len(journal.LogEntries[0].Notes) != 2 {
+		t.Errorf("Expected first log entry to have 2 notes, got %d", len(journal.LogEntries[0].Notes))
+	}
+	if journal.LogEntries[0].Notes[0].ID != "note-1" {
+		t.Errorf("Expected first note ID 'note-1', got '%s'", journal.LogEntries[0].Notes[0].ID)
+	}
+	if journal.LogEntries[0].Notes[0].Text != "First note on work" {
+		t.Errorf("Expected first note text 'First note on work', got '%s'", journal.LogEntries[0].Notes[0].Text)
+	}
+	if journal.LogEntries[0].Notes[1].ID != "note-2" {
+		t.Errorf("Expected second note ID 'note-2', got '%s'", journal.LogEntries[0].Notes[1].ID)
+	}
+	if journal.LogEntries[0].Notes[1].Text != "Second note on work" {
+		t.Errorf("Expected second note text 'Second note on work', got '%s'", journal.LogEntries[0].Notes[1].Text)
+	}
+
+	if len(journal.LogEntries[1].Notes) != 1 {
+		t.Errorf("Expected second log entry to have 1 note, got %d", len(journal.LogEntries[1].Notes))
+	}
+	if journal.LogEntries[1].Notes[0].ID != "meeting-note" {
+		t.Errorf("Expected meeting note ID 'meeting-note', got '%s'", journal.LogEntries[1].Notes[0].ID)
+	}
+	if journal.LogEntries[1].Notes[0].Text != "Discussed project timeline" {
+		t.Errorf("Expected meeting note text 'Discussed project timeline', got '%s'", journal.LogEntries[1].Notes[0].Text)
+	}
+
+	if len(journal.LogEntries[2].Notes) != 0 {
+		t.Errorf("Expected third log entry to have 0 notes, got %d", len(journal.LogEntries[2].Notes))
+	}
+	if len(journal.LogEntries[3].Notes) != 0 {
+		t.Errorf("Expected fourth log entry to have 0 notes, got %d", len(journal.LogEntries[3].Notes))
 	}
 }
 
