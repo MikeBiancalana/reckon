@@ -45,6 +45,7 @@ func init() {
 	RootCmd.AddCommand(rebuildCmd)
 	RootCmd.AddCommand(GetReviewCommand())
 	RootCmd.AddCommand(GetScheduleCommand())
+	RootCmd.AddCommand(GetTaskCommand())
 }
 
 // initService initializes the journal service
