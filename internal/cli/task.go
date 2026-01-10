@@ -72,6 +72,11 @@ var taskListCmd = &cobra.Command{
 			return fmt.Errorf("task service not initialized")
 		}
 
+		// Validate mutually exclusive flags
+		if taskCompactFlag && taskVerboseFlag {
+			return fmt.Errorf("cannot use both --compact and --verbose flags")
+		}
+
 		// List all tasks
 		tasks, err := journalTaskService.GetAllTasks()
 		if err != nil {
@@ -146,13 +151,15 @@ var taskListCmd = &cobra.Command{
 			return nil
 		}
 
-		// Default tabular output
+		// Default tabular output (2-space padding between columns)
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "ID\tSTATUS\tCREATED\tTITLE")
 		for _, t := range tasks {
 			shortID := t.ID
 			if len(t.ID) > 8 {
 				shortID = t.ID[:8]
+			} else if len(t.ID) == 0 {
+				shortID = "--------"
 			}
 			createdDate := t.CreatedAt.Format("2006-01-02")
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", shortID, t.Status, createdDate, t.Text)
