@@ -115,7 +115,7 @@ func NewModel(service *journal.Service) *Model {
 		taskService:    nil, // Will be set via SetJournalTaskService
 		watcher:        watcher,
 		currentDate:    stdtime.Now().Format("2006-01-02"),
-		focusedSection: SectionIntentions,
+		focusedSection: SectionLogs,
 		textEntryBar:   components.NewTextEntryBar(),
 		statusBar:      sb,
 		summaryView:    components.NewSummaryView(),
@@ -343,8 +343,39 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Normal mode
+		switch msg.Type {
+		case tea.KeyCtrlC:
+			// Stop watcher on quit
+			if m.watcher != nil {
+				m.watcher.Stop()
+			}
+			return m, tea.Quit
+		case tea.KeySpace:
+			// Handle space key for tasks (toggle completion)
+			if m.focusedSection == SectionTasks && m.taskList != nil {
+				var cmd tea.Cmd
+				m.taskList, cmd = m.taskList.Update(msg)
+				return m, cmd
+			}
+		case tea.KeyEnter:
+			// Handle enter key for toggling intentions
+			if m.focusedSection == SectionIntentions && m.intentionList != nil {
+				intention := m.intentionList.SelectedIntention()
+				if intention != nil {
+					return m, m.toggleIntention(intention.ID)
+				}
+			}
+			// Handle enter key for tasks (expand/collapse)
+			if m.focusedSection == SectionTasks && m.taskList != nil {
+				var cmd tea.Cmd
+				m.taskList, cmd = m.taskList.Update(msg)
+				return m, cmd
+			}
+		}
+
+		// Handle key runes for single characters
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q":
 			// Stop watcher on quit
 			if m.watcher != nil {
 				m.watcher.Stop()
@@ -486,6 +517,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if intention != nil {
 					return m, m.toggleIntention(intention.ID)
 				}
+			}
+			// Handle enter key for tasks (expand/collapse)
+			if m.focusedSection == SectionTasks && m.taskList != nil {
+				var cmd tea.Cmd
+				m.taskList, cmd = m.taskList.Update(msg)
+				return m, cmd
 			}
 		default:
 			// Delegate to focused component

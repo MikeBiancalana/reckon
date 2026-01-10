@@ -167,8 +167,8 @@ func buildTaskItems(tasks []journal.Task, collapsedMap map[string]bool) []list.I
 func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case " ":
+		switch msg.Type {
+		case tea.KeySpace:
 			// Toggle task status
 			selectedItem := tl.list.SelectedItem()
 			if selectedItem != nil {
@@ -182,8 +182,7 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 			}
 			return tl, nil
 
-		case "enter":
-			fmt.Printf("DEBUG: Enter key pressed\n")
+		case tea.KeyEnter:
 			// Toggle expand/collapse
 			selectedItem := tl.list.SelectedItem()
 			if selectedItem != nil {
