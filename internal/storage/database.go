@@ -133,7 +133,56 @@ func NewDatabase(path string) (*Database, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
+	// Run migrations for existing databases
+	if err := runMigrations(db); err != nil {
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
+	}
+
 	return &Database{db: db}, nil
+}
+
+// runMigrations applies schema migrations for existing databases
+func runMigrations(db *sql.DB) error {
+	// Migration: Add tags column to tasks table if missing
+	if err := addColumnIfMissing(db, "tasks", "tags", "TEXT"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// addColumnIfMissing adds a column to a table if it doesn't exist
+func addColumnIfMissing(db *sql.DB, table, column, colType string) error {
+	// Check if column exists using PRAGMA table_info
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return fmt.Errorf("failed to get table info for %s: %w", table, err)
+	}
+	defer rows.Close()
+
+	columnExists := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return fmt.Errorf("failed to scan column info: %w", err)
+		}
+		if name == column {
+			columnExists = true
+			break
+		}
+	}
+
+	if !columnExists {
+		_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colType))
+		if err != nil {
+			return fmt.Errorf("failed to add column %s to %s: %w", column, table, err)
+		}
+	}
+
+	return nil
 }
 
 // Close closes the database connection
