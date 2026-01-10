@@ -26,7 +26,26 @@ func NewService(repo *Repository, journalSvc *journal.Service) *Service {
 
 // Create creates a new task
 func (s *Service) Create(title string, tags []string) (*Task, error) {
-	task := NewTask(title, tags)
+	task := NewTask(title, "", tags)
+
+	// Set file path
+	tasksDir, err := config.TasksDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tasks directory: %w", err)
+	}
+	task.FilePath = filepath.Join(tasksDir, task.ID+".md")
+
+	// Save to filesystem and database
+	if err := s.save(task); err != nil {
+		return nil, err
+	}
+
+	return task, nil
+}
+
+// CreateWithDescription creates a new task with a description
+func (s *Service) CreateWithDescription(title string, description string, tags []string) (*Task, error) {
+	task := NewTask(title, description, tags)
 
 	// Set file path
 	tasksDir, err := config.TasksDir()
