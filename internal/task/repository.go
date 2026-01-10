@@ -171,6 +171,57 @@ func (r *Repository) ListTasks(status *Status, tags []string) ([]Task, error) {
 	return tasks, nil
 }
 
+// FindStaleTasks finds tasks that haven't been updated in the specified number of days
+func (r *Repository) FindStaleTasks(days int) ([]Task, error) {
+	// Find tasks with no log entries in the last N days, excluding 'someday' tasks
+	query := `
+		SELECT DISTINCT t.id, t.title, t.status, t.created, t.file_path
+		FROM phase2_tasks t
+		WHERE t.status != 'someday'
+		AND NOT EXISTS (
+			SELECT 1 FROM phase2_task_log_entries le
+			WHERE le.task_id = t.id
+			AND date(le.timestamp) >= date('now', '-' || ? || ' days')
+		)
+		ORDER BY t.created DESC
+	`
+
+	rows, err := r.db.DB().Query(query, days)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find stale tasks: %w", err)
+	}
+	defer rows.Close()
+
+	tasks := make([]Task, 0)
+	for rows.Next() {
+		var task Task
+		if err := rows.Scan(&task.ID, &task.Title, &task.Status, &task.Created, &task.FilePath); err != nil {
+			return nil, fmt.Errorf("failed to scan task: %w", err)
+		}
+
+		// Load tags for each task
+		tagRows, err := r.db.DB().Query("SELECT tag FROM phase2_task_tags WHERE task_id = ?", task.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get tags: %w", err)
+		}
+
+		task.Tags = make([]string, 0)
+		for tagRows.Next() {
+			var tag string
+			if err := tagRows.Scan(&tag); err != nil {
+				tagRows.Close()
+				return nil, fmt.Errorf("failed to scan tag: %w", err)
+			}
+			task.Tags = append(task.Tags, tag)
+		}
+		tagRows.Close()
+
+		tasks = append(tasks, task)
+	}
+
+	return tasks, nil
+}
+
 // DeleteTask deletes a task from the database
 func (r *Repository) DeleteTask(id string) error {
 	_, err := r.db.DB().Exec("DELETE FROM phase2_tasks WHERE id = ?", id)

@@ -71,6 +71,7 @@ type LogEntry struct {
 	TaskID          string    `json:"task_id,omitempty"`
 	EntryType       EntryType `json:"entry_type"`
 	DurationMinutes int       `json:"duration_minutes,omitempty"`
+	Notes           []LogNote `json:"notes"`
 	Position        int       `json:"position"`
 }
 
@@ -81,6 +82,7 @@ func NewLogEntry(timestamp time.Time, content string, entryType EntryType, posit
 		Timestamp: timestamp,
 		Content:   content,
 		EntryType: entryType,
+		Notes:     make([]LogNote, 0),
 		Position:  position,
 	}
 }
@@ -133,6 +135,23 @@ type TaskNote struct {
 // NewTaskNote creates a new task note with a generated ID
 func NewTaskNote(text string, position int) *TaskNote {
 	return &TaskNote{
+		ID:       xid.New().String(),
+		Text:     text,
+		Position: position,
+	}
+}
+
+// LogNote represents a note attached to a log entry
+type LogNote struct {
+	ID       string `json:"id"`
+	Text     string `json:"text"`
+	Position int    `json:"position"`
+	// Future: NoteSlug string for zettelkasten
+}
+
+// NewLogNote creates a new log note with a generated ID
+func NewLogNote(text string, position int) *LogNote {
+	return &LogNote{
 		ID:       xid.New().String(),
 		Text:     text,
 		Position: position,

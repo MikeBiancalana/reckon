@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS task_notes (
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 
+-- Log notes table
+CREATE TABLE IF NOT EXISTS log_notes (
+    id TEXT PRIMARY KEY,
+    log_entry_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    FOREIGN KEY (log_entry_id) REFERENCES log_entries(id) ON DELETE CASCADE
+);
+
 -- Schedule items table (per-journal)
 CREATE TABLE IF NOT EXISTS schedule_items (
     id TEXT PRIMARY KEY,
@@ -114,6 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_wins_date ON wins(journal_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_position ON tasks(position);
 CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes(task_id);
+CREATE INDEX IF NOT EXISTS idx_log_notes_entry ON log_notes(log_entry_id);
 CREATE INDEX IF NOT EXISTS idx_schedule_items_date ON schedule_items(journal_date);
 CREATE INDEX IF NOT EXISTS idx_schedule_items_time ON schedule_items(time);
 

@@ -646,8 +646,8 @@ func (m *Model) View() string {
 		return m.helpView()
 	}
 
-	// Check if new 40-40-18 layout components are available
-	if m.taskList != nil && m.scheduleView != nil {
+	// Use multi-section split view when components are available and terminal is wide enough
+	if m.taskList != nil && m.scheduleView != nil && m.width >= MinTerminalWidth {
 		return m.renderNewLayout()
 	}
 
