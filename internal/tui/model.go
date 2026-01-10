@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
@@ -408,6 +409,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.textEntryBar.Focus()
 			}
 			return m, nil
+		case "a":
+			// Add schedule item
+			if m.focusedSection == SectionSchedule && m.textEntryBar != nil {
+				m.textEntryBar.SetMode(components.ModeSchedule)
+				m.textEntryBar.Clear()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
+				return m, m.textEntryBar.Focus()
+			}
+			return m, nil
 		case "d":
 			// Delete selected item with confirmation
 			if m.confirmMode {
@@ -440,6 +452,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.confirmMode = true
 						m.confirmItemType = "log"
 						m.confirmItemID = entry.ID
+					}
+				}
+			case SectionSchedule:
+				if m.scheduleView != nil {
+					item := m.scheduleView.SelectedItem()
+					if item != nil {
+						m.confirmMode = true
+						m.confirmItemType = "schedule"
+						m.confirmItemID = item.ID
 					}
 				}
 			}
@@ -484,8 +505,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, cmd
 				}
 			case SectionSchedule:
-				// ScheduleView doesn't have interactive elements yet
-				// So we don't delegate to it
+				if m.scheduleView != nil {
+					var cmd tea.Cmd
+					m.scheduleView, cmd = m.scheduleView.Update(msg)
+					return m, cmd
+				}
 			}
 		}
 	}
@@ -513,6 +537,8 @@ func (m *Model) View() string {
 			itemType = "win"
 		case "log":
 			itemType = "log entry"
+		case "schedule":
+			itemType = "schedule item"
 		}
 		view := fmt.Sprintf("Delete this %s? (y/n)", itemType)
 		if m.lastError != nil {
@@ -843,6 +869,8 @@ func (m *Model) deleteItem() tea.Cmd {
 			err = m.service.DeleteWin(m.currentJournal, m.confirmItemID)
 		case "log":
 			err = m.service.DeleteLogEntry(m.currentJournal, m.confirmItemID)
+		case "schedule":
+			err = m.service.DeleteScheduleItem(m.currentJournal, m.confirmItemID)
 		}
 
 		// Reset confirmation state
@@ -972,6 +1000,19 @@ func (m *Model) submitTextEntry() tea.Cmd {
 				return tasksLoadedMsg{tasks: tasks}
 			}
 			return errMsg{fmt.Errorf("task service not available or no task selected")}
+
+		case components.ModeSchedule:
+			// Add schedule item
+			parts := strings.SplitN(inputText, " ", 2)
+			var timeStr, content string
+			if len(parts) == 2 && strings.Contains(parts[0], ":") {
+				timeStr = parts[0]
+				content = parts[1]
+			} else {
+				timeStr = ""
+				content = inputText
+			}
+			err = m.service.AddScheduleItem(m.currentJournal, timeStr, content)
 
 		default:
 			return errMsg{fmt.Errorf("unknown entry mode")}
