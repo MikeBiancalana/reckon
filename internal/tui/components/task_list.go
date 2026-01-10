@@ -183,6 +183,7 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 			return tl, nil
 
 		case "enter":
+			fmt.Printf("DEBUG: Enter key pressed\n")
 			// Toggle expand/collapse
 			selectedItem := tl.list.SelectedItem()
 			if selectedItem != nil {
@@ -198,6 +199,21 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 					// Update delegate with new collapsed map
 					delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
 					tl.list.SetDelegate(delegate)
+
+					// If collapsing and cursor was on a note, move back to task
+					currentIndex := tl.list.Index()
+					if currentIndex < len(items) {
+						currentItem, ok := items[currentIndex].(TaskItem)
+						if ok && currentItem.isNote && tl.collapsedMap[taskItem.task.ID] {
+							// Find the task item index
+							for i, item := range items {
+								if ti, ok := item.(TaskItem); ok && !ti.isNote && ti.task.ID == taskItem.task.ID {
+									tl.list.Select(i)
+									break
+								}
+							}
+						}
+					}
 				}
 			}
 			return tl, nil
@@ -244,6 +260,15 @@ func (tl *TaskList) SelectedTask() *journal.Task {
 
 // UpdateTasks updates the list with new tasks
 func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
+	// Preserve current selected task ID
+	var selectedTaskID string
+	selectedItem := tl.list.SelectedItem()
+	if selectedItem != nil {
+		if taskItem, ok := selectedItem.(TaskItem); ok {
+			selectedTaskID = taskItem.task.ID
+		}
+	}
+
 	tl.tasks = tasks
 	items := buildTaskItems(tasks, tl.collapsedMap)
 	tl.list.SetItems(items)
@@ -251,4 +276,14 @@ func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
 	// Update delegate with current collapsed map
 	delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
 	tl.list.SetDelegate(delegate)
+
+	// Restore cursor to the same task if it still exists
+	if selectedTaskID != "" {
+		for i, item := range items {
+			if taskItem, ok := item.(TaskItem); ok && taskItem.task.ID == selectedTaskID {
+				tl.list.Select(i)
+				break
+			}
+		}
+	}
 }
