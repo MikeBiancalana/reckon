@@ -6,9 +6,19 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
+)
+
+const (
+	idWidth       = 8
+	statusWidth   = 10
+	createdWidth  = 10
+	tagsWidth     = 15
+	minTitleWidth = 20
 )
 
 var (
@@ -16,6 +26,7 @@ var (
 	taskTagsFlag            []string
 	taskCompactFlag         bool
 	taskJsonFlag            bool
+	taskVerboseFlag         bool
 	taskEditTitleFlag       string
 	taskEditDescriptionFlag string
 	taskEditTagsFlag        []string
@@ -121,6 +132,21 @@ var taskListCmd = &cobra.Command{
 			return nil
 		}
 
+		if taskVerboseFlag {
+			// Verbose output with sequential numbers
+			fmt.Printf("Found %d task(s):\n\n", len(tasks))
+			for i, t := range tasks {
+				fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
+				fmt.Printf("  ID: %s\n", t.ID)
+				fmt.Printf("  Created: %s\n", t.CreatedAt.Format("2006-01-02"))
+				if len(t.Notes) > 0 {
+					fmt.Printf("  Notes: %d\n", len(t.Notes))
+				}
+				fmt.Println()
+			}
+			return nil
+		}
+
 		if taskCompactFlag {
 			// Compact output: number status text
 			for i, t := range tasks {
@@ -129,17 +155,29 @@ var taskListCmd = &cobra.Command{
 			return nil
 		}
 
-		// Default verbose output with sequential numbers
-		fmt.Printf("Found %d task(s):\n\n", len(tasks))
-		for i, t := range tasks {
-			fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
-			fmt.Printf("  ID: %s\n", t.ID)
-			fmt.Printf("  Created: %s\n", t.CreatedAt.Format("2006-01-02"))
-			if len(t.Notes) > 0 {
-				fmt.Printf("  Notes: %d\n", len(t.Notes))
-			}
-			fmt.Println()
+		// Default tabular output
+		// Get terminal width for dynamic title truncation
+		width, _, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil {
+			width = 80 // fallback
 		}
+		availableTitleWidth := width - (idWidth + statusWidth + createdWidth + tagsWidth + 20) // estimate padding
+		if availableTitleWidth < minTitleWidth {
+			availableTitleWidth = minTitleWidth
+		}
+
+		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.TabIndent)
+		fmt.Fprintln(tw, "ID\tSTATUS\tCREATED\tTAGS\tTITLE")
+		for _, t := range tasks {
+			tags := "-"
+			title := t.Text
+			// Truncate title based on available width
+			if len(title) > availableTitleWidth {
+				title = title[:availableTitleWidth-3] + "..."
+			}
+			fmt.Fprintf(tw, "%.8s\t%s\t%s\t%s\t%s\n", t.ID, t.Status, t.CreatedAt.Format("2006-01-02"), tags, title)
+		}
+		tw.Flush()
 
 		return nil
 	},
@@ -339,6 +377,7 @@ func init() {
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
 	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact output")
 	taskListCmd.Flags().BoolVar(&taskJsonFlag, "json", false, "Output as JSON")
+	taskListCmd.Flags().BoolVar(&taskVerboseFlag, "verbose", false, "Show verbose output")
 	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
 	taskEditCmd.Flags().StringVarP(&taskEditDescriptionFlag, "description", "d", "", "New task description")
 	taskEditCmd.Flags().StringSliceVar(&taskEditTagsFlag, "tags", []string{}, "New task tags (comma-separated)")
