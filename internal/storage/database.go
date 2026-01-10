@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     text TEXT NOT NULL,
     status TEXT NOT NULL,
+    tags TEXT,
     position INTEGER NOT NULL,
     created_at INTEGER NOT NULL
 );

@@ -38,11 +38,11 @@ func Example_taskService() {
 	service := journal.NewTaskService(repo, store)
 
 	// Add some tasks
-	if err := service.AddTask("Complete project documentation"); err != nil {
+	if err := service.AddTask("Complete project documentation", []string{}); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := service.AddTask("Review pull requests"); err != nil {
+	if err := service.AddTask("Review pull requests", []string{}); err != nil {
 		log.Fatal(err)
 	}
 

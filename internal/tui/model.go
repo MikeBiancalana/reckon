@@ -50,7 +50,6 @@ func sectionName(s Section) string {
 	}
 }
 
-
 // Minimum terminal dimensions
 const (
 	MinTerminalWidth  = 80
@@ -84,13 +83,13 @@ type Model struct {
 	tasks []journal.Task
 
 	// State for modes
-	helpMode    bool
-	confirmMode bool
-	confirmItemType  string // "intention", "win", "log"
-	confirmItemID    string
-	editItemID       string // ID of item being edited
-	noteTaskID       string // ID of task being noted
-	lastError        error
+	helpMode        bool
+	confirmMode     bool
+	confirmItemType string // "intention", "win", "log"
+	confirmItemID   string
+	editItemID      string // ID of item being edited
+	noteTaskID      string // ID of task being noted
+	lastError       error
 
 	// Terminal size validation
 	terminalTooSmall bool
@@ -936,7 +935,7 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		case components.ModeTask:
 			// Add task
 			if m.taskService != nil {
-				err = m.taskService.AddTask(inputText)
+				err = m.taskService.AddTask(inputText, []string{})
 				if err != nil {
 					return errMsg{err}
 				}
