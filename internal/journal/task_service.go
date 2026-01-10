@@ -241,6 +241,39 @@ func (s *TaskService) AddTaskNote(taskID, noteText string) error {
 	return nil
 }
 
+// UpdateTask updates a task's title and/or tags
+func (s *TaskService) UpdateTask(taskID string, title string, tags []string) error {
+	// Load all tasks
+	tasks, err := s.GetAllTasks()
+	if err != nil {
+		return fmt.Errorf("failed to load tasks: %w", err)
+	}
+
+	// Find and update the task
+	found := false
+	for i := range tasks {
+		if tasks[i].ID == taskID {
+			if title != "" {
+				tasks[i].Text = title
+			}
+			// TODO: Add support for tags in Task struct when implemented
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("task not found: %s", taskID)
+	}
+
+	// Save changes
+	if err := s.save(tasks); err != nil {
+		return fmt.Errorf("failed to update task: %w", err)
+	}
+
+	return nil
+}
+
 // DeleteTaskNote removes a note from a task
 func (s *TaskService) DeleteTaskNote(taskID, noteID string) error {
 	// Load all tasks
