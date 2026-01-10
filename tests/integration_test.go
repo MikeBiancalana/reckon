@@ -12,7 +12,6 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/storage"
-	"github.com/MikeBiancalana/reckon/internal/task"
 )
 
 func TestJournalCRUD(t *testing.T) {
@@ -74,97 +73,6 @@ func TestJournalCRUD(t *testing.T) {
 
 	if j.Intentions[0].Text != "Test integration intention" {
 		t.Errorf("Expected intention text 'Test integration intention', got '%s'", j.Intentions[0].Text)
-	}
-}
-
-func TestTaskManagement(t *testing.T) {
-	// Create temporary directory for test
-	tmpDir, err := os.MkdirTemp("", "reckon-integration-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Set up test environment
-	oldDataDir := os.Getenv("RECKON_DATA_DIR")
-	defer func() {
-		os.Setenv("RECKON_DATA_DIR", oldDataDir)
-	}()
-
-	testDataDir := filepath.Join(tmpDir, "data")
-	os.Setenv("RECKON_DATA_DIR", testDataDir)
-
-	// Initialize database
-	dbPath, err := config.DatabasePath()
-	if err != nil {
-		t.Fatalf("Failed to get database path: %v", err)
-	}
-
-	db, err := storage.NewDatabase(dbPath)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
-	defer db.Close()
-
-	// Create repositories and services
-	taskRepo := task.NewRepository(db)
-	journalRepo := journal.NewRepository(db)
-	fileStore := storage.NewFileStore()
-	journalSvc := journal.NewService(journalRepo, fileStore)
-	taskSvc := task.NewService(taskRepo, journalSvc)
-
-	// Test creating a task
-	createdTask, err := taskSvc.Create("Integration test task", []string{"test", "integration"})
-	if err != nil {
-		t.Fatalf("Failed to create task: %v", err)
-	}
-
-	if createdTask.Title != "Integration test task" {
-		t.Errorf("Expected title 'Integration test task', got '%s'", createdTask.Title)
-	}
-
-	if len(createdTask.Tags) != 2 {
-		t.Errorf("Expected 2 tags, got %d", len(createdTask.Tags))
-	}
-
-	// Test retrieving the task
-	retrievedTask, err := taskSvc.GetByID(createdTask.ID)
-	if err != nil {
-		t.Fatalf("Failed to retrieve task: %v", err)
-	}
-
-	if retrievedTask.ID != createdTask.ID {
-		t.Errorf("Retrieved task ID doesn't match")
-	}
-
-	// Test listing tasks
-	tasks, err := taskSvc.List(nil, []string{})
-	if err != nil {
-		t.Fatalf("Failed to list tasks: %v", err)
-	}
-
-	if len(tasks) != 1 {
-		t.Errorf("Expected 1 task, got %d", len(tasks))
-	}
-
-	// Test appending a log entry
-	err = taskSvc.AppendLog(createdTask.ID, "Worked on integration tests")
-	if err != nil {
-		t.Fatalf("Failed to append log: %v", err)
-	}
-
-	// Verify log was added
-	updatedTask, err := taskSvc.GetByID(createdTask.ID)
-	if err != nil {
-		t.Fatalf("Failed to get updated task: %v", err)
-	}
-
-	if len(updatedTask.LogEntries) != 1 {
-		t.Errorf("Expected 1 log entry, got %d", len(updatedTask.LogEntries))
-	}
-
-	if updatedTask.LogEntries[0].Content != "Worked on integration tests" {
-		t.Errorf("Expected log message 'Worked on integration tests', got '%s'", updatedTask.LogEntries[0].Content)
 	}
 }
 
@@ -480,19 +388,74 @@ func TestJournalTaskServiceIntegration(t *testing.T) {
 	fileStore := storage.NewFileStore()
 	journalTaskSvc := journal.NewTaskService(taskRepo, fileStore)
 
-	// Create a test tasks.md file
-	tasksContent := `# Tasks
+	// Create individual task files
+	task1Content := `---
+id: test-task-1
+title: Test task 1
+created: 2024-01-01
+status: active
+---
 
-- [ ] test-task-1 Test task 1
-- [x] test-task-2 Test task 2 completed
-- [ ] test-task-3 Test task 3 with notes
-  - note-1 First note
-  - note-2 Second note
+## Description
+
+Test task 1 description
+
+## Log
+
+### 2024-01-01
+  - note-1-task1 First note
 `
 
-	err = fileStore.WriteTasksFile(tasksContent)
+	task2Content := `---
+id: test-task-2
+title: Test task 2 completed
+created: 2024-01-01
+status: done
+---
+
+## Description
+
+Test task 2 description
+`
+
+	task3Content := `---
+id: test-task-3
+title: Test task 3 with notes
+created: 2024-01-01
+status: active
+---
+
+## Description
+
+Test task 3 description
+
+## Log
+
+### 2024-01-01
+  - note-1-task3 First note
+  - note-2-task3 Second note
+`
+
+	// Get tasks directory
+	tasksDir, err := config.TasksDir()
 	if err != nil {
-		t.Fatalf("Failed to write tasks file: %v", err)
+		t.Fatalf("Failed to get tasks directory: %v", err)
+	}
+
+	// Write task files
+	err = os.WriteFile(filepath.Join(tasksDir, "test-task-1.md"), []byte(task1Content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write task1 file: %v", err)
+	}
+
+	err = os.WriteFile(filepath.Join(tasksDir, "test-task-2.md"), []byte(task2Content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write task2 file: %v", err)
+	}
+
+	err = os.WriteFile(filepath.Join(tasksDir, "test-task-3.md"), []byte(task3Content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write task3 file: %v", err)
 	}
 
 	// Test that GetAllTasks works
@@ -542,76 +505,33 @@ func TestJournalTaskServiceIntegration(t *testing.T) {
 		t.Errorf("Expected 4 tasks after adding one, got %d", len(tasks))
 	}
 
-	// Verify the new task
-	newTask := tasks[3]
-	if newTask.Text != "New integration test task" {
-		t.Errorf("Expected new task text 'New integration test task', got '%s'", newTask.Text)
+	// Find the new task (don't assume order)
+	found := false
+	var newTask journal.Task
+	for _, task := range tasks {
+		if task.Text == "New integration test task" {
+			newTask = task
+			found = true
+			break
+		}
 	}
-	if newTask.Status != journal.TaskOpen {
+
+	if !found {
+		t.Errorf("New task not found")
+	} else if newTask.Status != journal.TaskOpen {
 		t.Errorf("Expected new task to be Open, got %v", newTask.Status)
 	}
-}
 
-func TestEmptyStateTaskCreation(t *testing.T) {
-	// Create temporary directory for test
-	tmpDir, err := os.MkdirTemp("", "reckon-integration-test-*")
+	// Verify task was added
+	tasks, err = journalTaskSvc.GetAllTasks()
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Set up test environment
-	oldDataDir := os.Getenv("RECKON_DATA_DIR")
-	defer func() {
-		os.Setenv("RECKON_DATA_DIR", oldDataDir)
-	}()
-
-	testDataDir := filepath.Join(tmpDir, "data")
-	os.Setenv("RECKON_DATA_DIR", testDataDir)
-
-	// Initialize services
-	dbPath, err := config.DatabasePath()
-	if err != nil {
-		t.Fatalf("Failed to get database path: %v", err)
+		t.Fatalf("Failed to get tasks after adding: %v", err)
 	}
 
-	db, err := storage.NewDatabase(dbPath)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
-	defer db.Close()
-
-	taskRepo := task.NewRepository(db)
-	journalRepo := journal.NewRepository(db)
-	fileStore := storage.NewFileStore()
-	journalSvc := journal.NewService(journalRepo, fileStore)
-	taskSvc := task.NewService(taskRepo, journalSvc)
-
-	// Create the first task
-	createdTask, err := taskSvc.Create("First task in empty state", []string{"test"})
-	if err != nil {
-		t.Fatalf("Failed to create first task: %v", err)
+	if len(tasks) != 4 {
+		t.Errorf("Expected 4 tasks after adding one, got %d", len(tasks))
 	}
 
-	// Verify task was created
-	if createdTask.Title != "First task in empty state" {
-		t.Errorf("Expected task title 'First task in empty state', got '%s'", createdTask.Title)
-	}
-
-	// Verify task file was created
-	if _, err := os.Stat(createdTask.FilePath); os.IsNotExist(err) {
-		t.Errorf("Expected task file to be created at %s", createdTask.FilePath)
-	}
-
-	// Verify we can retrieve the task
-	retrievedTask, err := taskSvc.GetByID(createdTask.ID)
-	if err != nil {
-		t.Fatalf("Failed to retrieve created task: %v", err)
-	}
-
-	if retrievedTask.Title != "First task in empty state" {
-		t.Errorf("Retrieved task title doesn't match")
-	}
 }
 
 func TestDatabaseMigration(t *testing.T) {
@@ -656,17 +576,6 @@ func TestDatabaseMigration(t *testing.T) {
 		t.Fatalf("Failed to query journals table: %v", err)
 	}
 
-	// Check phase2_tasks table (new task system)
-	err = db.DB().QueryRow("SELECT COUNT(*) FROM phase2_tasks").Scan(&count)
-	if err != nil {
-		t.Fatalf("Failed to query phase2_tasks table: %v", err)
-	}
-
-	// Check phase2_task_log_entries table
-	err = db.DB().QueryRow("SELECT COUNT(*) FROM phase2_task_log_entries").Scan(&count)
-	if err != nil {
-		t.Fatalf("Failed to query phase2_task_log_entries table: %v", err)
-	}
 }
 
 func TestEdgeCases(t *testing.T) {

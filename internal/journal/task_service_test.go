@@ -156,7 +156,7 @@ func TestAddTask(t *testing.T) {
 	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add a task
-	err := service.AddTask("New task to complete")
+	err := service.AddTask("New task to complete", []string{})
 	require.NoError(t, err)
 
 	// Verify it was saved by reading back
@@ -180,13 +180,13 @@ func TestAddTask_MultipleTasksIncrementPosition(t *testing.T) {
 	service, _, _, _ := setupTaskServiceTest(t)
 
 	// Add multiple tasks
-	err := service.AddTask("First task")
+	err := service.AddTask("First task", []string{})
 	require.NoError(t, err)
 
-	err = service.AddTask("Second task")
+	err = service.AddTask("Second task", []string{})
 	require.NoError(t, err)
 
-	err = service.AddTask("Third task")
+	err = service.AddTask("Third task", []string{})
 	require.NoError(t, err)
 
 	// Verify positions
@@ -395,7 +395,7 @@ func TestSave_UpdatesBothFileAndDB(t *testing.T) {
 	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add a task
-	err := service.AddTask("Test task")
+	err := service.AddTask("Test task", []string{})
 	require.NoError(t, err)
 
 	// Verify task file exists in tasks directory
@@ -419,7 +419,7 @@ func TestService_FileIsSourceOfTruth(t *testing.T) {
 	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add task via service
-	err := service.AddTask("Task from service")
+	err := service.AddTask("Task from service", []string{})
 	require.NoError(t, err)
 
 	// Manually create a different task file directly in tasks directory
@@ -448,10 +448,10 @@ func TestService_Integration(t *testing.T) {
 	service, _, _, _ := setupTaskServiceTest(t)
 
 	// Add multiple tasks
-	err := service.AddTask("Task 1")
+	err := service.AddTask("Task 1", []string{})
 	require.NoError(t, err)
 
-	err = service.AddTask("Task 2")
+	err = service.AddTask("Task 2", []string{})
 	require.NoError(t, err)
 
 	// Add notes to first task

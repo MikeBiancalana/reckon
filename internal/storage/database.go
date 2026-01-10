@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     text TEXT NOT NULL,
     status TEXT NOT NULL,
+    tags TEXT,
     position INTEGER NOT NULL,
     created_at INTEGER NOT NULL
 );
@@ -85,33 +86,7 @@ CREATE TABLE IF NOT EXISTS schedule_items (
     FOREIGN KEY (journal_date) REFERENCES journals(date) ON DELETE CASCADE
 );
 
--- Phase 2: Task Management tables
--- Multi-day tasks (separate from journal tasks)
-CREATE TABLE IF NOT EXISTS phase2_tasks (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    status TEXT NOT NULL,
-    created TEXT NOT NULL,
-    file_path TEXT NOT NULL
-);
 
--- Task tags
-CREATE TABLE IF NOT EXISTS phase2_task_tags (
-    task_id TEXT NOT NULL,
-    tag TEXT NOT NULL,
-    PRIMARY KEY (task_id, tag),
-    FOREIGN KEY (task_id) REFERENCES phase2_tasks(id) ON DELETE CASCADE
-);
-
--- Task log entries
-CREATE TABLE IF NOT EXISTS phase2_task_log_entries (
-    id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
-    date TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    content TEXT NOT NULL,
-    FOREIGN KEY (task_id) REFERENCES phase2_tasks(id) ON DELETE CASCADE
-);
 
 -- Indices for faster queries
 CREATE INDEX IF NOT EXISTS idx_intentions_date ON intentions(journal_date);
@@ -127,11 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_log_notes_entry ON log_notes(log_entry_id);
 CREATE INDEX IF NOT EXISTS idx_schedule_items_date ON schedule_items(journal_date);
 CREATE INDEX IF NOT EXISTS idx_schedule_items_time ON schedule_items(time);
 
--- Phase 2 task indices
-CREATE INDEX IF NOT EXISTS idx_phase2_tasks_status ON phase2_tasks(status);
-CREATE INDEX IF NOT EXISTS idx_phase2_task_tags_tag ON phase2_task_tags(tag);
-CREATE INDEX IF NOT EXISTS idx_phase2_task_log_date ON phase2_task_log_entries(date);
-CREATE INDEX IF NOT EXISTS idx_phase2_task_log_task ON phase2_task_log_entries(task_id);
+
 `
 
 // Database wraps a SQL database connection
