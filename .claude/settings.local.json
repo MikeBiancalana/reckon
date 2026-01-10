@@ -25,7 +25,17 @@
       "Bash(gh pr view:*)",
       "Bash(git log:*)",
       "Bash(cat:*)",
-      "Bash(git -C /home/chadd/repos/reckon-claude status)"
+      "Bash(git -C /home/chadd/repos/reckon-claude status)",
+      "Bash(git commit:*)",
+      "Bash(bd pin:*)",
+      "Bash(git -C /home/chadd/repos/reckon status)",
+      "Bash(git -C /home/chadd/repos/reckon rev-parse:*)",
+      "Bash(grep:*)",
+      "Bash(bd info:*)",
+      "Bash(bd --version:*)",
+      "Bash(bd --help:*)",
+      "Bash(bd prime:*)",
+      "Bash(bd:*)"
     ]
   }
 }
