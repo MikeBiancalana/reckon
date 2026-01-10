@@ -300,21 +300,21 @@ var taskNoteCmd = &cobra.Command{
 	Short: "Add a note to a task",
 	Args:  cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Use global taskService
-		if taskService == nil {
+		// Use global journalTaskService
+		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
 		}
 
 		// Resolve task ID (supports numeric indices)
-		taskID, err := resolveTaskID(args[0], taskService)
+		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
 		if err != nil {
 			return err
 		}
 
 		noteText := strings.Join(args[1:], " ")
 
-		// Add note (using AppendLog which adds to task's log)
-		if err := taskService.AppendLog(taskID, noteText); err != nil {
+		// Add note (using AddTaskNote which adds to task's log)
+		if err := journalTaskService.AddTaskNote(taskID, noteText); err != nil {
 			return fmt.Errorf("failed to add note: %w", err)
 		}
 
