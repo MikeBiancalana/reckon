@@ -121,7 +121,7 @@ func TestViewInactiveState(t *testing.T) {
 	view := teb.View()
 
 	// Should contain the inactive prompt
-	expectedPrompt := "Press t (task), i (intention), w (win), or L (log) to add entry"
+	expectedPrompt := "Press t (task), i (intention), w (win), L (log), or n (note) to add entry"
 	if !strings.Contains(view, expectedPrompt) {
 		t.Errorf("Expected inactive view to contain %q, got: %s", expectedPrompt, view)
 	}
@@ -232,11 +232,12 @@ func TestPromptByMode(t *testing.T) {
 		mode           EntryMode
 		expectedPrompt string
 	}{
-		{ModeInactive, "Press t (task), i (intention), w (win), or L (log) to add entry"},
+		{ModeInactive, "Press t (task), i (intention), w (win), L (log), or n (note) to add entry"},
 		{ModeTask, "Add task: "},
 		{ModeIntention, "Add intention: "},
 		{ModeWin, "Add win: "},
 		{ModeLog, "Add log entry: "},
+		{ModeNote, "Add note: "},
 	}
 
 	teb := NewTextEntryBar()

@@ -15,6 +15,7 @@ const (
 	ModeIntention EntryMode = "intention"
 	ModeWin       EntryMode = "win"
 	ModeLog       EntryMode = "log"
+	ModeNote      EntryMode = "note"
 )
 
 var (
@@ -77,7 +78,7 @@ func (teb *TextEntryBar) View() string {
 
 	if teb.mode == ModeInactive {
 		// Inactive state
-		prompt := "Press t (task), i (intention), w (win), or L (log) to add entry"
+		prompt := "Press t (task), i (intention), w (win), L (log), or n (note) to add entry"
 		content = "> " + prompt
 		return inactiveStyle.Width(teb.width - 2).Render(content)
 	}
@@ -100,6 +101,8 @@ func (teb *TextEntryBar) getPromptForMode() string {
 		return "Add win: "
 	case ModeLog:
 		return "Add log entry: "
+	case ModeNote:
+		return "Add note: "
 	default:
 		return ""
 	}

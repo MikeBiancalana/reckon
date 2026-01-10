@@ -294,6 +294,35 @@ var taskEditCmd = &cobra.Command{
 	},
 }
 
+// taskNoteCmd adds a note to a task
+var taskNoteCmd = &cobra.Command{
+	Use:   "note [task-id] [note-text]",
+	Short: "Add a note to a task",
+	Args:  cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Use global taskService
+		if taskService == nil {
+			return fmt.Errorf("task service not initialized")
+		}
+
+		// Resolve task ID (supports numeric indices)
+		taskID, err := resolveTaskID(args[0], taskService)
+		if err != nil {
+			return err
+		}
+
+		noteText := strings.Join(args[1:], " ")
+
+		// Add note (using AppendLog which adds to task's log)
+		if err := taskService.AppendLog(taskID, noteText); err != nil {
+			return fmt.Errorf("failed to add note: %w", err)
+		}
+
+		fmt.Printf("✓ Added note to task %s\n", taskID)
+		return nil
+	},
+}
+
 func init() {
 	// Add subcommands
 	taskCmd.AddCommand(taskNewCmd)
@@ -302,6 +331,7 @@ func init() {
 	taskCmd.AddCommand(taskLogCmd)
 	taskCmd.AddCommand(taskDoneCmd)
 	taskCmd.AddCommand(taskEditCmd)
+	taskCmd.AddCommand(taskNoteCmd)
 
 	// Flags
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
@@ -310,7 +340,7 @@ func init() {
 	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact output")
 	taskListCmd.Flags().BoolVar(&taskJsonFlag, "json", false, "Output as JSON")
 	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
-	taskEditCmd.Flags().StringVar(&taskEditDescriptionFlag, "description", "", "New task description")
+	taskEditCmd.Flags().StringVarP(&taskEditDescriptionFlag, "description", "d", "", "New task description")
 	taskEditCmd.Flags().StringSliceVar(&taskEditTagsFlag, "tags", []string{}, "New task tags (comma-separated)")
 }
 
