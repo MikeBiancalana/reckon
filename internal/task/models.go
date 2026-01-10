@@ -47,14 +47,14 @@ type Task struct {
 }
 
 // NewTask creates a new task
-func NewTask(title string, tags []string) *Task {
+func NewTask(title string, description string, tags []string) *Task {
 	return &Task{
 		ID:          xid.New().String(),
 		Title:       title,
 		Status:      StatusActive,
 		Created:     time.Now().Format("2006-01-02"),
 		Tags:        tags,
-		Description: "",
+		Description: description,
 		LogEntries:  make([]LogEntry, 0),
 	}
 }
