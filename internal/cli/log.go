@@ -2,44 +2,86 @@ package cli
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
+// logInputModel handles the Bubble Tea model for interactive log input.
+type logInputModel struct {
+	textInput textinput.Model
+	done      bool
+	cancelled bool
+}
+
+func initialLogModel() logInputModel {
+	ti := textinput.New()
+	ti.Placeholder = "Type your log entry..."
+	ti.Focus()
+	return logInputModel{
+		textInput: ti,
+		done:      false,
+		cancelled: false,
+	}
+}
+
+func (m logInputModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m logInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyEnter:
+			m.done = true
+			return m, tea.Quit
+		case tea.KeyEsc:
+			m.cancelled = true
+			return m, tea.Quit
+		}
+	}
+
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+func (m logInputModel) View() string {
+	if m.done || m.cancelled {
+		return ""
+	}
+	return fmt.Sprintf("Add log entry: %s\n\nEnter to submit, Esc to cancel", m.textInput.View())
+}
+
 var logCmd = &cobra.Command{
-	Use:   "log [message | -]",
+	Use:   "log [message]",
 	Short: "Append a log entry to today's journal",
-	Long:  `Appends a timestamped log entry to today's journal. Use - to read from stdin, or run without arguments for interactive input.`,
-	Args:  cobra.MaximumNArgs(1),
+	Long:  `Appends a timestamped log entry to today's journal.`,
+	Args:  cobra.RangeArgs(0, -1), // Accepts 0 or more arguments
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var message string
 
 		if len(args) == 0 {
-			// Interactive mode: prompt user for input
-			fmt.Fprint(os.Stderr, "Enter log message: ")
-			data, err := io.ReadAll(os.Stdin)
+			// Interactive mode
+			p := tea.NewProgram(initialLogModel())
+			model, err := p.Run()
 			if err != nil {
-				return fmt.Errorf("failed to read input: %w", err)
+				return fmt.Errorf("interactive input failed: %w", err)
 			}
-			message = strings.TrimSpace(string(data))
-			if message == "" {
-				return fmt.Errorf("no message provided")
+			m := model.(logInputModel)
+			if m.cancelled {
+				return nil
 			}
-		} else if args[0] == "-" {
-			// Read from stdin
-			data, err := io.ReadAll(os.Stdin)
-			if err != nil {
-				return fmt.Errorf("failed to read from stdin: %w", err)
-			}
-			message = strings.TrimSpace(string(data))
-			if message == "" {
-				return fmt.Errorf("no message provided via stdin")
-			}
+			message = strings.TrimSpace(m.textInput.Value())
 		} else {
-			message = args[0]
+			message = strings.TrimSpace(strings.Join(args, " "))
+		}
+
+		if message == "" {
+			return fmt.Errorf("log message cannot be empty")
 		}
 
 		j, err := service.GetToday()
