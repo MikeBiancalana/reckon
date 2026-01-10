@@ -70,14 +70,6 @@ var taskListCmd = &cobra.Command{
 			return fmt.Errorf("task service not initialized")
 		}
 
-		// Validate status filter if provided
-		if taskStatusFlag != "" {
-			validStatuses := map[string]bool{"open": true, "active": true, "done": true}
-			if !validStatuses[strings.ToLower(taskStatusFlag)] {
-				return fmt.Errorf("unsupported status value: %s (supported: open, active, done)", taskStatusFlag)
-			}
-		}
-
 		// List all tasks
 		tasks, err := journalTaskService.GetAllTasks()
 		if err != nil {
@@ -86,10 +78,19 @@ var taskListCmd = &cobra.Command{
 
 		// Apply status filter if provided
 		if taskStatusFlag != "" {
+			statusLower := strings.ToLower(taskStatusFlag)
+			// Validate status value
+			switch statusLower {
+			case "open", "active", "done":
+				// Valid status, continue with filtering
+			default:
+				return fmt.Errorf("unsupported status value: %s (supported: open, active, done)", taskStatusFlag)
+			}
+
 			filtered := make([]journal.Task, 0)
 			for _, t := range tasks {
 				statusMatch := false
-				switch strings.ToLower(taskStatusFlag) {
+				switch statusLower {
 				case "open", "active":
 					statusMatch = t.Status == journal.TaskOpen
 				case "done":
@@ -257,17 +258,12 @@ var taskDoneCmd = &cobra.Command{
 var taskEditCmd = &cobra.Command{
 	Use:   "edit [task-id]",
 	Short: "Edit task details",
-	Long:  `Edit task title using --title flag.`,
+	Long:  "Edit a task's title using the --title flag. Tags support will be added in a future update.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
-		}
-
-		// Check if any flags were provided
-		if taskEditTitleFlag == "" {
-			return fmt.Errorf("no edit flags provided. Use --title to update the task title")
 		}
 
 		// Resolve task ID (supports numeric indices)
@@ -276,8 +272,13 @@ var taskEditCmd = &cobra.Command{
 			return err
 		}
 
-		// Update the task
-		if err := journalTaskService.UpdateTask(taskID, taskEditTitleFlag, nil); err != nil {
+		// Check if any flags were provided
+		if taskEditTitleFlag == "" && len(taskEditTagsFlag) == 0 {
+			return fmt.Errorf("no changes specified. Use --title to update the task title")
+		}
+
+		// Update task
+		if err := journalTaskService.UpdateTask(taskID, taskEditTitleFlag, taskEditTagsFlag); err != nil {
 			return fmt.Errorf("failed to update task: %w", err)
 		}
 
@@ -286,7 +287,7 @@ var taskEditCmd = &cobra.Command{
 			fmt.Printf("  New title: %s\n", taskEditTitleFlag)
 		}
 		if len(taskEditTagsFlag) > 0 {
-			fmt.Println("  Note: Tags are not yet fully supported in the unified task system")
+			fmt.Printf("  Note: Tags are not yet fully supported in the unified task system\n")
 		}
 
 		return nil

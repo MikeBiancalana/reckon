@@ -7,7 +7,6 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/storage"
-	"github.com/MikeBiancalana/reckon/internal/task"
 	"github.com/MikeBiancalana/reckon/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -15,7 +14,6 @@ import (
 
 var (
 	service            *journal.Service
-	taskService        *task.Service
 	journalTaskService *journal.TaskService
 )
 
@@ -27,9 +25,6 @@ var RootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Default behavior: launch TUI
 		model := tui.NewModel(service)
-		if taskService != nil {
-			model.SetTaskService(taskService)
-		}
 		if journalTaskService != nil {
 			model.SetJournalTaskService(journalTaskService)
 		}
@@ -73,10 +68,6 @@ func initService() {
 	// Initialize journal task service
 	journalTaskRepo := journal.NewTaskRepository(db)
 	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
-
-	// Initialize task service
-	taskRepo := task.NewRepository(db)
-	taskService = task.NewService(taskRepo, service)
 }
 
 // Execute runs the root command
