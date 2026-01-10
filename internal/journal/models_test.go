@@ -69,6 +69,12 @@ func TestNewLogEntry(t *testing.T) {
 	if entry.ID == "" {
 		t.Error("Expected ID to be set")
 	}
+	if entry.Notes == nil {
+		t.Error("Expected Notes to be initialized")
+	}
+	if len(entry.Notes) != 0 {
+		t.Errorf("Expected empty notes slice, got %d", len(entry.Notes))
+	}
 }
 
 func TestNewWin(t *testing.T) {
@@ -85,6 +91,32 @@ func TestNewWin(t *testing.T) {
 	}
 	if win.ID == "" {
 		t.Error("Expected ID to be set")
+	}
+}
+
+func TestNewLogNote(t *testing.T) {
+	text := "Test log note"
+	position := 1
+
+	note := NewLogNote(text, position)
+
+	if note.Text != text {
+		t.Errorf("Expected text %s, got %s", text, note.Text)
+	}
+	if note.Position != position {
+		t.Errorf("Expected position %d, got %d", position, note.Position)
+	}
+	if note.ID == "" {
+		t.Error("Expected ID to be set")
+	}
+}
+
+func TestNewLogNote_UniqueIDs(t *testing.T) {
+	note1 := NewLogNote("Note 1", 1)
+	note2 := NewLogNote("Note 2", 2)
+
+	if note1.ID == note2.ID {
+		t.Error("Expected unique IDs for different notes")
 	}
 }
 
