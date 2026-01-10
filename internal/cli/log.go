@@ -60,7 +60,7 @@ var logCmd = &cobra.Command{
 	Use:   "log [message]",
 	Short: "Append a log entry to today's journal",
 	Long:  `Appends a timestamped log entry to today's journal.`,
-	Args:  cobra.RangeArgs(0, -1), // Accepts 0 or more arguments
+	Args:  cobra.ArbitraryArgs, // Accepts 0 or more arguments
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var message string
 
