@@ -8,6 +8,7 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/MikeBiancalana/reckon/internal/task"
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -27,30 +28,82 @@ var taskCmd = &cobra.Command{
 var taskNewCmd = &cobra.Command{
 	Use:   "new [title]",
 	Short: "Create a new task",
-	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		title := strings.Join(args, " ")
-
 		// Initialize services
 		svc, err := initTaskService()
 		if err != nil {
 			return err
 		}
 
-		// Create task
-		t, err := svc.Create(title, taskTagsFlag)
+		var t *task.Task
+		if len(args) == 0 {
+			// Interactive mode
+			t, err = runInteractiveTaskForm(svc)
+		} else {
+			// Non-interactive mode
+			title := strings.Join(args, " ")
+			t, err = svc.Create(title, taskTagsFlag)
+		}
 		if err != nil {
 			return fmt.Errorf("failed to create task: %w", err)
 		}
 
 		fmt.Printf("✓ Created task: %s\n", t.ID)
 		fmt.Printf("  Title: %s\n", t.Title)
+		if t.Description != "" {
+			fmt.Printf("  Description: %s\n", strings.ReplaceAll(t.Description, "\n", "\n    "))
+		}
 		if len(t.Tags) > 0 {
 			fmt.Printf("  Tags: %s\n", strings.Join(t.Tags, ", "))
 		}
 
 		return nil
 	},
+}
+
+// runInteractiveTaskForm runs an interactive form to create a task
+func runInteractiveTaskForm(svc *task.Service) (*task.Task, error) {
+	var title string
+	var description string
+	var tags string
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Task title").
+				Value(&title).
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return fmt.Errorf("title is required")
+					}
+					return nil
+				}),
+			huh.NewText().
+				Title("Description (optional, press Enter on empty line to finish)").
+				Value(&description),
+			huh.NewInput().
+				Title("Tags (optional, comma-separated)").
+				Value(&tags),
+		),
+	)
+
+	err := form.Run()
+	if err != nil {
+		return nil, fmt.Errorf("form cancelled: %w", err)
+	}
+
+	// Parse tags
+	var tagList []string
+	if tags != "" {
+		for _, tag := range strings.Split(tags, ",") {
+			trimmed := strings.TrimSpace(tag)
+			if trimmed != "" {
+				tagList = append(tagList, trimmed)
+			}
+		}
+	}
+
+	return svc.CreateWithDescription(title, description, tagList)
 }
 
 // taskListCmd lists tasks
