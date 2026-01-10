@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,6 +45,45 @@ func setupTaskServiceTest(t *testing.T) (*TaskService, *storage.FileStore, *stor
 	service := NewTaskService(repo, store)
 
 	return service, store, db, tmpDir
+}
+
+// createTaskFile creates a task file in the tasks directory with YAML frontmatter format
+func createTaskFile(t *testing.T, tmpDir, taskID, title, status string, notes []struct{ id, text string }) {
+	t.Helper()
+
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	err := os.MkdirAll(tasksDir, 0755)
+	require.NoError(t, err)
+
+	// Build log section with notes
+	logSection := "## Log\n\n"
+	if len(notes) > 0 {
+		logSection += "### 2025-01-01\n"
+		for _, note := range notes {
+			logSection += fmt.Sprintf("  - %s %s\n", note.id, note.text)
+		}
+	}
+
+	content := fmt.Sprintf(`---
+id: %s
+title: %s
+created: 2025-01-01
+status: %s
+---
+
+## Description
+
+%s`, taskID, title, status, logSection)
+
+	filePath := filepath.Join(tasksDir, taskID+".md")
+	err = os.WriteFile(filePath, []byte(content), 0644)
+	require.NoError(t, err)
+}
+
+// Simplified helper for tasks without notes
+func createTaskFileSimple(t *testing.T, tmpDir, taskID, title, status string) {
+	t.Helper()
+	createTaskFile(t, tmpDir, taskID, title, status, nil)
 }
 
 func TestGetAllTasks_EmptyFile(t *testing.T) {
@@ -113,18 +153,11 @@ status: done
 }
 
 func TestAddTask(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add a task
 	err := service.AddTask("New task to complete")
 	require.NoError(t, err)
-
-	// Verify it was saved to file
-	content, info, err := store.ReadTasksFile()
-	require.NoError(t, err)
-	assert.True(t, info.Exists)
-	assert.Contains(t, content, "New task to complete")
-	assert.Contains(t, content, "[ ]") // Should be open
 
 	// Verify it was saved by reading back
 	tasks, err := service.GetAllTasks()
@@ -133,6 +166,14 @@ func TestAddTask(t *testing.T) {
 	assert.Equal(t, "New task to complete", tasks[0].Text)
 	assert.Equal(t, TaskOpen, tasks[0].Status)
 	assert.Equal(t, 0, tasks[0].Position)
+
+	// Verify the task file exists in tasks directory
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	taskFile := filepath.Join(tasksDir, tasks[0].ID+".md")
+	content, err := os.ReadFile(taskFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "New task to complete")
+	assert.Contains(t, string(content), "status: open")
 }
 
 func TestAddTask_MultipleTasksIncrementPosition(t *testing.T) {
@@ -164,18 +205,13 @@ func TestAddTask_MultipleTasksIncrementPosition(t *testing.T) {
 }
 
 func TestToggleTask_OpenToDone(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Create initial task
-	content := `# Tasks
-
-- [ ] task-1 My task
-`
-	err := store.WriteTasksFile(content)
-	require.NoError(t, err)
+	createTaskFileSimple(t, tmpDir, "task-1", "My task", "open")
 
 	// Toggle to done
-	err = service.ToggleTask("task-1")
+	err := service.ToggleTask("task-1")
 	require.NoError(t, err)
 
 	// Verify status changed
@@ -185,25 +221,22 @@ func TestToggleTask_OpenToDone(t *testing.T) {
 	assert.Equal(t, TaskDone, tasks[0].Status)
 
 	// Verify file was updated
-	content, _, err = store.ReadTasksFile()
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	taskFile := filepath.Join(tasksDir, "task-1.md")
+	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
-	assert.Contains(t, content, "[x]")
-	assert.NotContains(t, content, "[ ]")
+	assert.Contains(t, string(content), "status: done")
+	assert.NotContains(t, string(content), "status: open")
 }
 
 func TestToggleTask_DoneToOpen(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Create completed task
-	content := `# Tasks
-
-- [x] task-1 Completed task
-`
-	err := store.WriteTasksFile(content)
-	require.NoError(t, err)
+	createTaskFileSimple(t, tmpDir, "task-1", "Completed task", "done")
 
 	// Toggle to open
-	err = service.ToggleTask("task-1")
+	err := service.ToggleTask("task-1")
 	require.NoError(t, err)
 
 	// Verify status changed
@@ -213,10 +246,12 @@ func TestToggleTask_DoneToOpen(t *testing.T) {
 	assert.Equal(t, TaskOpen, tasks[0].Status)
 
 	// Verify file was updated
-	content, _, err = store.ReadTasksFile()
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	taskFile := filepath.Join(tasksDir, "task-1.md")
+	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
-	assert.Contains(t, content, "[ ]")
-	assert.NotContains(t, content, "[x]")
+	assert.Contains(t, string(content), "status: open")
+	assert.NotContains(t, string(content), "status: done")
 }
 
 func TestToggleTask_NotFound(t *testing.T) {
@@ -229,18 +264,13 @@ func TestToggleTask_NotFound(t *testing.T) {
 }
 
 func TestAddTaskNote(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Create initial task
-	content := `# Tasks
-
-- [ ] task-1 My task
-`
-	err := store.WriteTasksFile(content)
-	require.NoError(t, err)
+	createTaskFileSimple(t, tmpDir, "task-1", "My task", "open")
 
 	// Add a note
-	err = service.AddTaskNote("task-1", "This is a note")
+	err := service.AddTaskNote("task-1", "This is a note")
 	require.NoError(t, err)
 
 	// Verify note was added
@@ -252,26 +282,24 @@ func TestAddTaskNote(t *testing.T) {
 	assert.Equal(t, 0, tasks[0].Notes[0].Position)
 
 	// Verify file was updated
-	content, _, err = store.ReadTasksFile()
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	taskFile := filepath.Join(tasksDir, "task-1.md")
+	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
-	assert.Contains(t, content, "This is a note")
-	assert.Contains(t, content, "  - ") // Indented note
+	assert.Contains(t, string(content), "This is a note")
+	assert.Contains(t, string(content), "  - ") // Indented note
 }
 
 func TestAddTaskNote_MultipleNotes(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
-	// Create initial task
-	content := `# Tasks
-
-- [ ] task-1 My task
-  - note-1 First note
-`
-	err := store.WriteTasksFile(content)
-	require.NoError(t, err)
+	// Create initial task with one note
+	createTaskFile(t, tmpDir, "task-1", "My task", "open", []struct{ id, text string }{
+		{"note-1", "First note"},
+	})
 
 	// Add more notes
-	err = service.AddTaskNote("task-1", "Second note")
+	err := service.AddTaskNote("task-1", "Second note")
 	require.NoError(t, err)
 
 	err = service.AddTaskNote("task-1", "Third note")
@@ -303,21 +331,17 @@ func TestAddTaskNote_TaskNotFound(t *testing.T) {
 }
 
 func TestService_DeleteTaskNote(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Create task with notes
-	content := `# Tasks
-
-- [ ] task-1 My task
-  - note-1 First note
-  - note-2 Second note
-  - note-3 Third note
-`
-	err := store.WriteTasksFile(content)
-	require.NoError(t, err)
+	createTaskFile(t, tmpDir, "task-1", "My task", "open", []struct{ id, text string }{
+		{"note-1", "First note"},
+		{"note-2", "Second note"},
+		{"note-3", "Third note"},
+	})
 
 	// Delete middle note
-	err = service.DeleteTaskNote("task-1", "note-2")
+	err := service.DeleteTaskNote("task-1", "note-2")
 	require.NoError(t, err)
 
 	// Verify note was deleted and positions updated
@@ -335,11 +359,13 @@ func TestService_DeleteTaskNote(t *testing.T) {
 	assert.Equal(t, 1, tasks[0].Notes[1].Position) // Position updated after deletion
 
 	// Verify file was updated
-	content, _, err = store.ReadTasksFile()
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	taskFile := filepath.Join(tasksDir, "task-1.md")
+	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
-	assert.Contains(t, content, "First note")
-	assert.Contains(t, content, "Third note")
-	assert.NotContains(t, content, "Second note")
+	assert.Contains(t, string(content), "First note")
+	assert.Contains(t, string(content), "Third note")
+	assert.NotContains(t, string(content), "Second note")
 }
 
 func TestService_DeleteTaskNote_TaskNotFound(t *testing.T) {
@@ -352,65 +378,70 @@ func TestService_DeleteTaskNote_TaskNotFound(t *testing.T) {
 }
 
 func TestService_DeleteTaskNote_NoteNotFound(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Create task
-	content := `# Tasks
-
-- [ ] task-1 My task
-  - note-1 First note
-`
-	err := store.WriteTasksFile(content)
-	require.NoError(t, err)
+	createTaskFile(t, tmpDir, "task-1", "My task", "open", []struct{ id, text string }{
+		{"note-1", "First note"},
+	})
 
 	// Try to delete non-existent note
-	err = service.DeleteTaskNote("task-1", "nonexistent")
+	err := service.DeleteTaskNote("task-1", "nonexistent")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "note not found")
 }
 
 func TestSave_UpdatesBothFileAndDB(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add a task
 	err := service.AddTask("Test task")
 	require.NoError(t, err)
 
-	// Verify file exists and has content
-	content, info, err := store.ReadTasksFile()
-	require.NoError(t, err)
-	assert.True(t, info.Exists)
-	assert.Contains(t, content, "Test task")
-
-	// Verify DB has the task (should be synced by service)
-	// We can verify this by checking that GetAllTasks works
+	// Verify task file exists in tasks directory
 	tasks, err := service.GetAllTasks()
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
+	taskID := tasks[0].ID
+
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	taskFile := filepath.Join(tasksDir, taskID+".md")
+	content, err := os.ReadFile(taskFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "Test task")
+
+	// Verify DB has the task (should be synced by service)
+	// We can verify this by checking that GetAllTasks works
 	assert.Equal(t, "Test task", tasks[0].Text)
 }
 
 func TestService_FileIsSourceOfTruth(t *testing.T) {
-	service, store, _, _ := setupTaskServiceTest(t)
+	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add task via service
 	err := service.AddTask("Task from service")
 	require.NoError(t, err)
 
-	// Manually modify file
-	content := `# Tasks
+	// Manually create a different task file directly in tasks directory
+	createTaskFileSimple(t, tmpDir, "manual-task", "Manual task", "open")
 
-- [ ] manual-task Manual task
-`
-	err = store.WriteTasksFile(content)
-	require.NoError(t, err)
-
-	// GetAllTasks should return what's in the file (file is source of truth)
+	// GetAllTasks should return what's in the files (files are source of truth)
 	tasks, err := service.GetAllTasks()
 	require.NoError(t, err)
-	require.Len(t, tasks, 1)
-	assert.Equal(t, "manual-task", tasks[0].ID)
-	assert.Equal(t, "Manual task", tasks[0].Text)
+	require.Len(t, tasks, 2)
+
+	// Find the manual task
+	var manualTask *Task
+	for i := range tasks {
+		if tasks[i].ID == "manual-task" {
+			manualTask = &tasks[i]
+			break
+		}
+	}
+
+	require.NotNil(t, manualTask, "manual task should be present")
+	assert.Equal(t, "manual-task", manualTask.ID)
+	assert.Equal(t, "Manual task", manualTask.Text)
 }
 
 func TestService_Integration(t *testing.T) {
