@@ -91,6 +91,7 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 			ID:        frontmatter.ID,
 			Text:      frontmatter.Title,
 			Status:    status,
+			Tags:      frontmatter.Tags,
 			Notes:     notes,
 			Position:  position,
 			CreatedAt: createdAt,
@@ -155,8 +156,26 @@ func parseNotesFromBody(body string) []TaskNote {
 	return notes
 }
 
+// validateTags validates and sanitizes tag input
+func validateTags(tags []string) []string {
+	validTags := make([]string, 0, len(tags))
+	seen := make(map[string]bool)
+
+	for _, tag := range tags {
+		tag = strings.TrimSpace(strings.ToLower(tag))
+		if tag != "" && !seen[tag] && len(tag) <= 50 { // reasonable length limit
+			validTags = append(validTags, tag)
+			seen[tag] = true
+		}
+	}
+	return validTags
+}
+
 // AddTask creates a new task and persists it
-func (s *TaskService) AddTask(text string) error {
+func (s *TaskService) AddTask(text string, tags []string) error {
+	// Validate and sanitize tags
+	tags = validateTags(tags)
+
 	// Load all existing tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
@@ -164,7 +183,7 @@ func (s *TaskService) AddTask(text string) error {
 	}
 
 	// Create new task with position at end
-	newTask := NewTask(text, len(tasks))
+	newTask := NewTask(text, tags, len(tasks))
 	tasks = append(tasks, *newTask)
 
 	// Save to both file and DB
@@ -243,6 +262,9 @@ func (s *TaskService) AddTaskNote(taskID, noteText string) error {
 
 // UpdateTask updates a task's title and/or tags
 func (s *TaskService) UpdateTask(taskID string, title string, tags []string) error {
+	// Validate and sanitize tags
+	tags = validateTags(tags)
+
 	// Load all tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
@@ -358,7 +380,7 @@ func writeTaskFile(task Task) string {
 		Title:   task.Text,
 		Created: task.CreatedAt.Format("2006-01-02"),
 		Status:  status,
-		Tags:    []string{}, // TODO: add tags if available
+		Tags:    task.Tags,
 	}
 
 	yamlData, _ := yaml.Marshal(frontmatter)

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
@@ -85,6 +84,7 @@ type Model struct {
 
 	// State for modes
 	helpMode        bool
+	taskCreationMode bool
 	confirmMode     bool
 	confirmItemType string // "intention", "win", "log"
 	confirmItemID   string
@@ -263,6 +263,34 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Handle task picker mode first
+		if m.taskPickerMode {
+			switch msg.String() {
+			case "enter":
+				// Select task
+				if m.taskPicker != nil {
+					selectedTask := m.taskPicker.SelectedTask()
+					if selectedTask != nil {
+						return m, m.loadTask(selectedTask.ID)
+					}
+				}
+				m.taskPickerMode = false
+				return m, nil
+			case "esc":
+				// Cancel task picker
+				m.taskPickerMode = false
+				return m, nil
+			default:
+				// Delegate to task picker
+				if m.taskPicker != nil {
+					var cmd tea.Cmd
+					m.taskPicker, cmd = m.taskPicker.Update(msg)
+					return m, cmd
+				}
+			}
+		}
+
+
 		// Handle text entry bar mode
 		if m.textEntryBar != nil && m.textEntryBar.IsFocused() {
 			switch msg.String() {
@@ -334,6 +362,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusBar.SetSection(sectionName(m.focusedSection))
 			}
 			return m, nil
+		case "ctrl+t":
+			// Open task picker (legacy)
+			if m.legacyTaskService != nil {
+				return m, m.openTaskPicker()
+			}
+			return m, nil
+		case "ctrl+n":
+			// Create new task (legacy)
+			if m.legacyTaskService != nil {
+				m.textEntryBar.SetMode(components.ModeTask)
+				m.textEntryBar.Clear()
+				if m.statusBar != nil {
+					m.statusBar.SetInputMode(true)
+				}
+				return m, m.textEntryBar.Focus()
+			}
+			return m, nil
+		case "ctrl+w":
+			// Close current task (exit two-pane mode)
+			if m.showingTasks {
+				m.showingTasks = false
+				m.currentTask = nil
+				m.taskView = nil
+				m.activePane = PaneJournal
+			}
+			return m, nil
+
 		case "h", "left":
 			return m, m.prevDay()
 		case "l", "right":
@@ -409,17 +464,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.textEntryBar.Focus()
 			}
 			return m, nil
-		case "a":
-			// Add schedule item
-			if m.focusedSection == SectionSchedule && m.textEntryBar != nil {
-				m.textEntryBar.SetMode(components.ModeSchedule)
-				m.textEntryBar.Clear()
-				if m.statusBar != nil {
-					m.statusBar.SetInputMode(true)
-				}
-				return m, m.textEntryBar.Focus()
-			}
-			return m, nil
 		case "d":
 			// Delete selected item with confirmation
 			if m.confirmMode {
@@ -452,15 +496,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.confirmMode = true
 						m.confirmItemType = "log"
 						m.confirmItemID = entry.ID
-					}
-				}
-			case SectionSchedule:
-				if m.scheduleView != nil {
-					item := m.scheduleView.SelectedItem()
-					if item != nil {
-						m.confirmMode = true
-						m.confirmItemType = "schedule"
-						m.confirmItemID = item.ID
 					}
 				}
 			}
@@ -505,11 +540,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, cmd
 				}
 			case SectionSchedule:
-				if m.scheduleView != nil {
-					var cmd tea.Cmd
-					m.scheduleView, cmd = m.scheduleView.Update(msg)
-					return m, cmd
-				}
+				// ScheduleView doesn't have interactive elements yet
+				// So we don't delegate to it
 			}
 		}
 	}
@@ -537,8 +569,6 @@ func (m *Model) View() string {
 			itemType = "win"
 		case "log":
 			itemType = "log entry"
-		case "schedule":
-			itemType = "schedule item"
 		}
 		view := fmt.Sprintf("Delete this %s? (y/n)", itemType)
 		if m.lastError != nil {
@@ -566,6 +596,116 @@ func (m *Model) View() string {
 	// Size components to panes
 	if m.intentionList != nil {
 		m.intentionList.SetSize(paneWidthIntentions, paneHeight)
+	// Two-pane mode: Journal (left) + Task (right)
+	if m.showingTasks && m.taskView != nil {
+		// 50/50 split
+		journalWidth := m.width / 2
+		taskWidth := m.width - journalWidth
+
+		// Render journal pane (simplified - just log view)
+		if m.logView != nil {
+			m.logView.SetSize(journalWidth-1, paneHeight)
+		}
+		journalView := ""
+		if m.logView != nil {
+			journalView = m.logView.View()
+		}
+
+		// Render task pane
+		m.taskView.SetSize(taskWidth-1, paneHeight)
+		taskView := m.taskView.View()
+
+		// Add focus indicator
+		journalStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
+		if m.activePane == PaneJournal {
+			journalStyle = journalStyle.BorderForeground(lipgloss.Color("12"))
+		} else {
+			journalStyle = journalStyle.BorderForeground(lipgloss.Color("8"))
+		}
+
+		content = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			journalStyle.Render(journalView),
+			taskView,
+		)
+	} else {
+		// Original three-pane mode
+		paneWidthIntentions := int(float64(m.width) * 0.25)
+		paneWidthWins := paneWidthIntentions
+		paneWidthLogs := m.width - 2*paneWidthIntentions
+
+		// Size components to panes
+		if m.intentionList != nil {
+			m.intentionList.SetSize(paneWidthIntentions, paneHeight)
+		}
+		if m.winsView != nil {
+			m.winsView.SetSize(paneWidthWins, paneHeight)
+		}
+		if m.logView != nil {
+			m.logView.SetSize(paneWidthLogs, paneHeight)
+		}
+
+		// Get pane views
+		intentionsView := ""
+		if m.intentionList != nil {
+			intentionsView = m.intentionList.View()
+		}
+		winsView := ""
+		if m.winsView != nil {
+			winsView = m.winsView.View()
+		}
+		logsView := ""
+		if m.logView != nil {
+			logsView = m.logView.View()
+		}
+
+		// Join panes with borders
+		borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
+		content = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			borderStyle.Render(intentionsView),
+			borderStyle.Render(winsView),
+			logsView,
+		)
+	{
+		// Original three-pane mode
+		paneWidthIntentions := int(float64(m.width) * 0.25)
+		paneWidthWins := paneWidthIntentions
+		paneWidthLogs := m.width - 2*paneWidthIntentions
+
+		// Size components to panes
+		if m.intentionList != nil {
+			m.intentionList.SetSize(paneWidthIntentions, paneHeight)
+		}
+		if m.winsView != nil {
+			m.winsView.SetSize(paneWidthWins, paneHeight)
+		}
+		if m.logView != nil {
+			m.logView.SetSize(paneWidthLogs, paneHeight)
+		}
+
+		// Get pane views
+		intentionsView := ""
+		if m.intentionList != nil {
+			intentionsView = m.intentionList.View()
+		}
+		winsView := ""
+		if m.winsView != nil {
+			winsView = m.winsView.View()
+		}
+		logsView := ""
+		if m.logView != nil {
+			logsView = m.logView.View()
+		}
+
+		// Join panes with borders
+		borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
+		content = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			borderStyle.Render(intentionsView),
+			borderStyle.Render(winsView),
+			logsView,
+		)
 	}
 	if m.winsView != nil {
 		m.winsView.SetSize(paneWidthWins, paneHeight)
@@ -869,8 +1009,6 @@ func (m *Model) deleteItem() tea.Cmd {
 			err = m.service.DeleteWin(m.currentJournal, m.confirmItemID)
 		case "log":
 			err = m.service.DeleteLogEntry(m.currentJournal, m.confirmItemID)
-		case "schedule":
-			err = m.service.DeleteScheduleItem(m.currentJournal, m.confirmItemID)
 		}
 
 		// Reset confirmation state
@@ -900,7 +1038,21 @@ type errMsg struct {
 	err error
 }
 
-// Journal task messages
+// SetJournalTaskService sets the journal task service
+func (m *Model) SetJournalTaskService(taskService *journal.TaskService) {
+	m.taskService = taskService
+}
+
+type taskLoadedMsg struct {
+	task task.Task
+}
+
+type taskUpdatedMsg struct {
+	taskID string
+}
+
+// New journal task messages
+// New journal task messages
 type tasksLoadedMsg struct {
 	tasks []journal.Task
 }
@@ -963,7 +1115,7 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		case components.ModeTask:
 			// Add task
 			if m.taskService != nil {
-				err = m.taskService.AddTask(inputText)
+				err = m.taskService.AddTask(inputText, []string{})
 				if err != nil {
 					return errMsg{err}
 				}
@@ -1000,19 +1152,6 @@ func (m *Model) submitTextEntry() tea.Cmd {
 				return tasksLoadedMsg{tasks: tasks}
 			}
 			return errMsg{fmt.Errorf("task service not available or no task selected")}
-
-		case components.ModeSchedule:
-			// Add schedule item
-			parts := strings.SplitN(inputText, " ", 2)
-			var timeStr, content string
-			if len(parts) == 2 && strings.Contains(parts[0], ":") {
-				timeStr = parts[0]
-				content = parts[1]
-			} else {
-				timeStr = ""
-				content = inputText
-			}
-			err = m.service.AddScheduleItem(m.currentJournal, timeStr, content)
 
 		default:
 			return errMsg{fmt.Errorf("unknown entry mode")}
