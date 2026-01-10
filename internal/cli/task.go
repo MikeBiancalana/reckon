@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/spf13/cobra"
@@ -15,6 +16,7 @@ var (
 	taskStatusFlag          string
 	taskTagsFlag            []string
 	taskCompactFlag         bool
+	taskVerboseFlag         bool
 	taskJsonFlag            bool
 	taskEditTitleFlag       string
 	taskEditDescriptionFlag string
@@ -129,17 +131,33 @@ var taskListCmd = &cobra.Command{
 			return nil
 		}
 
-		// Default verbose output with sequential numbers
-		fmt.Printf("Found %d task(s):\n\n", len(tasks))
-		for i, t := range tasks {
-			fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
-			fmt.Printf("  ID: %s\n", t.ID)
-			fmt.Printf("  Created: %s\n", t.CreatedAt.Format("2006-01-02"))
-			if len(t.Notes) > 0 {
-				fmt.Printf("  Notes: %d\n", len(t.Notes))
+		if taskVerboseFlag {
+			// Verbose output with sequential numbers (old default format)
+			fmt.Printf("Found %d task(s):\n\n", len(tasks))
+			for i, t := range tasks {
+				fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
+				fmt.Printf("  ID: %s\n", t.ID)
+				fmt.Printf("  Created: %s\n", t.CreatedAt.Format("2006-01-02"))
+				if len(t.Notes) > 0 {
+					fmt.Printf("  Notes: %d\n", len(t.Notes))
+				}
+				fmt.Println()
 			}
-			fmt.Println()
+			return nil
 		}
+
+		// Default tabular output
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "ID\tSTATUS\tCREATED\tTITLE")
+		for _, t := range tasks {
+			shortID := t.ID
+			if len(t.ID) > 8 {
+				shortID = t.ID[:8]
+			}
+			createdDate := t.CreatedAt.Format("2006-01-02")
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", shortID, t.Status, createdDate, t.Text)
+		}
+		w.Flush()
 
 		return nil
 	},
@@ -294,35 +312,6 @@ var taskEditCmd = &cobra.Command{
 	},
 }
 
-// taskNoteCmd adds a note to a task
-var taskNoteCmd = &cobra.Command{
-	Use:   "note [task-id] [note-text]",
-	Short: "Add a note to a task",
-	Args:  cobra.MinimumNArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Use global taskService
-		if taskService == nil {
-			return fmt.Errorf("task service not initialized")
-		}
-
-		// Resolve task ID (supports numeric indices)
-		taskID, err := resolveTaskID(args[0], taskService)
-		if err != nil {
-			return err
-		}
-
-		noteText := strings.Join(args[1:], " ")
-
-		// Add note (using AppendLog which adds to task's log)
-		if err := taskService.AppendLog(taskID, noteText); err != nil {
-			return fmt.Errorf("failed to add note: %w", err)
-		}
-
-		fmt.Printf("✓ Added note to task %s\n", taskID)
-		return nil
-	},
-}
-
 func init() {
 	// Add subcommands
 	taskCmd.AddCommand(taskNewCmd)
@@ -331,13 +320,13 @@ func init() {
 	taskCmd.AddCommand(taskLogCmd)
 	taskCmd.AddCommand(taskDoneCmd)
 	taskCmd.AddCommand(taskEditCmd)
-	taskCmd.AddCommand(taskNoteCmd)
 
 	// Flags
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
 	taskListCmd.Flags().StringVar(&taskStatusFlag, "status", "", "Filter by status (open, active, done)")
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
 	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact output")
+	taskListCmd.Flags().BoolVarP(&taskVerboseFlag, "verbose", "v", false, "Show verbose multi-line output")
 	taskListCmd.Flags().BoolVar(&taskJsonFlag, "json", false, "Output as JSON")
 	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
 	taskEditCmd.Flags().StringVarP(&taskEditDescriptionFlag, "description", "d", "", "New task description")
