@@ -83,14 +83,15 @@ type Model struct {
 	tasks []journal.Task
 
 	// State for modes
-	helpMode        bool
+	helpMode         bool
 	taskCreationMode bool
-	confirmMode     bool
-	confirmItemType string // "intention", "win", "log"
-	confirmItemID   string
-	editItemID      string // ID of item being edited
-	noteTaskID      string // ID of task being noted
-	lastError       error
+	confirmMode      bool
+	confirmItemType  string // "intention", "win", "log", "log_note"
+	confirmItemID    string
+	editItemID       string // ID of item being edited
+	noteTaskID       string // ID of task being noted
+	noteLogEntryID   string // ID of log entry being noted
+	lastError        error
 
 	// Terminal size validation
 	terminalTooSmall bool
@@ -247,6 +248,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Note added successfully, reload tasks
 		return m, m.loadTasks()
 
+	case components.LogNoteAddMsg:
+		// Start adding a log note
+		m.noteLogEntryID = msg.LogEntryID
+		m.textEntryBar.SetMode(components.ModeLogNote)
+		m.textEntryBar.Clear()
+		if m.statusBar != nil {
+			m.statusBar.SetInputMode(true)
+		}
+		return m, m.textEntryBar.Focus()
+
+	case components.LogNoteDeleteMsg:
+		// Confirm deletion of log note
+		m.confirmMode = true
+		m.confirmItemType = "log_note"
+		m.confirmItemID = msg.NoteID
+		return m, nil
+
+	case logNoteAddedMsg:
+		// Log note added successfully, reload journal
+		return m, m.loadJournal()
+
+	case logNoteDeletedMsg:
+		// Log note deleted successfully, reload journal
+		return m, m.loadJournal()
+
 	case fileChangedMsg:
 		// Reload journal if the changed file is for the current date
 		var cmd tea.Cmd
@@ -263,33 +289,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Handle task picker mode first
-		if m.taskPickerMode {
-			switch msg.String() {
-			case "enter":
-				// Select task
-				if m.taskPicker != nil {
-					selectedTask := m.taskPicker.SelectedTask()
-					if selectedTask != nil {
-						return m, m.loadTask(selectedTask.ID)
-					}
-				}
-				m.taskPickerMode = false
-				return m, nil
-			case "esc":
-				// Cancel task picker
-				m.taskPickerMode = false
-				return m, nil
-			default:
-				// Delegate to task picker
-				if m.taskPicker != nil {
-					var cmd tea.Cmd
-					m.taskPicker, cmd = m.taskPicker.Update(msg)
-					return m, cmd
-				}
-			}
-		}
-
 
 		// Handle text entry bar mode
 		if m.textEntryBar != nil && m.textEntryBar.IsFocused() {
@@ -301,7 +300,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textEntryBar.Clear()
 				m.textEntryBar.Blur()
 				m.textEntryBar.SetMode(components.ModeInactive)
-				m.noteTaskID = "" // Reset note task ID
+				m.noteTaskID = ""     // Reset note task ID
+				m.noteLogEntryID = "" // Reset note log entry ID
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
@@ -311,7 +311,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textEntryBar.Clear()
 				m.textEntryBar.Blur()
 				m.textEntryBar.SetMode(components.ModeInactive)
-				m.noteTaskID = "" // Reset note task ID
+				m.noteTaskID = ""     // Reset note task ID
+				m.noteLogEntryID = "" // Reset note log entry ID
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
@@ -360,32 +361,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusedSection = (m.focusedSection + SectionCount - 1) % SectionCount
 			if m.statusBar != nil {
 				m.statusBar.SetSection(sectionName(m.focusedSection))
-			}
-			return m, nil
-		case "ctrl+t":
-			// Open task picker (legacy)
-			if m.legacyTaskService != nil {
-				return m, m.openTaskPicker()
-			}
-			return m, nil
-		case "ctrl+n":
-			// Create new task (legacy)
-			if m.legacyTaskService != nil {
-				m.textEntryBar.SetMode(components.ModeTask)
-				m.textEntryBar.Clear()
-				if m.statusBar != nil {
-					m.statusBar.SetInputMode(true)
-				}
-				return m, m.textEntryBar.Focus()
-			}
-			return m, nil
-		case "ctrl+w":
-			// Close current task (exit two-pane mode)
-			if m.showingTasks {
-				m.showingTasks = false
-				m.currentTask = nil
-				m.taskView = nil
-				m.activePane = PaneJournal
 			}
 			return m, nil
 
@@ -596,116 +571,6 @@ func (m *Model) View() string {
 	// Size components to panes
 	if m.intentionList != nil {
 		m.intentionList.SetSize(paneWidthIntentions, paneHeight)
-	// Two-pane mode: Journal (left) + Task (right)
-	if m.showingTasks && m.taskView != nil {
-		// 50/50 split
-		journalWidth := m.width / 2
-		taskWidth := m.width - journalWidth
-
-		// Render journal pane (simplified - just log view)
-		if m.logView != nil {
-			m.logView.SetSize(journalWidth-1, paneHeight)
-		}
-		journalView := ""
-		if m.logView != nil {
-			journalView = m.logView.View()
-		}
-
-		// Render task pane
-		m.taskView.SetSize(taskWidth-1, paneHeight)
-		taskView := m.taskView.View()
-
-		// Add focus indicator
-		journalStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
-		if m.activePane == PaneJournal {
-			journalStyle = journalStyle.BorderForeground(lipgloss.Color("12"))
-		} else {
-			journalStyle = journalStyle.BorderForeground(lipgloss.Color("8"))
-		}
-
-		content = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			journalStyle.Render(journalView),
-			taskView,
-		)
-	} else {
-		// Original three-pane mode
-		paneWidthIntentions := int(float64(m.width) * 0.25)
-		paneWidthWins := paneWidthIntentions
-		paneWidthLogs := m.width - 2*paneWidthIntentions
-
-		// Size components to panes
-		if m.intentionList != nil {
-			m.intentionList.SetSize(paneWidthIntentions, paneHeight)
-		}
-		if m.winsView != nil {
-			m.winsView.SetSize(paneWidthWins, paneHeight)
-		}
-		if m.logView != nil {
-			m.logView.SetSize(paneWidthLogs, paneHeight)
-		}
-
-		// Get pane views
-		intentionsView := ""
-		if m.intentionList != nil {
-			intentionsView = m.intentionList.View()
-		}
-		winsView := ""
-		if m.winsView != nil {
-			winsView = m.winsView.View()
-		}
-		logsView := ""
-		if m.logView != nil {
-			logsView = m.logView.View()
-		}
-
-		// Join panes with borders
-		borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
-		content = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			borderStyle.Render(intentionsView),
-			borderStyle.Render(winsView),
-			logsView,
-		)
-	{
-		// Original three-pane mode
-		paneWidthIntentions := int(float64(m.width) * 0.25)
-		paneWidthWins := paneWidthIntentions
-		paneWidthLogs := m.width - 2*paneWidthIntentions
-
-		// Size components to panes
-		if m.intentionList != nil {
-			m.intentionList.SetSize(paneWidthIntentions, paneHeight)
-		}
-		if m.winsView != nil {
-			m.winsView.SetSize(paneWidthWins, paneHeight)
-		}
-		if m.logView != nil {
-			m.logView.SetSize(paneWidthLogs, paneHeight)
-		}
-
-		// Get pane views
-		intentionsView := ""
-		if m.intentionList != nil {
-			intentionsView = m.intentionList.View()
-		}
-		winsView := ""
-		if m.winsView != nil {
-			winsView = m.winsView.View()
-		}
-		logsView := ""
-		if m.logView != nil {
-			logsView = m.logView.View()
-		}
-
-		// Join panes with borders
-		borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
-		content = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			borderStyle.Render(intentionsView),
-			borderStyle.Render(winsView),
-			logsView,
-		)
 	}
 	if m.winsView != nil {
 		m.winsView.SetSize(paneWidthWins, paneHeight)
@@ -889,8 +754,9 @@ Actions:
   i          Add intention
   w          Add win
   L          Add log entry
+  n          Add note (Tasks/Logs section)
   space      Toggle task completion (Tasks section)
-  enter      Toggle intention / Expand task (Intentions/Tasks section)
+  enter      Toggle intention / Expand task (Intentions/Tasks section) / Expand log entry (Logs section)
   d          Delete selected item (with confirmation)
 
 Text Entry:
@@ -1038,19 +904,6 @@ type errMsg struct {
 	err error
 }
 
-// SetJournalTaskService sets the journal task service
-func (m *Model) SetJournalTaskService(taskService *journal.TaskService) {
-	m.taskService = taskService
-}
-
-type taskLoadedMsg struct {
-	task task.Task
-}
-
-type taskUpdatedMsg struct {
-	taskID string
-}
-
 // New journal task messages
 // New journal task messages
 type tasksLoadedMsg struct {
@@ -1062,6 +915,10 @@ type taskToggledMsg struct{}
 type taskAddedMsg struct{}
 
 type noteAddedMsg struct{}
+
+type logNoteAddedMsg struct{}
+
+type logNoteDeletedMsg struct{}
 
 // loadTasks loads all tasks from the task service
 func (m *Model) loadTasks() tea.Cmd {
@@ -1152,6 +1009,17 @@ func (m *Model) submitTextEntry() tea.Cmd {
 				return tasksLoadedMsg{tasks: tasks}
 			}
 			return errMsg{fmt.Errorf("task service not available or no task selected")}
+
+		case components.ModeLogNote:
+			// Add note to the selected log entry
+			if m.noteLogEntryID != "" {
+				err = m.service.AddLogNote(m.currentJournal, m.noteLogEntryID, inputText)
+				if err != nil {
+					return errMsg{err}
+				}
+				return logNoteAddedMsg{}
+			}
+			return errMsg{fmt.Errorf("no log entry selected")}
 
 		default:
 			return errMsg{fmt.Errorf("unknown entry mode")}
