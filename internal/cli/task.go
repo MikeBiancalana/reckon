@@ -313,7 +313,7 @@ var taskNoteCmd = &cobra.Command{
 
 		noteText := strings.Join(args[1:], " ")
 
-		// Add note (using AppendLog which adds to task's log)
+		// Add note (using AddTaskNote which adds to task's log)
 		if err := journalTaskService.AddTaskNote(taskID, noteText); err != nil {
 			return fmt.Errorf("failed to add note: %w", err)
 		}
