@@ -12,74 +12,212 @@ import (
 
 var (
 	logStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("99")).
-		Bold(true)
+			Foreground(lipgloss.Color("99")).
+			Bold(true)
+
+	logNoteStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245"))
 )
 
-// LogEntryItem represents a log entry in the list
+// LogEntryItem represents a log entry or note in the list
 type LogEntryItem struct {
-	entry journal.LogEntry
+	entry      journal.LogEntry
+	isNote     bool
+	noteID     string
+	logEntryID string // parent log entry ID for notes
 }
 
 func (l LogEntryItem) FilterValue() string { return l.entry.Content }
 
+// findLogNoteText finds the text of a log note by ID
+func findLogNoteText(notes []journal.LogNote, noteID string) string {
+	for _, note := range notes {
+		if note.ID == noteID {
+			return note.Text
+		}
+	}
+	return ""
+}
+
 // LogDelegate handles rendering of log entry items
-type LogDelegate struct{}
+type LogDelegate struct {
+	collapsedMap map[string]bool // logEntryID -> isCollapsed
+}
 
 func (d LogDelegate) Height() int                               { return 1 }
 func (d LogDelegate) Spacing() int                              { return 0 }
 func (d LogDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
 
 func (d LogDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	le, ok := listItem.(LogEntryItem)
+	item, ok := listItem.(LogEntryItem)
 	if !ok {
 		return
 	}
 
-	timeStr := le.entry.Timestamp.Format("15:04")
-	var icon string
-	switch le.entry.EntryType {
-	case journal.EntryTypeMeeting:
-		icon = "📅"
-	case journal.EntryTypeBreak:
-		icon = "☕"
-	default:
-		icon = "📝"
+	var text string
+	var style lipgloss.Style
+
+	if item.isNote {
+		// Render note with 2-space indent
+		text = fmt.Sprintf("  - %s", findLogNoteText(item.entry.Notes, item.noteID))
+		style = logNoteStyle
+	} else {
+		// Render log entry with icon
+		timeStr := item.entry.Timestamp.Format("15:04")
+		var icon string
+		switch item.entry.EntryType {
+		case journal.EntryTypeMeeting:
+			icon = "📅"
+		case journal.EntryTypeBreak:
+			icon = "☕"
+		default:
+			icon = "📝"
+		}
+
+		// Add expand/collapse indicator if entry has notes
+		indicator := ""
+		if len(item.entry.Notes) > 0 {
+			if d.collapsedMap[item.entry.ID] {
+				indicator = "▶ "
+			} else {
+				indicator = "▼ "
+			}
+		}
+
+		text = fmt.Sprintf("%s%s %s: %s", indicator, timeStr, icon, item.entry.Content)
+		style = logStyle
 	}
 
-	text := fmt.Sprintf("%s %s: %s", timeStr, icon, le.entry.Content)
-
+	// Highlight selected item
 	if index == m.Index() {
 		text = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).Render("▶ " + text)
 	} else {
-		text = logStyle.Render(text)
+		text = style.Render(text)
 	}
 
 	fmt.Fprintf(w, "%s", text)
 }
 
+// buildLogItems converts log entries into list items, respecting collapsed state
+func buildLogItems(logEntries []journal.LogEntry, collapsedMap map[string]bool) []list.Item {
+	items := make([]list.Item, 0)
+
+	for _, entry := range logEntries {
+		// Add the log entry itself
+		items = append(items, LogEntryItem{
+			entry:      entry,
+			isNote:     false,
+			logEntryID: entry.ID,
+		})
+
+		// Add notes if entry is not collapsed
+		if !collapsedMap[entry.ID] && len(entry.Notes) > 0 {
+			for _, note := range entry.Notes {
+				items = append(items, LogEntryItem{
+					entry:      entry,
+					isNote:     true,
+					noteID:     note.ID,
+					logEntryID: entry.ID,
+				})
+			}
+		}
+	}
+
+	return items
+}
+
 // LogView represents the log entries component
 type LogView struct {
-	list list.Model
+	list         list.Model
+	collapsedMap map[string]bool
+	logEntries   []journal.LogEntry // keep track of original log entries for state management
 }
 
 func NewLogView(logEntries []journal.LogEntry) *LogView {
-	items := make([]list.Item, len(logEntries))
-	for i, entry := range logEntries {
-		items[i] = LogEntryItem{entry}
-	}
+	collapsedMap := make(map[string]bool)
+	items := buildLogItems(logEntries, collapsedMap)
 
-	l := list.New(items, LogDelegate{}, 0, 0)
+	delegate := LogDelegate{collapsedMap: collapsedMap}
+	l := list.New(items, delegate, 0, 0)
 	l.Title = "Log Entries"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 	l.Styles.Title = logStyle
 
-	return &LogView{list: l}
+	return &LogView{
+		list:         l,
+		collapsedMap: collapsedMap,
+		logEntries:   logEntries,
+	}
+}
+
+// LogNoteAddMsg is sent when a log note should be added
+type LogNoteAddMsg struct {
+	LogEntryID string
+}
+
+// LogNoteDeleteMsg is sent when a log note should be deleted
+type LogNoteDeleteMsg struct {
+	LogEntryID string
+	NoteID     string
 }
 
 // Update handles messages for the log view
 func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "n":
+			// Add note to selected log entry
+			selectedItem := lv.list.SelectedItem()
+			if selectedItem != nil {
+				logItem, ok := selectedItem.(LogEntryItem)
+				if ok && !logItem.isNote {
+					// Return a message to add a note to this log entry
+					return lv, func() tea.Msg {
+						return LogNoteAddMsg{LogEntryID: logItem.entry.ID}
+					}
+				}
+			}
+			return lv, nil
+		case "d":
+			// Delete selected note
+			selectedItem := lv.list.SelectedItem()
+			if selectedItem != nil {
+				logItem, ok := selectedItem.(LogEntryItem)
+				if ok && logItem.isNote {
+					// Return a message to delete this note
+					return lv, func() tea.Msg {
+						return LogNoteDeleteMsg{
+							LogEntryID: logItem.logEntryID,
+							NoteID:     logItem.noteID,
+						}
+					}
+				}
+			}
+			return lv, nil
+		case "enter":
+			// Toggle expand/collapse
+			selectedItem := lv.list.SelectedItem()
+			if selectedItem != nil {
+				logItem, ok := selectedItem.(LogEntryItem)
+				if ok && !logItem.isNote && len(logItem.entry.Notes) > 0 {
+					// Toggle collapsed state
+					lv.collapsedMap[logItem.entry.ID] = !lv.collapsedMap[logItem.entry.ID]
+
+					// Rebuild items with new collapsed state
+					items := buildLogItems(lv.logEntries, lv.collapsedMap)
+					lv.list.SetItems(items)
+
+					// Update delegate with new collapsed map
+					delegate := LogDelegate{collapsedMap: lv.collapsedMap}
+					lv.list.SetDelegate(delegate)
+				}
+			}
+			return lv, nil
+		}
+	}
+
 	var cmd tea.Cmd
 	lv.list, cmd = lv.list.Update(msg)
 	return lv, cmd
@@ -100,11 +238,13 @@ func (lv *LogView) SetSize(width, height int) {
 
 // UpdateLogEntries updates the list with new log entries
 func (lv *LogView) UpdateLogEntries(logEntries []journal.LogEntry) {
-	items := make([]list.Item, len(logEntries))
-	for i, entry := range logEntries {
-		items[i] = LogEntryItem{entry}
-	}
+	lv.logEntries = logEntries
+	items := buildLogItems(logEntries, lv.collapsedMap)
 	lv.list.SetItems(items)
+
+	// Update delegate with current collapsed map
+	delegate := LogDelegate{collapsedMap: lv.collapsedMap}
+	lv.list.SetDelegate(delegate)
 }
 
 // SelectedLogEntry returns the currently selected log entry

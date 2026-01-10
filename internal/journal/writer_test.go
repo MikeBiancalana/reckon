@@ -354,3 +354,83 @@ date: 2023-12-01
 		}
 	}
 }
+
+func TestWriteJournal_LogEntriesWithNotes(t *testing.T) {
+	journal := &Journal{
+		Date:          "2025-12-28",
+		ScheduleItems: []ScheduleItem{},
+		Intentions:    []Intention{},
+		Wins:          []Win{},
+		LogEntries: []LogEntry{
+			{
+				ID:        "log1",
+				Timestamp: mustParseTime(t, "2025-12-28 10:00"),
+				Content:   "Started work",
+				EntryType: EntryTypeLog,
+				Position:  0,
+				Notes: []LogNote{
+					{
+						ID:       "note1",
+						Text:     "This is the first note",
+						Position: 0,
+					},
+					{
+						ID:       "note2",
+						Text:     "This is the second note",
+						Position: 1,
+					},
+				},
+			},
+			{
+				ID:        "log2",
+				Timestamp: mustParseTime(t, "2025-12-28 11:00"),
+				Content:   "Continued work",
+				EntryType: EntryTypeLog,
+				Position:  1,
+				Notes:     []LogNote{}, // No notes for this entry
+			},
+			{
+				ID:        "log3",
+				Timestamp: mustParseTime(t, "2025-12-28 12:00"),
+				Content:   "Finished task",
+				EntryType: EntryTypeLog,
+				Position:  2,
+				Notes: []LogNote{
+					{
+						ID:       "note3",
+						Text:     "Task completed successfully",
+						Position: 0,
+					},
+				},
+			},
+		},
+	}
+
+	expected := `---
+date: 2025-12-28
+---
+
+## Schedule
+
+
+## Intentions
+
+
+## Wins
+
+
+## Log
+
+- 10:00 Started work
+  - note1 This is the first note
+  - note2 This is the second note
+- 11:00 Continued work
+- 12:00 Finished task
+  - note3 Task completed successfully
+`
+
+	result := WriteJournal(journal)
+	if result != expected {
+		t.Errorf("WriteJournal() mismatch\nExpected:\n%s\nGot:\n%s", expected, result)
+	}
+}

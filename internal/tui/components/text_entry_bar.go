@@ -16,6 +16,7 @@ const (
 	ModeWin       EntryMode = "win"
 	ModeLog       EntryMode = "log"
 	ModeNote      EntryMode = "note"
+	ModeLogNote   EntryMode = "log_note"
 	ModeSchedule  EntryMode = "schedule"
 )
 
@@ -103,6 +104,8 @@ func (teb *TextEntryBar) getPromptForMode() string {
 	case ModeLog:
 		return "Add log entry: "
 	case ModeNote:
+		return "Add note: "
+	case ModeLogNote:
 		return "Add note: "
 	case ModeSchedule:
 		return "Add schedule item (HH:MM content): "

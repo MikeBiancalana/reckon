@@ -201,6 +201,66 @@ func (s *Service) DeleteLogEntry(j *Journal, logEntryID string) error {
 	return s.save(j)
 }
 
+// AddLogNote adds a note to a log entry
+func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
+	// Find the log entry
+	var targetEntry *LogEntry
+	for i := range j.LogEntries {
+		if j.LogEntries[i].ID == logEntryID {
+			targetEntry = &j.LogEntries[i]
+			break
+		}
+	}
+
+	if targetEntry == nil {
+		return fmt.Errorf("log entry not found: %s", logEntryID)
+	}
+
+	// Create new note
+	position := len(targetEntry.Notes)
+	note := NewLogNote(text, position)
+	targetEntry.Notes = append(targetEntry.Notes, *note)
+
+	return s.save(j)
+}
+
+// DeleteLogNote removes a note from a log entry
+func (s *Service) DeleteLogNote(j *Journal, logEntryID string, noteID string) error {
+	// Find the log entry
+	var targetEntry *LogEntry
+	for i := range j.LogEntries {
+		if j.LogEntries[i].ID == logEntryID {
+			targetEntry = &j.LogEntries[i]
+			break
+		}
+	}
+
+	if targetEntry == nil {
+		return fmt.Errorf("log entry not found: %s", logEntryID)
+	}
+
+	// Find and remove the note
+	found := false
+	for i, note := range targetEntry.Notes {
+		if note.ID == noteID {
+			targetEntry.Notes = append(targetEntry.Notes[:i], targetEntry.Notes[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("note not found: %s", noteID)
+	}
+
+	// Re-index positions
+	for i := range targetEntry.Notes {
+		targetEntry.Notes[i].Position = i
+	}
+
+	return s.save(j)
+}
+
 // UpdateIntention updates the text of an intention by ID
 func (s *Service) UpdateIntention(j *Journal, intentionID string, newText string) error {
 	for i := range j.Intentions {
