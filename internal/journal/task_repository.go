@@ -2,6 +2,7 @@ package journal
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -27,11 +28,14 @@ func (r *TaskRepository) SaveTask(task *Task) error {
 	}
 	defer tx.Rollback()
 
+	// Marshal tags to JSON
+	tagsJSON, _ := json.Marshal(task.Tags)
+
 	// Insert or replace task
 	_, err = tx.Exec(`
-		INSERT OR REPLACE INTO tasks (id, text, status, position, created_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, task.ID, task.Text, task.Status, task.Position, task.CreatedAt.Unix())
+		INSERT OR REPLACE INTO tasks (id, text, status, tags, position, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, task.ID, task.Text, task.Status, string(tagsJSON), task.Position, task.CreatedAt.Unix())
 	if err != nil {
 		return fmt.Errorf("failed to save task: %w", err)
 	}
@@ -66,11 +70,14 @@ func (r *TaskRepository) SaveTasks(tasks []Task) error {
 	defer tx.Rollback()
 
 	for _, task := range tasks {
+		// Marshal tags to JSON
+		tagsJSON, _ := json.Marshal(task.Tags)
+
 		// Insert or replace task
 		_, err = tx.Exec(`
-			INSERT OR REPLACE INTO tasks (id, text, status, position, created_at)
-			VALUES (?, ?, ?, ?, ?)
-		`, task.ID, task.Text, task.Status, task.Position, task.CreatedAt.Unix())
+			INSERT OR REPLACE INTO tasks (id, text, status, tags, position, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, task.ID, task.Text, task.Status, string(tagsJSON), task.Position, task.CreatedAt.Unix())
 		if err != nil {
 			return fmt.Errorf("failed to save task %s: %w", task.ID, err)
 		}

@@ -91,6 +91,7 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 			ID:        frontmatter.ID,
 			Text:      frontmatter.Title,
 			Status:    status,
+			Tags:      frontmatter.Tags,
 			Notes:     notes,
 			Position:  position,
 			CreatedAt: createdAt,
@@ -156,7 +157,7 @@ func parseNotesFromBody(body string) []TaskNote {
 }
 
 // AddTask creates a new task and persists it
-func (s *TaskService) AddTask(text string) error {
+func (s *TaskService) AddTask(text string, tags []string) error {
 	// Load all existing tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
@@ -164,7 +165,7 @@ func (s *TaskService) AddTask(text string) error {
 	}
 
 	// Create new task with position at end
-	newTask := NewTask(text, len(tasks))
+	newTask := NewTask(text, tags, len(tasks))
 	tasks = append(tasks, *newTask)
 
 	// Save to both file and DB
@@ -358,7 +359,7 @@ func writeTaskFile(task Task) string {
 		Title:   task.Text,
 		Created: task.CreatedAt.Format("2006-01-02"),
 		Status:  status,
-		Tags:    []string{}, // TODO: add tags if available
+		Tags:    task.Tags,
 	}
 
 	yamlData, _ := yaml.Marshal(frontmatter)

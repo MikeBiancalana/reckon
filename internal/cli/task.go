@@ -45,14 +45,14 @@ var taskNewCmd = &cobra.Command{
 		}
 
 		// Create task
-		err := journalTaskService.AddTask(title)
+		err := journalTaskService.AddTask(title, taskTagsFlag)
 		if err != nil {
 			return fmt.Errorf("failed to create task: %w", err)
 		}
 
 		fmt.Printf("✓ Created task: %s\n", title)
 		if len(taskTagsFlag) > 0 {
-			fmt.Printf("  Note: Tags are not yet supported in the unified task system\n")
+			fmt.Printf("  Tags: %s\n", strings.Join(taskTagsFlag, ", "))
 		}
 
 		return nil
