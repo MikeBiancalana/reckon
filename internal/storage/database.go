@@ -153,6 +153,25 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: Add scheduled_date column to tasks table if missing
+	if err := addColumnIfMissing(db, "tasks", "scheduled_date", "TEXT"); err != nil {
+		return err
+	}
+
+	// Migration: Add deadline_date column to tasks table if missing
+	if err := addColumnIfMissing(db, "tasks", "deadline_date", "TEXT"); err != nil {
+		return err
+	}
+
+	// Create indices for date columns
+	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_date)"); err != nil {
+		return fmt.Errorf("failed to create scheduled_date index: %w", err)
+	}
+
+	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline_date)"); err != nil {
+		return fmt.Errorf("failed to create deadline_date index: %w", err)
+	}
+
 	return nil
 }
 
