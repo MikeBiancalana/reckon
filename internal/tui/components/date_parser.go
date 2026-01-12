@@ -33,7 +33,22 @@ func parseRelativeDateWithNow(input string, now time.Time) (time.Time, error) {
 		if err != nil {
 			return time.Time{}, fmt.Errorf("invalid date format: %w", err)
 		}
-		return parsed, nil
+		// Convert to same timezone as "now" for consistency
+		result := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, now.Location())
+
+		// Verify the date components match to catch invalid dates that normalize
+		// (e.g., 2025-02-30 would normalize to 2025-03-02)
+		if result.Year() != parsed.Year() || result.Month() != parsed.Month() || result.Day() != parsed.Day() {
+			return time.Time{}, fmt.Errorf("invalid date: %s (normalized to %s)", input, result.Format("2006-01-02"))
+		}
+
+		// Reject past dates
+		nowStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		if result.Before(nowStart) {
+			return time.Time{}, fmt.Errorf("date cannot be in the past: %s", input)
+		}
+
+		return result, nil
 	}
 
 	// Handle "today" or "t"
@@ -56,6 +71,9 @@ func parseRelativeDateWithNow(input string, now time.Time) (time.Time, error) {
 		if days < 0 {
 			return time.Time{}, fmt.Errorf("days must be positive")
 		}
+		if days == 0 {
+			return time.Time{}, fmt.Errorf("use 't' or 'today' instead of '+0d'")
+		}
 		return now.AddDate(0, 0, days), nil
 	}
 
@@ -68,6 +86,9 @@ func parseRelativeDateWithNow(input string, now time.Time) (time.Time, error) {
 		}
 		if weeks < 0 {
 			return time.Time{}, fmt.Errorf("weeks must be positive")
+		}
+		if weeks == 0 {
+			return time.Time{}, fmt.Errorf("use 't' or 'today' instead of '+0w'")
 		}
 		return now.AddDate(0, 0, weeks*7), nil
 	}
@@ -150,7 +171,7 @@ func getDateDescriptionWithNow(date time.Time, now time.Time) string {
 	}
 
 	// Check for exact weeks
-	if daysDiff%7 == 0 && daysDiff > 0 {
+	if daysDiff%7 == 0 && daysDiff > 0 && daysDiff < 28 {
 		weeks := daysDiff / 7
 		if weeks == 1 {
 			return "in 1 week"
@@ -165,6 +186,11 @@ func getDateDescriptionWithNow(date time.Time, now time.Time) string {
 			return "in 1 week"
 		}
 		return fmt.Sprintf("in %d weeks", weeks)
+	}
+
+	// For dates 28+ days away, show the formatted date
+	if daysDiff >= 28 {
+		return date.Format("Jan 2, 2006")
 	}
 
 	// For anything else, just return the weekday

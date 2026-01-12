@@ -146,6 +146,54 @@ func TestParseRelativeDate(t *testing.T) {
 			expectedErr: true,
 			description: "Should return error for empty string",
 		},
+		{
+			name:        "invalid date - Feb 30",
+			input:       "2025-02-30",
+			expectedErr: true,
+			description: "Should reject Feb 30 as invalid",
+		},
+		{
+			name:        "invalid date - month 13",
+			input:       "2025-13-01",
+			expectedErr: true,
+			description: "Should reject month 13",
+		},
+		{
+			name:        "invalid date - day 32",
+			input:       "2025-01-32",
+			expectedErr: true,
+			description: "Should reject day 32",
+		},
+		{
+			name:        "invalid date - Feb 29 non-leap year",
+			input:       "2025-02-29",
+			expectedErr: true,
+			description: "Should reject Feb 29 in non-leap year",
+		},
+		{
+			name:        "past date - yesterday",
+			input:       "2025-01-11",
+			expectedErr: true,
+			description: "Should reject past dates",
+		},
+		{
+			name:        "past date - last year",
+			input:       "2024-12-31",
+			expectedErr: true,
+			description: "Should reject dates from last year",
+		},
+		{
+			name:        "+0d edge case",
+			input:       "+0d",
+			expectedErr: true,
+			description: "Should reject +0d and suggest 't' or 'today'",
+		},
+		{
+			name:        "+0w edge case",
+			input:       "+0w",
+			expectedErr: true,
+			description: "Should reject +0w and suggest 't' or 'today'",
+		},
 	}
 
 	for _, tt := range tests {
@@ -286,6 +334,117 @@ func TestNextWeekday(t *testing.T) {
 	}
 }
 
+func TestParseDateBoundaryConditions(t *testing.T) {
+	// Use a fixed "now" for testing - Jan 12, 2025 (Sunday)
+	fixedNow := time.Date(2025, 1, 12, 10, 30, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		input       string
+		expectedDay int
+		expectedErr bool
+		description string
+	}{
+		{
+			name:        "year boundary - Dec 31 to Jan 1",
+			input:       "2025-12-31",
+			expectedDay: 31,
+			expectedErr: false,
+			description: "Should handle year boundary dates",
+		},
+		{
+			name:        "large value - +1000d",
+			input:       "+1000d",
+			expectedErr: false,
+			description: "Should handle large day values",
+		},
+		{
+			name:        "large value - +52w",
+			input:       "+52w",
+			expectedErr: false,
+			description: "Should handle large week values",
+		},
+		{
+			name:        "leap year - 2024-02-29 (past)",
+			input:       "2024-02-29",
+			expectedErr: true,
+			description: "Should reject Feb 29 2024 as past date",
+		},
+		{
+			name:        "leap year - 2028-02-29 (future)",
+			input:       "2028-02-29",
+			expectedDay: 29,
+			expectedErr: false,
+			description: "Should accept Feb 29 2028 as valid leap year date",
+		},
+		{
+			name:        "month boundary - Jan 31",
+			input:       "2025-01-31",
+			expectedDay: 31,
+			expectedErr: false,
+			description: "Should handle month boundary",
+		},
+		{
+			name:        "invalid month - 00",
+			input:       "2025-00-15",
+			expectedErr: true,
+			description: "Should reject month 00",
+		},
+		{
+			name:        "invalid day - 00",
+			input:       "2025-01-00",
+			expectedErr: true,
+			description: "Should reject day 00",
+		},
+		{
+			name:        "April 31 (invalid)",
+			input:       "2025-04-31",
+			expectedErr: true,
+			description: "Should reject April 31",
+		},
+		{
+			name:        "June 31 (invalid)",
+			input:       "2025-06-31",
+			expectedErr: true,
+			description: "Should reject June 31",
+		},
+		{
+			name:        "September 31 (invalid)",
+			input:       "2025-09-31",
+			expectedErr: true,
+			description: "Should reject September 31",
+		},
+		{
+			name:        "November 31 (invalid)",
+			input:       "2025-11-31",
+			expectedErr: true,
+			description: "Should reject November 31",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseRelativeDateWithNow(tt.input, fixedNow)
+
+			if tt.expectedErr {
+				if err == nil {
+					t.Errorf("Expected error for input %q, but got none", tt.input)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error for input %q: %v", tt.input, err)
+				return
+			}
+
+			if tt.expectedDay > 0 && result.Day() != tt.expectedDay {
+				t.Errorf("Expected day %d for input %q, got %d", tt.expectedDay, tt.input, result.Day())
+			}
+		})
+	}
+}
+
 func TestGetDateDescription(t *testing.T) {
 	fixedNow := time.Date(2025, 1, 12, 10, 30, 0, 0, time.UTC)
 
@@ -338,6 +497,26 @@ func TestGetDateDescription(t *testing.T) {
 			name:     "next friday",
 			date:     time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC),
 			expected: "Friday",
+		},
+		{
+			name:     "28 days away - show formatted date",
+			date:     fixedNow.AddDate(0, 0, 28),
+			expected: "Feb 9, 2025",
+		},
+		{
+			name:     "30 days away - show formatted date",
+			date:     fixedNow.AddDate(0, 0, 30),
+			expected: "Feb 11, 2025",
+		},
+		{
+			name:     "60 days away - show formatted date",
+			date:     fixedNow.AddDate(0, 0, 60),
+			expected: "Mar 13, 2025",
+		},
+		{
+			name:     "100 days away - show formatted date",
+			date:     fixedNow.AddDate(0, 0, 100),
+			expected: "Apr 22, 2025",
 		},
 	}
 

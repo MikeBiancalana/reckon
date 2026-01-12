@@ -78,11 +78,11 @@ func TestDatePickerGetValue(t *testing.T) {
 	dp.Show()
 
 	// Simulate typing
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2025-01-15")})
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
 
 	value := dp.GetValue()
-	if value != "2025-01-15" {
-		t.Errorf("Expected value to be '2025-01-15', got %q", value)
+	if value != "2026-06-15" {
+		t.Errorf("Expected value to be '2026-06-15', got %q", value)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestDatePickerUpdateEnterValid(t *testing.T) {
 	dp.Show()
 
 	// Type valid date
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2025-01-15")})
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
 
 	// Press Enter
 	dp.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -165,15 +165,15 @@ func TestDatePickerPreviewAbsoluteDate(t *testing.T) {
 	dp.Show()
 
 	// Type absolute date
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2025-01-15")})
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
 
 	// Should have preview
 	if dp.preview == "" {
 		t.Error("Expected preview for valid date")
 	}
 
-	if !strings.Contains(dp.preview, "2025-01-15") {
-		t.Errorf("Expected preview to contain date '2025-01-15', got: %s", dp.preview)
+	if !strings.Contains(dp.preview, "2026-06-15") {
+		t.Errorf("Expected preview to contain date '2026-06-15', got: %s", dp.preview)
 	}
 }
 
@@ -277,7 +277,7 @@ func TestDatePickerParsedDate(t *testing.T) {
 	dp.Show()
 
 	// Type valid absolute date
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2025-01-15")})
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
 
 	date, err := dp.ParsedDate()
 
@@ -285,8 +285,8 @@ func TestDatePickerParsedDate(t *testing.T) {
 		t.Errorf("Expected no error, got: %v", err)
 	}
 
-	if date.Year() != 2025 || date.Month() != time.January || date.Day() != 15 {
-		t.Errorf("Expected date 2025-01-15, got %v", date)
+	if date.Year() != 2026 || date.Month() != time.June || date.Day() != 15 {
+		t.Errorf("Expected date 2026-06-15, got %v", date)
 	}
 }
 
@@ -336,8 +336,8 @@ func TestDatePickerMultipleShowHideCycles(t *testing.T) {
 
 	// Cycle 1
 	dp.Show()
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2025-01-15")})
-	if dp.GetValue() != "2025-01-15" {
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
+	if dp.GetValue() != "2026-06-15" {
 		t.Error("Expected input to be stored")
 	}
 	dp.Hide()
@@ -364,7 +364,7 @@ func TestDatePickerUpdatePreview(t *testing.T) {
 		},
 		{
 			name:          "valid absolute date",
-			input:         "2025-01-15",
+			input:         "2026-06-15",
 			expectError:   false,
 			expectPreview: true,
 		},
