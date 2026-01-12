@@ -24,6 +24,10 @@ var (
 	taskListTitleStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("205")).
 				Bold(true)
+
+	noteCountBadgeStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("246")).
+				Faint(true)
 )
 
 // TaskToggleMsg is sent when a task's status is toggled
@@ -79,15 +83,17 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 		// Add expand/collapse indicator if task has notes
 		indicator := ""
+		noteBadge := ""
 		if len(item.task.Notes) > 0 {
 			if d.collapsedMap[item.task.ID] {
 				indicator = "▶ "
+				noteBadge = fmt.Sprintf(" %s", noteCountBadgeStyle.Render(fmt.Sprintf("[%d]", len(item.task.Notes))))
 			} else {
 				indicator = "▼ "
 			}
 		}
 
-		text = fmt.Sprintf("%s%s %s", indicator, checkbox, item.task.Text)
+		text = fmt.Sprintf("%s%s %s%s", indicator, checkbox, item.task.Text, noteBadge)
 	}
 
 	// Highlight selected item

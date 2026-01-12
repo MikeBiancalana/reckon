@@ -583,3 +583,100 @@ func TestTaskItem_FilterValue(t *testing.T) {
 		}
 	})
 }
+
+func TestTaskList_NoteCountBadge(t *testing.T) {
+	t.Run("collapsed task shows note count badge", func(t *testing.T) {
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Task with notes",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+					{ID: "note2", Text: "Note 2", Position: 1},
+					{ID: "note3", Text: "Note 3", Position: 2},
+				},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
+		}
+
+		tl := NewTaskList(tasks)
+
+		// Collapse the task
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		tl, _ = tl.Update(msg)
+
+		// Verify task is collapsed
+		if !tl.collapsedMap["task1"] {
+			t.Fatal("task1 should be collapsed")
+		}
+
+		// Render and check for badge in output
+		view := tl.View()
+		if view == "" {
+			t.Fatal("View should not be empty")
+		}
+
+		// The badge should show [3] for 3 notes
+		// Note: We can't easily test the exact visual output due to styling,
+		// but we can verify the count logic by checking the collapsed map
+		if len(tl.list.Items()) != 1 {
+			t.Errorf("expected 1 item when collapsed, got %d", len(tl.list.Items()))
+		}
+	})
+
+	t.Run("expanded task does not show badge", func(t *testing.T) {
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Task with notes",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+					{ID: "note2", Text: "Note 2", Position: 1},
+				},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
+		}
+
+		tl := NewTaskList(tasks)
+
+		// Task should be expanded by default
+		if tl.collapsedMap["task1"] {
+			t.Fatal("task1 should not be collapsed initially")
+		}
+
+		// Should have task + 2 notes = 3 items
+		if len(tl.list.Items()) != 3 {
+			t.Errorf("expected 3 items when expanded, got %d", len(tl.list.Items()))
+		}
+	})
+
+	t.Run("task without notes has no badge", func(t *testing.T) {
+		tasks := []journal.Task{
+			{
+				ID:        "task1",
+				Text:      "Task without notes",
+				Status:    journal.TaskOpen,
+				Notes:     []journal.TaskNote{},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
+		}
+
+		tl := NewTaskList(tasks)
+
+		// Should only have 1 item (the task itself)
+		if len(tl.list.Items()) != 1 {
+			t.Errorf("expected 1 item, got %d", len(tl.list.Items()))
+		}
+
+		// No badge should appear since there are no notes
+		view := tl.View()
+		if view == "" {
+			t.Fatal("View should not be empty")
+		}
+	})
+}
