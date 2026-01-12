@@ -116,7 +116,7 @@ func NewModel(service *journal.Service) *Model {
 		taskService:    nil, // Will be set via SetJournalTaskService
 		watcher:        watcher,
 		currentDate:    stdtime.Now().Format("2006-01-02"),
-		focusedSection: SectionLogs,
+		focusedSection: SectionTasks,
 		textEntryBar:   components.NewTextEntryBar(),
 		statusBar:      sb,
 		summaryView:    components.NewSummaryView(),
@@ -725,7 +725,7 @@ func centerView(width, height int, view string) string {
 func (m *Model) getBorderStyle(section Section) lipgloss.Style {
 	style := lipgloss.NewStyle().Border(lipgloss.NormalBorder())
 	if m.focusedSection == section {
-		style = style.BorderForeground(lipgloss.Color("39")) // blue color for focus
+		style = style.BorderForeground(lipgloss.Color("11")) // bright yellow color for focus
 	}
 	return style
 }
@@ -748,18 +748,23 @@ func (m *Model) renderNewLayout() string {
 	// Size components accounting for borders
 	if m.taskList != nil {
 		m.taskList.SetSize(dims.TasksWidth-borderWidth, dims.TasksHeight-borderHeight)
+		m.taskList.SetFocused(m.focusedSection == SectionTasks)
 	}
 	if m.scheduleView != nil {
 		m.scheduleView.SetSize(dims.RightWidth-borderWidth, dims.ScheduleHeight-borderHeight)
+		m.scheduleView.SetFocused(m.focusedSection == SectionSchedule)
 	}
 	if m.intentionList != nil {
 		m.intentionList.SetSize(dims.RightWidth-borderWidth, dims.IntentionsHeight-borderHeight)
+		m.intentionList.SetFocused(m.focusedSection == SectionIntentions)
 	}
 	if m.winsView != nil {
 		m.winsView.SetSize(dims.RightWidth-borderWidth, dims.WinsHeight-borderHeight)
+		m.winsView.SetFocused(m.focusedSection == SectionWins)
 	}
 	if m.logView != nil {
 		m.logView.SetSize(dims.LogsWidth-borderWidth, dims.LogsHeight-borderHeight)
+		m.logView.SetFocused(m.focusedSection == SectionLogs)
 	}
 
 	// Get pane views
