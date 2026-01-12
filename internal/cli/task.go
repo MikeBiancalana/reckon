@@ -10,6 +10,15 @@ import (
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
+)
+
+const (
+	idWidth       = 8
+	statusWidth   = 10
+	createdWidth  = 10
+	tagsWidth     = 15
+	minTitleWidth = 20
 )
 
 var (
@@ -149,6 +158,21 @@ var taskListCmd = &cobra.Command{
 			return nil
 		}
 
+		if taskVerboseFlag {
+			// Verbose output with sequential numbers
+			fmt.Printf("Found %d task(s):\n\n", len(tasks))
+			for i, t := range tasks {
+				fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
+				fmt.Printf("  ID: %s\n", t.ID)
+				fmt.Printf("  Created: %s\n", t.CreatedAt.Format("2006-01-02"))
+				if len(t.Notes) > 0 {
+					fmt.Printf("  Notes: %d\n", len(t.Notes))
+				}
+				fmt.Println()
+			}
+			return nil
+		}
+
 		if taskCompactFlag {
 			// Compact output: number status text
 			for i, t := range tasks {
@@ -158,7 +182,7 @@ var taskListCmd = &cobra.Command{
 		}
 
 		if taskVerboseFlag {
-			// Verbose output with sequential numbers (old default format)
+			// Verbose output with sequential numbers
 			fmt.Printf("Found %d task(s):\n\n", len(tasks))
 			for i, t := range tasks {
 				fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
@@ -175,20 +199,32 @@ var taskListCmd = &cobra.Command{
 			return nil
 		}
 
-		// Default tabular output (2-space padding between columns)
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tSTATUS\tCREATED\tTITLE")
-		for _, t := range tasks {
-			shortID := t.ID
-			if len(t.ID) > 8 {
-				shortID = t.ID[:8]
-			} else if len(t.ID) == 0 {
-				shortID = "--------"
-			}
-			createdDate := t.CreatedAt.Format("2006-01-02")
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", shortID, t.Status, createdDate, t.Text)
+		// Default tabular output
+		// Get terminal width for dynamic title truncation
+		width, _, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil {
+			width = 80 // fallback
 		}
-		w.Flush()
+		availableTitleWidth := width - (idWidth + statusWidth + createdWidth + tagsWidth + 20) // estimate padding
+		if availableTitleWidth < minTitleWidth {
+			availableTitleWidth = minTitleWidth
+		}
+
+		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.TabIndent)
+		fmt.Fprintln(tw, "ID\tSTATUS\tCREATED\tTAGS\tTITLE")
+		for _, t := range tasks {
+			tags := "-"
+			if len(t.Tags) > 0 {
+				tags = strings.Join(t.Tags, ", ")
+			}
+			title := t.Text
+			// Truncate title based on available width
+			if len(title) > availableTitleWidth {
+				title = title[:availableTitleWidth-3] + "..."
+			}
+			fmt.Fprintf(tw, "%.8s\t%s\t%s\t%s\t%s\n", t.ID, t.Status, t.CreatedAt.Format("2006-01-02"), tags, title)
+		}
+		tw.Flush()
 
 		return nil
 	},
