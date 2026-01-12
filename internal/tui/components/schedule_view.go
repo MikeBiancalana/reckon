@@ -16,6 +16,10 @@ var (
 
 	scheduleItemStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("252"))
+
+	focusedScheduleTitleStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("11")).
+					Bold(true)
 )
 
 // ScheduleView is a Bubble Tea component for displaying schedule items
@@ -24,6 +28,7 @@ type ScheduleView struct {
 	width         int
 	height        int
 	selectedIndex int
+	focused       bool
 }
 
 // NewScheduleView creates a new ScheduleView component
@@ -45,7 +50,13 @@ func (sv *ScheduleView) View() string {
 	var sb strings.Builder
 
 	// Title
-	title := scheduleTitleStyle.Render("Schedule")
+	var titleStyle lipgloss.Style
+	if sv.focused {
+		titleStyle = focusedScheduleTitleStyle
+	} else {
+		titleStyle = scheduleTitleStyle
+	}
+	title := titleStyle.Render("Schedule")
 	sb.WriteString(title)
 	sb.WriteString("\n\n")
 
@@ -72,6 +83,11 @@ func (sv *ScheduleView) View() string {
 func (sv *ScheduleView) SetSize(width, height int) {
 	sv.width = width
 	sv.height = height
+}
+
+// SetFocused sets whether this component is focused
+func (sv *ScheduleView) SetFocused(focused bool) {
+	sv.focused = focused
 }
 
 // UpdateSchedule updates the schedule items

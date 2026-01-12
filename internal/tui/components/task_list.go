@@ -24,6 +24,10 @@ var (
 	taskListTitleStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("205")).
 				Bold(true)
+
+	focusedTaskListTitleStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("11")).
+					Bold(true)
 )
 
 // TaskToggleMsg is sent when a task's status is toggled
@@ -115,6 +119,7 @@ type TaskList struct {
 	list         list.Model
 	collapsedMap map[string]bool
 	tasks        []journal.Task // keep track of original tasks for state management
+	focused      bool
 }
 
 // NewTaskList creates a new task list component
@@ -235,6 +240,16 @@ func (tl *TaskList) View() string {
 // SetSize sets the size of the list
 func (tl *TaskList) SetSize(width, height int) {
 	tl.list.SetSize(width, height)
+}
+
+// SetFocused sets whether this component is focused
+func (tl *TaskList) SetFocused(focused bool) {
+	tl.focused = focused
+	if focused {
+		tl.list.Styles.Title = focusedTaskListTitleStyle
+	} else {
+		tl.list.Styles.Title = taskListTitleStyle
+	}
 }
 
 // SelectedTask returns the currently selected task
