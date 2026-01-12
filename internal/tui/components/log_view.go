@@ -276,3 +276,16 @@ func (lv *LogView) SelectedLogEntry() *journal.LogEntry {
 	entry := logItem.entry
 	return &entry
 }
+
+// IsSelectedItemNote returns true if the currently selected item is a note
+func (lv *LogView) IsSelectedItemNote() bool {
+	item := lv.list.SelectedItem()
+	if item == nil {
+		return false
+	}
+	logItem, ok := item.(LogEntryItem)
+	if !ok {
+		return false
+	}
+	return logItem.isNote
+}

@@ -89,6 +89,7 @@ type Model struct {
 	confirmItemType  string // "intention", "win", "log", "log_note"
 	confirmItemID    string
 	editItemID       string // ID of item being edited
+	editItemType     string // "task", "intention", "win", "log"
 	noteTaskID       string // ID of task being noted
 	noteLogEntryID   string // ID of log entry being noted
 	lastError        error
@@ -302,6 +303,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textEntryBar.SetMode(components.ModeInactive)
 				m.noteTaskID = ""     // Reset note task ID
 				m.noteLogEntryID = "" // Reset note log entry ID
+				m.editItemID = ""     // Reset edit item ID
+				m.editItemType = ""   // Reset edit item type
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
@@ -313,6 +316,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textEntryBar.SetMode(components.ModeInactive)
 				m.noteTaskID = ""     // Reset note task ID
 				m.noteLogEntryID = "" // Reset note log entry ID
+				m.editItemID = ""     // Reset edit item ID
+				m.editItemType = ""   // Reset edit item type
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
@@ -507,8 +512,71 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "e":
-			// TODO: Edit functionality needs to be refactored to use TextEntryBar
-			// For now, edit is disabled
+			// Edit selected item
+			if m.confirmMode {
+				// Already in confirm mode, ignore
+				return m, nil
+			}
+			switch m.focusedSection {
+			case SectionTasks:
+				if m.taskList != nil {
+					selectedTask := m.taskList.SelectedTask()
+					if selectedTask != nil && !m.taskList.IsSelectedItemNote() {
+						// Edit task (only main tasks, not notes)
+						m.editItemID = selectedTask.ID
+						m.editItemType = "task"
+						m.textEntryBar.SetMode(components.ModeEditTask)
+						m.textEntryBar.SetValue(selectedTask.Text)
+						if m.statusBar != nil {
+							m.statusBar.SetInputMode(true)
+						}
+						return m, m.textEntryBar.Focus()
+					}
+				}
+			case SectionIntentions:
+				if m.intentionList != nil {
+					selectedIntention := m.intentionList.SelectedIntention()
+					if selectedIntention != nil {
+						m.editItemID = selectedIntention.ID
+						m.editItemType = "intention"
+						m.textEntryBar.SetMode(components.ModeEditIntention)
+						m.textEntryBar.SetValue(selectedIntention.Text)
+						if m.statusBar != nil {
+							m.statusBar.SetInputMode(true)
+						}
+						return m, m.textEntryBar.Focus()
+					}
+				}
+			case SectionWins:
+				if m.winsView != nil {
+					selectedWin := m.winsView.SelectedWin()
+					if selectedWin != nil {
+						m.editItemID = selectedWin.ID
+						m.editItemType = "win"
+						m.textEntryBar.SetMode(components.ModeEditWin)
+						m.textEntryBar.SetValue(selectedWin.Text)
+						if m.statusBar != nil {
+							m.statusBar.SetInputMode(true)
+						}
+						return m, m.textEntryBar.Focus()
+					}
+				}
+			case SectionLogs:
+				if m.logView != nil {
+					selectedLogEntry := m.logView.SelectedLogEntry()
+					if selectedLogEntry != nil && !m.logView.IsSelectedItemNote() {
+						// Edit log entry (only main entries, not notes)
+						m.editItemID = selectedLogEntry.ID
+						m.editItemType = "log"
+						m.textEntryBar.SetMode(components.ModeEditLog)
+						m.textEntryBar.SetValue(selectedLogEntry.Content)
+						if m.statusBar != nil {
+							m.statusBar.SetInputMode(true)
+						}
+						return m, m.textEntryBar.Focus()
+					}
+				}
+			}
 			return m, nil
 		case "enter":
 			// Handle enter key for toggling intentions
@@ -786,16 +854,17 @@ Navigation:
   shift+tab  Previous section
   j, k       Navigate within section
 
-Actions:
-  t          Add task
-  i          Add intention
-  w          Add win
-  L          Add log entry
-  n          Add note (Tasks/Logs section)
-   space      Toggle task completion (Tasks section)
-   enter/space Toggle intention / Expand task (Intentions/Tasks section) / Expand log entry (Logs section)
-   space      Expand log entry (Logs section)
-  d          Delete selected item (with confirmation)
+ Actions:
+   t          Add task
+   i          Add intention
+   w          Add win
+   L          Add log entry
+   n          Add note (Tasks/Logs section)
+   e          Edit selected item (Tasks/Intentions/Wins/Logs sections)
+    space      Toggle task completion (Tasks section)
+    enter/space Toggle intention / Expand task (Intentions/Tasks section) / Expand log entry (Logs section)
+    space      Expand log entry (Logs section)
+   d          Delete selected item (with confirmation)
 
 Text Entry:
   enter      Submit entry
@@ -1058,6 +1127,40 @@ func (m *Model) submitTextEntry() tea.Cmd {
 				return logNoteAddedMsg{}
 			}
 			return errMsg{fmt.Errorf("no log entry selected")}
+
+		case components.ModeEditTask:
+			// Edit task
+			if m.taskService != nil && m.editItemID != "" && m.editItemType == "task" {
+				err = m.taskService.UpdateTask(m.editItemID, inputText, []string{}) // TODO: preserve existing tags
+				if err != nil {
+					return errMsg{err}
+				}
+				// Reload tasks
+				tasks, errGetTasks := m.taskService.GetAllTasks()
+				if errGetTasks != nil {
+					return errMsg{errGetTasks}
+				}
+				return tasksLoadedMsg{tasks: tasks}
+			}
+			return errMsg{fmt.Errorf("task service not available or no task selected for editing")}
+
+		case components.ModeEditIntention:
+			// Edit intention
+			if m.editItemID != "" && m.editItemType == "intention" {
+				err = m.service.UpdateIntention(m.currentJournal, m.editItemID, inputText)
+			}
+
+		case components.ModeEditWin:
+			// Edit win
+			if m.editItemID != "" && m.editItemType == "win" {
+				err = m.service.UpdateWin(m.currentJournal, m.editItemID, inputText)
+			}
+
+		case components.ModeEditLog:
+			// Edit log entry
+			if m.editItemID != "" && m.editItemType == "log" {
+				err = m.service.UpdateLogEntry(m.currentJournal, m.editItemID, inputText)
+			}
 
 		default:
 			return errMsg{fmt.Errorf("unknown entry mode")}

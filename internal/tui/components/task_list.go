@@ -257,6 +257,19 @@ func (tl *TaskList) SelectedTask() *journal.Task {
 	return nil
 }
 
+// IsSelectedItemNote returns true if the currently selected item is a note
+func (tl *TaskList) IsSelectedItemNote() bool {
+	item := tl.list.SelectedItem()
+	if item == nil {
+		return false
+	}
+	taskItem, ok := item.(TaskItem)
+	if !ok {
+		return false
+	}
+	return taskItem.isNote
+}
+
 // UpdateTasks updates the list with new tasks
 func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
 	// Preserve cursor position by finding the currently selected task ID
