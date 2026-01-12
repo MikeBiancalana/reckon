@@ -764,41 +764,44 @@ func TestTaskList_UpdateTasksPreservesOptimisticState(t *testing.T) {
 
 func TestTaskDelegate_RendersOptimisticState(t *testing.T) {
 	t.Run("renders optimistic status over actual status", func(t *testing.T) {
-		// Create delegate with optimistic state
-		optimisticMap := map[string]journal.TaskStatus{
-			"task1": journal.TaskDone,
+		// Create TaskList with optimistic state
+		tasks := []journal.Task{
+			{
+				ID:        "task1",
+				Text:      "Test task",
+				Status:    journal.TaskOpen,
+				Notes:     []journal.TaskNote{},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
 		}
-		togglingMap := map[string]bool{}
+		tl := NewTaskList(tasks)
+		tl.optimisticMap["task1"] = journal.TaskDone
 
-		delegate := TaskDelegate{
-			collapsedMap:  make(map[string]bool),
-			optimisticMap: optimisticMap,
-			togglingMap:   togglingMap,
-		}
-
-		// The Render function writes to an io.Writer, so we can't easily test the exact output
-		// But we've verified the logic exists in the code
-		// This test validates that the delegate is created with the right structure
-		if delegate.optimisticMap["task1"] != journal.TaskDone {
-			t.Error("delegate should have optimistic state")
+		// Verify the optimistic state is accessible via the task list
+		if tl.optimisticMap["task1"] != journal.TaskDone {
+			t.Error("task list should have optimistic state")
 		}
 	})
 
 	t.Run("shows loading indicator when toggling", func(t *testing.T) {
-		// Create delegate with toggling state
-		togglingMap := map[string]bool{
-			"task1": true,
+		// Create TaskList with toggling state
+		tasks := []journal.Task{
+			{
+				ID:        "task1",
+				Text:      "Test task",
+				Status:    journal.TaskOpen,
+				Notes:     []journal.TaskNote{},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
 		}
+		tl := NewTaskList(tasks)
+		tl.togglingMap["task1"] = true
 
-		delegate := TaskDelegate{
-			collapsedMap:  make(map[string]bool),
-			optimisticMap: make(map[string]journal.TaskStatus),
-			togglingMap:   togglingMap,
-		}
-
-		// Validate the delegate has the toggling state
-		if !delegate.togglingMap["task1"] {
-			t.Error("delegate should have toggling state")
+		// Validate the toggling state is accessible via the task list
+		if !tl.togglingMap["task1"] {
+			t.Error("task list should have toggling state")
 		}
 	})
 }
