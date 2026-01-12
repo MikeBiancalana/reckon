@@ -1,6 +1,8 @@
 package components
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -612,17 +614,20 @@ func TestTaskList_NoteCountBadge(t *testing.T) {
 			t.Fatal("task1 should be collapsed")
 		}
 
-		// Render and check for badge in output
+		// Verify only the task is shown (notes are hidden)
+		if len(tl.list.Items()) != 1 {
+			t.Errorf("expected 1 item when collapsed, got %d", len(tl.list.Items()))
+		}
+
+		// Render and verify badge appears in output
 		view := tl.View()
 		if view == "" {
 			t.Fatal("View should not be empty")
 		}
 
 		// The badge should show [3] for 3 notes
-		// Note: We can't easily test the exact visual output due to styling,
-		// but we can verify the count logic by checking the collapsed map
-		if len(tl.list.Items()) != 1 {
-			t.Errorf("expected 1 item when collapsed, got %d", len(tl.list.Items()))
+		if !containsBadge(view, 3) {
+			t.Errorf("View should contain badge [3], got: %s", view)
 		}
 	})
 
@@ -652,6 +657,16 @@ func TestTaskList_NoteCountBadge(t *testing.T) {
 		if len(tl.list.Items()) != 3 {
 			t.Errorf("expected 3 items when expanded, got %d", len(tl.list.Items()))
 		}
+
+		// Verify badge does not appear in output
+		view := tl.View()
+		if view == "" {
+			t.Fatal("View should not be empty")
+		}
+
+		if containsBadge(view, 2) {
+			t.Errorf("View should not contain badge when expanded, got: %s", view)
+		}
 	})
 
 	t.Run("task without notes has no badge", func(t *testing.T) {
@@ -673,10 +688,81 @@ func TestTaskList_NoteCountBadge(t *testing.T) {
 			t.Errorf("expected 1 item, got %d", len(tl.list.Items()))
 		}
 
-		// No badge should appear since there are no notes
+		// Verify no badge appears
 		view := tl.View()
 		if view == "" {
 			t.Fatal("View should not be empty")
 		}
+
+		if containsBadge(view, 0) {
+			t.Errorf("View should not contain badge for task without notes, got: %s", view)
+		}
 	})
+
+	t.Run("badge maintains styling when task is selected", func(t *testing.T) {
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Task with notes",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+					{ID: "note2", Text: "Note 2", Position: 1},
+				},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
+		}
+
+		tl := NewTaskList(tasks)
+
+		// Collapse the task (it's already selected by default)
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		tl, _ = tl.Update(msg)
+
+		// Verify task is collapsed and selected
+		if !tl.collapsedMap["task1"] {
+			t.Fatal("task1 should be collapsed")
+		}
+
+		// Render and verify badge appears (even though task is selected)
+		view := tl.View()
+		if !containsBadge(view, 2) {
+			t.Errorf("Badge should appear even when task is selected, got: %s", view)
+		}
+	})
+
+	t.Run("badge maintains styling when task is done", func(t *testing.T) {
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Completed task",
+				Status: journal.TaskDone,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+				},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
+		}
+
+		tl := NewTaskList(tasks)
+
+		// Collapse the task
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		tl, _ = tl.Update(msg)
+
+		// Render and verify badge appears (even though task is done)
+		view := tl.View()
+		if !containsBadge(view, 1) {
+			t.Errorf("Badge should appear for done tasks, got: %s", view)
+		}
+	})
+}
+
+// containsBadge checks if the view contains a badge with the specified count
+func containsBadge(view string, count int) bool {
+	// Import strings package at the top if not already imported
+	badge := fmt.Sprintf("[%d]", count)
+	return strings.Contains(view, badge)
 }

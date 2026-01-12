@@ -65,17 +65,22 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 
-	var text string
-	var style lipgloss.Style
+	var output string
 
 	if item.isNote {
 		// Render note with 2-space indent
-		text = fmt.Sprintf("  - %s", findNoteText(item.task.Notes, item.noteID))
-		style = noteStyle
+		text := fmt.Sprintf("  - %s", findNoteText(item.task.Notes, item.noteID))
+
+		// Apply styling
+		if index == m.Index() {
+			output = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).Render("▶ " + text)
+		} else {
+			output = noteStyle.Render(text)
+		}
 	} else {
 		// Render task with checkbox
 		checkbox := "[ ]"
-		style = taskStyle
+		style := taskStyle
 		if item.task.Status == journal.TaskDone {
 			checkbox = "[x]"
 			style = taskDoneStyle
@@ -83,27 +88,35 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 		// Add expand/collapse indicator if task has notes
 		indicator := ""
-		noteBadge := ""
 		if len(item.task.Notes) > 0 {
 			if d.collapsedMap[item.task.ID] {
 				indicator = "▶ "
-				noteBadge = fmt.Sprintf(" %s", noteCountBadgeStyle.Render(fmt.Sprintf("[%d]", len(item.task.Notes))))
 			} else {
 				indicator = "▼ "
 			}
 		}
 
-		text = fmt.Sprintf("%s%s %s%s", indicator, checkbox, item.task.Text, noteBadge)
+		// Build the task text (without badge)
+		taskText := fmt.Sprintf("%s%s %s", indicator, checkbox, item.task.Text)
+
+		// Apply task styling first
+		var styledTask string
+		if index == m.Index() {
+			styledTask = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).Render("▶ " + taskText)
+		} else {
+			styledTask = style.Render(taskText)
+		}
+
+		// Add badge separately if task is collapsed and has notes
+		if len(item.task.Notes) > 0 && d.collapsedMap[item.task.ID] {
+			badge := noteCountBadgeStyle.Render(fmt.Sprintf(" [%d]", len(item.task.Notes)))
+			output = styledTask + badge
+		} else {
+			output = styledTask
+		}
 	}
 
-	// Highlight selected item
-	if index == m.Index() {
-		text = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).Render("▶ " + text)
-	} else {
-		text = style.Render(text)
-	}
-
-	fmt.Fprintf(w, "%s", text)
+	fmt.Fprintf(w, "%s", output)
 }
 
 // findNoteText finds the text of a note by ID
