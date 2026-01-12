@@ -78,9 +78,13 @@ type Model struct {
 	taskList     *components.TaskList
 	scheduleView *components.ScheduleView
 	summaryView  *components.SummaryView
+	notesPane    *components.NotesPane
 
 	// Cached data
 	tasks []journal.Task
+
+	// Notes pane state
+	selectedTaskID string
 
 	// State for modes
 	helpMode         bool
@@ -95,6 +99,24 @@ type Model struct {
 
 	// Terminal size validation
 	terminalTooSmall bool
+}
+
+// updateNotesForSelectedTask updates the notes pane with notes for the currently selected task
+func (m *Model) updateNotesForSelectedTask() {
+	if m.taskList == nil || m.notesPane == nil {
+		return
+	}
+	selectedTask := m.taskList.SelectedTask()
+	if selectedTask == nil {
+		m.selectedTaskID = ""
+		m.notesPane.UpdateNotes("", []journal.TaskNote{})
+		return
+	}
+	if selectedTask.ID == m.selectedTaskID {
+		return // No change
+	}
+	m.selectedTaskID = selectedTask.ID
+	m.notesPane.UpdateNotes(selectedTask.ID, selectedTask.Notes)
 }
 
 // NewModel creates a new TUI model
@@ -115,10 +137,11 @@ func NewModel(service *journal.Service) *Model {
 		taskService:    nil, // Will be set via SetJournalTaskService
 		watcher:        watcher,
 		currentDate:    stdtime.Now().Format("2006-01-02"),
-		focusedSection: SectionLogs,
+		focusedSection: SectionTasks,
 		textEntryBar:   components.NewTextEntryBar(),
 		statusBar:      sb,
 		summaryView:    components.NewSummaryView(),
+		notesPane:      components.NewNotesPane(),
 	}
 }
 
@@ -227,6 +250,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.taskList = components.NewTaskList(msg.tasks)
 		}
+		m.updateNotesForSelectedTask()
 		return m, nil
 
 	case components.TaskToggleMsg:
@@ -657,7 +681,7 @@ func centerView(width, height int, view string) string {
 func (m *Model) getBorderStyle(section Section) lipgloss.Style {
 	style := lipgloss.NewStyle().Border(lipgloss.NormalBorder())
 	if m.focusedSection == section {
-		style = style.BorderForeground(lipgloss.Color("39")) // blue color for focus
+		style = style.BorderForeground(lipgloss.Color("11")) // bright yellow color for focus
 	}
 	return style
 }
@@ -680,18 +704,27 @@ func (m *Model) renderNewLayout() string {
 	// Size components accounting for borders
 	if m.taskList != nil {
 		m.taskList.SetSize(dims.TasksWidth-borderWidth, dims.TasksHeight-borderHeight)
+		m.taskList.SetFocused(m.focusedSection == SectionTasks)
+	}
+	if m.notesPane != nil {
+		m.notesPane.SetSize(dims.NotesWidth-borderWidth, dims.NotesHeight-borderHeight)
+		// Notes pane is not focusable, so no SetFocused
 	}
 	if m.scheduleView != nil {
 		m.scheduleView.SetSize(dims.RightWidth-borderWidth, dims.ScheduleHeight-borderHeight)
+		m.scheduleView.SetFocused(m.focusedSection == SectionSchedule)
 	}
 	if m.intentionList != nil {
 		m.intentionList.SetSize(dims.RightWidth-borderWidth, dims.IntentionsHeight-borderHeight)
+		m.intentionList.SetFocused(m.focusedSection == SectionIntentions)
 	}
 	if m.winsView != nil {
 		m.winsView.SetSize(dims.RightWidth-borderWidth, dims.WinsHeight-borderHeight)
+		m.winsView.SetFocused(m.focusedSection == SectionWins)
 	}
 	if m.logView != nil {
 		m.logView.SetSize(dims.LogsWidth-borderWidth, dims.LogsHeight-borderHeight)
+		m.logView.SetFocused(m.focusedSection == SectionLogs)
 	}
 
 	// Get pane views
@@ -705,11 +738,18 @@ func (m *Model) renderNewLayout() string {
 		tasksView = m.taskList.View()
 	}
 
+	notesView := ""
+	if m.notesPane != nil {
+		notesView = m.notesPane.View()
+	}
+
 	// Calculate inner dimensions for centering
 	logsInnerWidth := dims.LogsWidth - borderWidth
 	logsInnerHeight := dims.LogsHeight - borderHeight
 	tasksInnerWidth := dims.TasksWidth - borderWidth
 	tasksInnerHeight := dims.TasksHeight - borderHeight
+	notesInnerWidth := dims.NotesWidth - borderWidth
+	notesInnerHeight := dims.NotesHeight - borderHeight
 	rightInnerWidth := dims.RightWidth - borderWidth
 
 	// Center and box Logs pane
@@ -717,10 +757,11 @@ func (m *Model) renderNewLayout() string {
 		centerView(logsInnerWidth, logsInnerHeight, logsView),
 	)
 
-	// Center and box Tasks pane
-	tasksBox := m.getBorderStyle(SectionTasks).Render(
-		centerView(tasksInnerWidth, tasksInnerHeight, tasksView),
-	)
+	// Center and box Tasks pane (split vertically with notes)
+	tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, tasksView)
+	notesCentered := centerView(notesInnerWidth, notesInnerHeight, notesView)
+	centerContent := lipgloss.JoinVertical(lipgloss.Left, tasksCentered, notesCentered)
+	tasksBox := m.getBorderStyle(SectionTasks).Render(centerContent)
 
 	// Build right sidebar with centered, boxed components
 	rightSidebar := m.buildRightSidebar(dims, rightInnerWidth, borderHeight)
