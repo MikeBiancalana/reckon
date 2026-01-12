@@ -10,6 +10,7 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"strings"
 )
 
 // Section represents different sections of the journal
@@ -259,6 +260,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.taskService != nil {
 			return m, m.toggleTask(msg.TaskID)
 		}
+		return m, nil
+
+	case components.TaskSelectionChangedMsg:
+		// Update notes pane when task selection changes
+		m.updateNotesForSelectedTask()
 		return m, nil
 
 	case taskToggledMsg:
@@ -828,7 +834,10 @@ func (m *Model) renderNewLayout() string {
 	// Center and box Tasks pane (split vertically with notes)
 	tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, tasksView)
 	notesCentered := centerView(notesInnerWidth, notesInnerHeight, notesView)
-	centerContent := lipgloss.JoinVertical(lipgloss.Left, tasksCentered, notesCentered)
+	separator := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render(strings.Repeat("─", notesInnerWidth))
+	centerContent := lipgloss.JoinVertical(lipgloss.Left, tasksCentered, separator, notesCentered)
 	tasksBox := m.getBorderStyle(SectionTasks).Render(centerContent)
 
 	// Build right sidebar with centered, boxed components

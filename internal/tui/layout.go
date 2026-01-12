@@ -47,7 +47,7 @@ func CalculatePaneDimensions(termWidth, termHeight int) PaneDimensions {
 	// All main panes share the same available height
 	dims.LogsHeight = availableHeight
 	dims.TasksHeight = availableHeight / 2
-	dims.NotesHeight = availableHeight / 2
+	dims.NotesHeight = availableHeight - dims.TasksHeight
 	dims.RightHeight = availableHeight
 
 	// Calculate horizontal widths with 40-40-18 split

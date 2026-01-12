@@ -35,6 +35,11 @@ type TaskToggleMsg struct {
 	TaskID string
 }
 
+// TaskSelectionChangedMsg is sent when the task selection changes
+type TaskSelectionChangedMsg struct {
+	TaskID string
+}
+
 // TaskItem represents an item in the task list (either a task or a note)
 type TaskItem struct {
 	task   journal.Task
@@ -226,6 +231,18 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 
 	var cmd tea.Cmd
 	tl.list, cmd = tl.list.Update(msg)
+
+	// Send selection changed message after any update
+	selectedItem := tl.list.SelectedItem()
+	if selectedItem != nil {
+		taskItem, ok := selectedItem.(TaskItem)
+		if ok && !taskItem.isNote {
+			cmd = tea.Batch(cmd, func() tea.Msg {
+				return TaskSelectionChangedMsg{TaskID: taskItem.task.ID}
+			})
+		}
+	}
+
 	return tl, cmd
 }
 
