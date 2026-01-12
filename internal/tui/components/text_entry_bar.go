@@ -10,14 +10,18 @@ import (
 type EntryMode string
 
 const (
-	ModeInactive  EntryMode = ""
-	ModeTask      EntryMode = "task"
-	ModeIntention EntryMode = "intention"
-	ModeWin       EntryMode = "win"
-	ModeLog       EntryMode = "log"
-	ModeNote      EntryMode = "note"
-	ModeLogNote   EntryMode = "log_note"
-	ModeSchedule  EntryMode = "schedule"
+	ModeInactive      EntryMode = ""
+	ModeTask          EntryMode = "task"
+	ModeIntention     EntryMode = "intention"
+	ModeWin           EntryMode = "win"
+	ModeLog           EntryMode = "log"
+	ModeNote          EntryMode = "note"
+	ModeLogNote       EntryMode = "log_note"
+	ModeSchedule      EntryMode = "schedule"
+	ModeEditTask      EntryMode = "edit_task"
+	ModeEditIntention EntryMode = "edit_intention"
+	ModeEditWin       EntryMode = "edit_win"
+	ModeEditLog       EntryMode = "edit_log"
 )
 
 var (
@@ -109,6 +113,14 @@ func (teb *TextEntryBar) getPromptForMode() string {
 		return "Add note: "
 	case ModeSchedule:
 		return "Add schedule item (HH:MM content): "
+	case ModeEditTask:
+		return "Edit task: "
+	case ModeEditIntention:
+		return "Edit intention: "
+	case ModeEditWin:
+		return "Edit win: "
+	case ModeEditLog:
+		return "Edit log entry: "
 	default:
 		return ""
 	}
@@ -158,6 +170,11 @@ func (teb *TextEntryBar) GetValue() string {
 // Clear resets the input value
 func (teb *TextEntryBar) Clear() {
 	teb.textInput.SetValue("")
+}
+
+// SetValue sets the input value
+func (teb *TextEntryBar) SetValue(value string) {
+	teb.textInput.SetValue(value)
 }
 
 // Focus focuses the text input

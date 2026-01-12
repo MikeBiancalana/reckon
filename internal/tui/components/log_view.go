@@ -17,6 +17,10 @@ var (
 
 	logNoteStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245"))
+
+	focusedLogStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("11")).
+			Bold(true)
 )
 
 // LogEntryItem represents a log entry or note in the list
@@ -131,6 +135,7 @@ type LogView struct {
 	list         list.Model
 	collapsedMap map[string]bool
 	logEntries   []journal.LogEntry // keep track of original log entries for state management
+	focused      bool
 }
 
 func NewLogView(logEntries []journal.LogEntry) *LogView {
@@ -251,6 +256,16 @@ func (lv *LogView) SetSize(width, height int) {
 	lv.list.SetSize(width, height)
 }
 
+// SetFocused sets whether this component is focused
+func (lv *LogView) SetFocused(focused bool) {
+	lv.focused = focused
+	if focused {
+		lv.list.Styles.Title = focusedLogStyle
+	} else {
+		lv.list.Styles.Title = logStyle
+	}
+}
+
 // UpdateLogEntries updates the list with new log entries
 func (lv *LogView) UpdateLogEntries(logEntries []journal.LogEntry) {
 	lv.logEntries = logEntries
@@ -275,4 +290,17 @@ func (lv *LogView) SelectedLogEntry() *journal.LogEntry {
 	// Create a copy and return pointer to it
 	entry := logItem.entry
 	return &entry
+}
+
+// IsSelectedItemNote returns true if the currently selected item is a note
+func (lv *LogView) IsSelectedItemNote() bool {
+	item := lv.list.SelectedItem()
+	if item == nil {
+		return false
+	}
+	logItem, ok := item.(LogEntryItem)
+	if !ok {
+		return false
+	}
+	return logItem.isNote
 }

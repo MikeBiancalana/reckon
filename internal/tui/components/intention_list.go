@@ -24,6 +24,10 @@ var (
 
 	carriedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("214"))
+
+	focusedIntentionStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("11")).
+				Bold(true)
 )
 
 // IntentionItem represents an intention in the list
@@ -77,7 +81,8 @@ func (d IntentionDelegate) Render(w io.Writer, m list.Model, index int, listItem
 
 // IntentionList represents the intentions component
 type IntentionList struct {
-	list list.Model
+	list    list.Model
+	focused bool
 }
 
 func NewIntentionList(intentions []journal.Intention) *IntentionList {
@@ -113,6 +118,16 @@ func (il *IntentionList) View() string {
 // SetSize sets the size of the list
 func (il *IntentionList) SetSize(width, height int) {
 	il.list.SetSize(width, height)
+}
+
+// SetFocused sets whether this component is focused
+func (il *IntentionList) SetFocused(focused bool) {
+	il.focused = focused
+	if focused {
+		il.list.Styles.Title = focusedIntentionStyle
+	} else {
+		il.list.Styles.Title = intentionStyle
+	}
 }
 
 // SelectedIntention returns the currently selected intention

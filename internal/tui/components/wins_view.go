@@ -12,8 +12,12 @@ import (
 
 var (
 	winStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("46")).
-		Bold(true)
+			Foreground(lipgloss.Color("46")).
+			Bold(true)
+
+	focusedWinStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("11")).
+			Bold(true)
 )
 
 // WinItem represents a win in the list
@@ -49,7 +53,8 @@ func (d WinDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 
 // WinsView represents the wins component
 type WinsView struct {
-	list list.Model
+	list    list.Model
+	focused bool
 }
 
 func NewWinsView(wins []journal.Win) *WinsView {
@@ -85,6 +90,16 @@ func (wv *WinsView) View() string {
 // SetSize sets the size of the list
 func (wv *WinsView) SetSize(width, height int) {
 	wv.list.SetSize(width, height)
+}
+
+// SetFocused sets whether this component is focused
+func (wv *WinsView) SetFocused(focused bool) {
+	wv.focused = focused
+	if focused {
+		wv.list.Styles.Title = focusedWinStyle
+	} else {
+		wv.list.Styles.Title = winStyle
+	}
 }
 
 // UpdateWins updates the list with new wins
