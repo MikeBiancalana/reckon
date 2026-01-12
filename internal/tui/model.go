@@ -792,8 +792,9 @@ Actions:
   w          Add win
   L          Add log entry
   n          Add note (Tasks/Logs section)
-  space      Toggle task completion (Tasks section)
-  enter      Toggle intention / Expand task (Intentions/Tasks section) / Expand log entry (Logs section)
+   space      Toggle task completion (Tasks section)
+   enter/space Toggle intention / Expand task (Intentions/Tasks section) / Expand log entry (Logs section)
+   space      Expand log entry (Logs section)
   d          Delete selected item (with confirmation)
 
 Text Entry:
