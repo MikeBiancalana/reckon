@@ -278,7 +278,7 @@ func (s *TaskService) UpdateTask(taskID string, title string, tags []string) err
 			if title != "" {
 				tasks[i].Text = title
 			}
-			// TODO: Add support for tags in Task struct when implemented
+			tasks[i].Tags = tags
 			found = true
 			break
 		}
