@@ -854,7 +854,7 @@ Navigation:
   shift+tab  Previous section
   j, k       Navigate within section
 
-Actions:
+ Actions:
    t          Add task
    i          Add intention
    w          Add win
