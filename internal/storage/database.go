@@ -148,6 +148,95 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: Fix tasks table PRIMARY KEY if missing
+	if err := fixTasksPrimaryKey(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// fixTasksPrimaryKey ensures the tasks table has a PRIMARY KEY on id column
+func fixTasksPrimaryKey(db *sql.DB) error {
+	// Check if id column is a primary key
+	rows, err := db.Query("PRAGMA table_info(tasks)")
+	if err != nil {
+		return fmt.Errorf("failed to get tasks table info: %w", err)
+	}
+	defer rows.Close()
+
+	hasPrimaryKey := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return fmt.Errorf("failed to scan column info: %w", err)
+		}
+		if name == "id" && pk == 1 {
+			hasPrimaryKey = true
+			break
+		}
+	}
+
+	// If PRIMARY KEY is missing, recreate the table
+	if !hasPrimaryKey {
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer tx.Rollback()
+
+		// Create new table with proper schema
+		_, err = tx.Exec(`
+			CREATE TABLE tasks_new (
+				id TEXT PRIMARY KEY,
+				text TEXT NOT NULL,
+				status TEXT NOT NULL,
+				tags TEXT,
+				position INTEGER NOT NULL,
+				created_at INTEGER NOT NULL
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create tasks_new table: %w", err)
+		}
+
+		// Copy data from old table
+		_, err = tx.Exec("INSERT INTO tasks_new SELECT id, text, status, tags, position, created_at FROM tasks")
+		if err != nil {
+			return fmt.Errorf("failed to copy data to tasks_new: %w", err)
+		}
+
+		// Drop old table
+		_, err = tx.Exec("DROP TABLE tasks")
+		if err != nil {
+			return fmt.Errorf("failed to drop old tasks table: %w", err)
+		}
+
+		// Rename new table
+		_, err = tx.Exec("ALTER TABLE tasks_new RENAME TO tasks")
+		if err != nil {
+			return fmt.Errorf("failed to rename tasks_new: %w", err)
+		}
+
+		// Recreate indices
+		_, err = tx.Exec("CREATE INDEX idx_tasks_status ON tasks(status)")
+		if err != nil {
+			return fmt.Errorf("failed to create status index: %w", err)
+		}
+
+		_, err = tx.Exec("CREATE INDEX idx_tasks_position ON tasks(position)")
+		if err != nil {
+			return fmt.Errorf("failed to create position index: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+	}
+
 	return nil
 }
 
