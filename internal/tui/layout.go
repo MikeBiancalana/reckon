@@ -10,6 +10,10 @@ type PaneDimensions struct {
 	TasksWidth  int
 	TasksHeight int
 
+	// Center pane (Notes)
+	NotesWidth  int
+	NotesHeight int
+
 	// Right sidebar (total)
 	RightWidth  int
 	RightHeight int
@@ -25,7 +29,8 @@ type PaneDimensions struct {
 }
 
 // CalculatePaneDimensions computes pane sizes based on terminal dimensions.
-// It implements a 40-40-18 horizontal split for the main panes, with the right
+// It implements a 40-40-18 horizontal split for the main panes, with the center
+// Tasks pane split vertically 50-50 for Tasks and Notes, and the right
 // sidebar further divided vertically into 30-35-35 for Schedule, Intentions, and Wins.
 func CalculatePaneDimensions(termWidth, termHeight int) PaneDimensions {
 	dims := PaneDimensions{
@@ -41,13 +46,15 @@ func CalculatePaneDimensions(termWidth, termHeight int) PaneDimensions {
 
 	// All main panes share the same available height
 	dims.LogsHeight = availableHeight
-	dims.TasksHeight = availableHeight
+	dims.TasksHeight = availableHeight / 2
+	dims.NotesHeight = availableHeight / 2
 	dims.RightHeight = availableHeight
 
 	// Calculate horizontal widths with 40-40-18 split
 	// Use integer arithmetic to ensure sum equals termWidth
 	dims.LogsWidth = int(float64(termWidth) * 0.40)
 	dims.TasksWidth = int(float64(termWidth) * 0.40)
+	dims.NotesWidth = dims.TasksWidth
 	// Remaining width goes to right pane (ensures sum = termWidth)
 	dims.RightWidth = termWidth - dims.LogsWidth - dims.TasksWidth
 
