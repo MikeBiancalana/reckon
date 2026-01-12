@@ -85,9 +85,9 @@ func (np *NotesPane) Update(msg tea.Msg) (*NotesPane, tea.Cmd) {
 func (np *NotesPane) View() string {
 	if len(np.list.Items()) == 0 {
 		if np.taskID == "" {
-			return "Notes\n\nNo task selected"
+			return "\nNo task selected"
 		}
-		return "Notes\n\nNo notes for this task"
+		return "\nNo notes for this task"
 	}
 	return np.list.View()
 }
