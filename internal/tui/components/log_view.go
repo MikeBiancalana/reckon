@@ -196,7 +196,7 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 				}
 			}
 			return lv, nil
-		case "enter":
+		case "enter", " ":
 			// Toggle expand/collapse
 			selectedItem := lv.list.SelectedItem()
 			if selectedItem != nil {
@@ -212,6 +212,21 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 					// Update delegate with new collapsed map
 					delegate := LogDelegate{collapsedMap: lv.collapsedMap}
 					lv.list.SetDelegate(delegate)
+
+					// If collapsing and cursor was on a note, move back to log entry
+					currentIndex := lv.list.Index()
+					if currentIndex < len(items) {
+						currentItem, ok := items[currentIndex].(LogEntryItem)
+						if ok && currentItem.isNote && lv.collapsedMap[logItem.entry.ID] {
+							// Find the log entry item index
+							for i, item := range items {
+								if li, ok := item.(LogEntryItem); ok && !li.isNote && li.entry.ID == logItem.entry.ID {
+									lv.list.Select(i)
+									break
+								}
+							}
+						}
+					}
 				}
 			}
 			return lv, nil
