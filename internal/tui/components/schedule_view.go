@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -19,17 +20,19 @@ var (
 
 // ScheduleView is a Bubble Tea component for displaying schedule items
 type ScheduleView struct {
-	items  []journal.ScheduleItem
-	width  int
-	height int
+	items         []journal.ScheduleItem
+	width         int
+	height        int
+	selectedIndex int
 }
 
 // NewScheduleView creates a new ScheduleView component
 func NewScheduleView(items []journal.ScheduleItem) *ScheduleView {
 	return &ScheduleView{
-		items:  items,
-		width:  20,
-		height: 10,
+		items:         items,
+		width:         20,
+		height:        10,
+		selectedIndex: 0,
 	}
 }
 
@@ -56,8 +59,8 @@ func (sv *ScheduleView) View() string {
 	sortedItems := sv.getSortedItems()
 
 	// Render each item
-	for _, item := range sortedItems {
-		line := sv.renderItem(item)
+	for i, item := range sortedItems {
+		line := sv.renderItem(item, i == sv.selectedIndex)
 		sb.WriteString(line)
 		sb.WriteString("\n")
 	}
@@ -74,6 +77,41 @@ func (sv *ScheduleView) SetSize(width, height int) {
 // UpdateSchedule updates the schedule items
 func (sv *ScheduleView) UpdateSchedule(items []journal.ScheduleItem) {
 	sv.items = items
+	// Reset selection if out of bounds
+	if sv.selectedIndex >= len(sv.items) {
+		sv.selectedIndex = len(sv.items) - 1
+	}
+	if len(sv.items) == 0 {
+		sv.selectedIndex = 0
+	}
+}
+
+// Update handles messages for the schedule view
+func (sv *ScheduleView) Update(msg tea.Msg) (*ScheduleView, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "k", "up":
+			if sv.selectedIndex > 0 {
+				sv.selectedIndex--
+			}
+		case "j", "down":
+			if sv.selectedIndex < len(sv.items)-1 {
+				sv.selectedIndex++
+			}
+		}
+	}
+	return sv, nil
+}
+
+// SelectedItem returns the currently selected schedule item
+func (sv *ScheduleView) SelectedItem() *journal.ScheduleItem {
+	sortedItems := sv.getSortedItems()
+	if sv.selectedIndex >= 0 && sv.selectedIndex < len(sortedItems) {
+		item := sortedItems[sv.selectedIndex]
+		return &item
+	}
+	return nil
 }
 
 // getSortedItems returns items sorted by time, with untimed items at the end
@@ -104,14 +142,13 @@ func (sv *ScheduleView) getSortedItems() []journal.ScheduleItem {
 }
 
 // renderItem renders a single schedule item
-func (sv *ScheduleView) renderItem(item journal.ScheduleItem) string {
+func (sv *ScheduleView) renderItem(item journal.ScheduleItem, isSelected bool) string {
 	if sv.width <= 2 {
 		return "" // No space to render
 	}
 
 	var line string
 	maxContentWidth := sv.width - 2 // Account for "- " prefix
-
 	if !item.Time.IsZero() {
 		// Format with time: "- HH:MM Content"
 		timeStr := item.Time.Format("15:04")
@@ -137,5 +174,8 @@ func (sv *ScheduleView) renderItem(item journal.ScheduleItem) string {
 		line = "- " + content
 	}
 
+	if isSelected {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).Render("▶ " + line)
+	}
 	return scheduleItemStyle.Render(line)
 }

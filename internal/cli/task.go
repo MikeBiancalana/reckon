@@ -25,8 +25,8 @@ var (
 	taskStatusFlag          string
 	taskTagsFlag            []string
 	taskCompactFlag         bool
-	taskJsonFlag            bool
 	taskVerboseFlag         bool
+	taskJsonFlag            bool
 	taskEditTitleFlag       string
 	taskEditDescriptionFlag string
 	taskEditTagsFlag        []string
@@ -56,14 +56,14 @@ var taskNewCmd = &cobra.Command{
 		}
 
 		// Create task
-		err := journalTaskService.AddTask(title)
+		err := journalTaskService.AddTask(title, taskTagsFlag)
 		if err != nil {
 			return fmt.Errorf("failed to create task: %w", err)
 		}
 
 		fmt.Printf("✓ Created task: %s\n", title)
 		if len(taskTagsFlag) > 0 {
-			fmt.Printf("  Note: Tags are not yet supported in the unified task system\n")
+			fmt.Printf("  Tags: %s\n", strings.Join(taskTagsFlag, ", "))
 		}
 
 		return nil
@@ -79,6 +79,11 @@ var taskListCmd = &cobra.Command{
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Validate mutually exclusive flags
+		if taskCompactFlag && taskVerboseFlag {
+			return fmt.Errorf("cannot use both --compact and --verbose flags")
 		}
 
 		// List all tasks
@@ -114,9 +119,30 @@ var taskListCmd = &cobra.Command{
 			tasks = filtered
 		}
 
-		// Note: Tag filtering not yet supported in journal task system
+		// Filter by tags if specified
 		if len(taskTagsFlag) > 0 {
-			fmt.Println("Note: Tag filtering is not yet supported in the unified task system")
+			filtered := make([]journal.Task, 0)
+			for _, t := range tasks {
+				// Check if task has all specified tags (AND logic)
+				hasAllTags := true
+				for _, filterTag := range taskTagsFlag {
+					found := false
+					for _, taskTag := range t.Tags {
+						if strings.EqualFold(taskTag, filterTag) {
+							found = true
+							break
+						}
+					}
+					if !found {
+						hasAllTags = false
+						break
+					}
+				}
+				if hasAllTags {
+					filtered = append(filtered, t)
+				}
+			}
+			tasks = filtered
 		}
 
 		if taskJsonFlag {
@@ -155,6 +181,24 @@ var taskListCmd = &cobra.Command{
 			return nil
 		}
 
+		if taskVerboseFlag {
+			// Verbose output with sequential numbers
+			fmt.Printf("Found %d task(s):\n\n", len(tasks))
+			for i, t := range tasks {
+				fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
+				fmt.Printf("  ID: %s\n", t.ID)
+				fmt.Printf("  Created: %s\n", t.CreatedAt.Format("2006-01-02"))
+				if len(t.Tags) > 0 {
+					fmt.Printf("  Tags: %s\n", strings.Join(t.Tags, ", "))
+				}
+				if len(t.Notes) > 0 {
+					fmt.Printf("  Notes: %d\n", len(t.Notes))
+				}
+				fmt.Println()
+			}
+			return nil
+		}
+
 		// Default tabular output
 		// Get terminal width for dynamic title truncation
 		width, _, err := term.GetSize(int(os.Stdout.Fd()))
@@ -170,6 +214,9 @@ var taskListCmd = &cobra.Command{
 		fmt.Fprintln(tw, "ID\tSTATUS\tCREATED\tTAGS\tTITLE")
 		for _, t := range tasks {
 			tags := "-"
+			if len(t.Tags) > 0 {
+				tags = strings.Join(t.Tags, ", ")
+			}
 			title := t.Text
 			// Truncate title based on available width
 			if len(title) > availableTitleWidth {
@@ -375,9 +422,9 @@ func init() {
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
 	taskListCmd.Flags().StringVar(&taskStatusFlag, "status", "", "Filter by status (open, active, done)")
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
-	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact output")
+	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact single-line output")
+	taskListCmd.Flags().BoolVarP(&taskVerboseFlag, "verbose", "v", false, "Show verbose multi-line output")
 	taskListCmd.Flags().BoolVar(&taskJsonFlag, "json", false, "Output as JSON")
-	taskListCmd.Flags().BoolVar(&taskVerboseFlag, "verbose", false, "Show verbose output")
 	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
 	taskEditCmd.Flags().StringVarP(&taskEditDescriptionFlag, "description", "d", "", "New task description")
 	taskEditCmd.Flags().StringSliceVar(&taskEditTagsFlag, "tags", []string{}, "New task tags (comma-separated)")

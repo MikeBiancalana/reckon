@@ -108,17 +108,19 @@ type Task struct {
 	ID        string     `json:"id"`
 	Text      string     `json:"text"`
 	Status    TaskStatus `json:"status"`
+	Tags      []string   `json:"tags"`
 	Notes     []TaskNote `json:"notes"`
 	Position  int        `json:"position"`
 	CreatedAt time.Time  `json:"created_at"`
 }
 
 // NewTask creates a new task with a generated ID
-func NewTask(text string, position int) *Task {
+func NewTask(text string, tags []string, position int) *Task {
 	return &Task{
 		ID:        xid.New().String(),
 		Text:      text,
 		Status:    TaskOpen,
+		Tags:      tags,
 		Notes:     make([]TaskNote, 0),
 		Position:  position,
 		CreatedAt: time.Now(),

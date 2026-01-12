@@ -83,13 +83,15 @@ type Model struct {
 	tasks []journal.Task
 
 	// State for modes
-	helpMode        bool
-	confirmMode     bool
-	confirmItemType string // "intention", "win", "log"
-	confirmItemID   string
-	editItemID      string // ID of item being edited
-	noteTaskID      string // ID of task being noted
-	lastError       error
+	helpMode         bool
+	taskCreationMode bool
+	confirmMode      bool
+	confirmItemType  string // "intention", "win", "log", "log_note"
+	confirmItemID    string
+	editItemID       string // ID of item being edited
+	noteTaskID       string // ID of task being noted
+	noteLogEntryID   string // ID of log entry being noted
+	lastError        error
 
 	// Terminal size validation
 	terminalTooSmall bool
@@ -113,7 +115,7 @@ func NewModel(service *journal.Service) *Model {
 		taskService:    nil, // Will be set via SetJournalTaskService
 		watcher:        watcher,
 		currentDate:    stdtime.Now().Format("2006-01-02"),
-		focusedSection: SectionIntentions,
+		focusedSection: SectionLogs,
 		textEntryBar:   components.NewTextEntryBar(),
 		statusBar:      sb,
 		summaryView:    components.NewSummaryView(),
@@ -246,6 +248,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Note added successfully, reload tasks
 		return m, m.loadTasks()
 
+	case components.LogNoteAddMsg:
+		// Start adding a log note
+		m.noteLogEntryID = msg.LogEntryID
+		m.textEntryBar.SetMode(components.ModeLogNote)
+		m.textEntryBar.Clear()
+		if m.statusBar != nil {
+			m.statusBar.SetInputMode(true)
+		}
+		return m, m.textEntryBar.Focus()
+
+	case components.LogNoteDeleteMsg:
+		// Confirm deletion of log note
+		m.confirmMode = true
+		m.confirmItemType = "log_note"
+		m.confirmItemID = msg.NoteID
+		return m, nil
+
+	case logNoteAddedMsg:
+		// Log note added successfully, reload journal
+		return m, m.loadJournal()
+
+	case logNoteDeletedMsg:
+		// Log note deleted successfully, reload journal
+		return m, m.loadJournal()
+
 	case fileChangedMsg:
 		// Reload journal if the changed file is for the current date
 		var cmd tea.Cmd
@@ -262,6 +289,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+
 		// Handle text entry bar mode
 		if m.textEntryBar != nil && m.textEntryBar.IsFocused() {
 			switch msg.String() {
@@ -272,7 +300,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textEntryBar.Clear()
 				m.textEntryBar.Blur()
 				m.textEntryBar.SetMode(components.ModeInactive)
-				m.noteTaskID = "" // Reset note task ID
+				m.noteTaskID = ""     // Reset note task ID
+				m.noteLogEntryID = "" // Reset note log entry ID
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
@@ -282,7 +311,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textEntryBar.Clear()
 				m.textEntryBar.Blur()
 				m.textEntryBar.SetMode(components.ModeInactive)
-				m.noteTaskID = "" // Reset note task ID
+				m.noteTaskID = ""     // Reset note task ID
+				m.noteLogEntryID = "" // Reset note log entry ID
 				if m.statusBar != nil {
 					m.statusBar.SetInputMode(false)
 				}
@@ -313,8 +343,39 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Normal mode
+		switch msg.Type {
+		case tea.KeyCtrlC:
+			// Stop watcher on quit
+			if m.watcher != nil {
+				m.watcher.Stop()
+			}
+			return m, tea.Quit
+		case tea.KeySpace:
+			// Handle space key for tasks (toggle completion)
+			if m.focusedSection == SectionTasks && m.taskList != nil {
+				var cmd tea.Cmd
+				m.taskList, cmd = m.taskList.Update(msg)
+				return m, cmd
+			}
+		case tea.KeyEnter:
+			// Handle enter key for toggling intentions
+			if m.focusedSection == SectionIntentions && m.intentionList != nil {
+				intention := m.intentionList.SelectedIntention()
+				if intention != nil {
+					return m, m.toggleIntention(intention.ID)
+				}
+			}
+			// Handle enter key for tasks (expand/collapse)
+			if m.focusedSection == SectionTasks && m.taskList != nil {
+				var cmd tea.Cmd
+				m.taskList, cmd = m.taskList.Update(msg)
+				return m, cmd
+			}
+		}
+
+		// Handle key runes for single characters
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q":
 			// Stop watcher on quit
 			if m.watcher != nil {
 				m.watcher.Stop()
@@ -333,6 +394,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusBar.SetSection(sectionName(m.focusedSection))
 			}
 			return m, nil
+
 		case "h", "left":
 			return m, m.prevDay()
 		case "l", "right":
@@ -455,6 +517,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if intention != nil {
 					return m, m.toggleIntention(intention.ID)
 				}
+			}
+			// Handle enter key for tasks (expand/collapse)
+			if m.focusedSection == SectionTasks && m.taskList != nil {
+				var cmd tea.Cmd
+				m.taskList, cmd = m.taskList.Update(msg)
+				return m, cmd
 			}
 		default:
 			// Delegate to focused component
@@ -723,8 +791,9 @@ Actions:
   i          Add intention
   w          Add win
   L          Add log entry
+  n          Add note (Tasks/Logs section)
   space      Toggle task completion (Tasks section)
-  enter      Toggle intention / Expand task (Intentions/Tasks section)
+  enter      Toggle intention / Expand task (Intentions/Tasks section) / Expand log entry (Logs section)
   d          Delete selected item (with confirmation)
 
 Text Entry:
@@ -872,7 +941,8 @@ type errMsg struct {
 	err error
 }
 
-// Journal task messages
+// New journal task messages
+// New journal task messages
 type tasksLoadedMsg struct {
 	tasks []journal.Task
 }
@@ -882,6 +952,10 @@ type taskToggledMsg struct{}
 type taskAddedMsg struct{}
 
 type noteAddedMsg struct{}
+
+type logNoteAddedMsg struct{}
+
+type logNoteDeletedMsg struct{}
 
 // loadTasks loads all tasks from the task service
 func (m *Model) loadTasks() tea.Cmd {
@@ -935,7 +1009,7 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		case components.ModeTask:
 			// Add task
 			if m.taskService != nil {
-				err = m.taskService.AddTask(inputText)
+				err = m.taskService.AddTask(inputText, []string{})
 				if err != nil {
 					return errMsg{err}
 				}
@@ -972,6 +1046,17 @@ func (m *Model) submitTextEntry() tea.Cmd {
 				return tasksLoadedMsg{tasks: tasks}
 			}
 			return errMsg{fmt.Errorf("task service not available or no task selected")}
+
+		case components.ModeLogNote:
+			// Add note to the selected log entry
+			if m.noteLogEntryID != "" {
+				err = m.service.AddLogNote(m.currentJournal, m.noteLogEntryID, inputText)
+				if err != nil {
+					return errMsg{err}
+				}
+				return logNoteAddedMsg{}
+			}
+			return errMsg{fmt.Errorf("no log entry selected")}
 
 		default:
 			return errMsg{fmt.Errorf("unknown entry mode")}

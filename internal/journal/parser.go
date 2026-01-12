@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rs/xid"
 )
 
 var (
@@ -24,6 +26,9 @@ var (
 
 	// Log entries - matches "- HH:MM ..." or "- HH:MM:SS ..."
 	logEntryRe = regexp.MustCompile(`^-\s+(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+)$`)
+
+	// Log note - matches indented lines with 2+ spaces or tab followed by "- "
+	logNoteRe = regexp.MustCompile(`^[\s]{2,}-\s+(.+)$`)
 
 	// Task reference - [task:id]
 	taskRefRe = regexp.MustCompile(`\[task:([^\]]+)\]`)
@@ -71,7 +76,9 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 	intentionPos := 0
 	winPos := 0
 	logPos := 0
+	logNotePos := 0
 	schedulePos := 0
+	var currentLogEntry *LogEntry
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -129,9 +136,36 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 			}
 
 		case SectionLog:
+			// Check if it's a log note (indented with 2+ spaces or tab)
+			if match := logNoteRe.FindStringSubmatch(line); match != nil {
+				if currentLogEntry != nil {
+					noteText := strings.TrimSpace(match[1])
+					noteID, text := extractID(noteText)
+					if noteID == "" {
+						noteID = xid.New().String()
+					}
+
+					note := LogNote{
+						ID:       noteID,
+						Text:     text,
+						Position: logNotePos,
+					}
+					currentLogEntry.Notes = append(currentLogEntry.Notes, note)
+					logNotePos++
+				}
+				continue
+			}
+
+			// Check if it's a new log entry
 			if entry := parseLogEntry(trimmed, j.Date, logPos); entry != nil {
-				j.LogEntries = append(j.LogEntries, *entry)
-				logPos++
+				// Finalize previous log entry
+				if currentLogEntry != nil {
+					j.LogEntries = append(j.LogEntries, *currentLogEntry)
+					logPos++
+				}
+				// Start new log entry
+				currentLogEntry = entry
+				logNotePos = 0
 			}
 
 		case SectionSchedule:
@@ -140,6 +174,11 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 				schedulePos++
 			}
 		}
+	}
+
+	// Don't forget the last log entry
+	if currentLogEntry != nil {
+		j.LogEntries = append(j.LogEntries, *currentLogEntry)
 	}
 
 	if err := scanner.Err(); err != nil {

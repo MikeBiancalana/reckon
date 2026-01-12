@@ -65,6 +65,11 @@ func (r *Repository) SaveJournal(j *Journal) error {
 		if err != nil {
 			return fmt.Errorf("failed to insert log entry: %w", err)
 		}
+
+		// Save notes for this log entry
+		if err := r.SaveLogNotes(tx, entry.ID, entry.Notes); err != nil {
+			return err
+		}
 	}
 
 	// Insert wins
@@ -148,10 +153,14 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		j.Intentions = append(j.Intentions, intention)
 	}
 
-	// Get log entries
+	// Get log entries with notes using LEFT JOIN
 	rows, err = r.db.DB().Query(
-		`SELECT id, timestamp, content, task_id, entry_type, duration_minutes, position
-		 FROM log_entries WHERE journal_date = ? ORDER BY position`,
+		`SELECT le.id, le.timestamp, le.content, le.task_id, le.entry_type, le.duration_minutes, le.position,
+		        ln.id, ln.text, ln.position
+		 FROM log_entries le
+		 LEFT JOIN log_notes ln ON le.id = ln.log_entry_id
+		 WHERE le.journal_date = ?
+		 ORDER BY le.position, ln.position`,
 		date,
 	)
 	if err != nil {
@@ -159,27 +168,60 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 	}
 	defer rows.Close()
 
+	entriesMap := make(map[string]*LogEntry)
+	entryOrder := make([]string, 0)
+
 	for rows.Next() {
-		var entry LogEntry
+		var entryID, timestampStr, content string
 		var taskID sql.NullString
 		var durationMinutes sql.NullInt64
-		var timestampStr string
+		var entryType EntryType
+		var entryPosition int
+		var noteID, noteText sql.NullString
+		var notePosition sql.NullInt64
 
-		err := rows.Scan(&entry.ID, &timestampStr, &entry.Content, &taskID,
-			&entry.EntryType, &durationMinutes, &entry.Position)
+		err := rows.Scan(&entryID, &timestampStr, &content, &taskID,
+			&entryType, &durationMinutes, &entryPosition,
+			&noteID, &noteText, &notePosition)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan log entry: %w", err)
 		}
 
-		entry.Timestamp, _ = time.Parse(time.RFC3339, timestampStr)
-		if taskID.Valid {
-			entry.TaskID = taskID.String
-		}
-		if durationMinutes.Valid {
-			entry.DurationMinutes = int(durationMinutes.Int64)
+		// Get or create entry
+		entry, exists := entriesMap[entryID]
+		if !exists {
+			entry = &LogEntry{
+				ID:        entryID,
+				Content:   content,
+				EntryType: entryType,
+				Position:  entryPosition,
+				Notes:     make([]LogNote, 0),
+			}
+			entry.Timestamp, _ = time.Parse(time.RFC3339, timestampStr)
+			if taskID.Valid {
+				entry.TaskID = taskID.String
+			}
+			if durationMinutes.Valid {
+				entry.DurationMinutes = int(durationMinutes.Int64)
+			}
+			entriesMap[entryID] = entry
+			entryOrder = append(entryOrder, entryID)
 		}
 
-		j.LogEntries = append(j.LogEntries, entry)
+		// Add note if it exists
+		if noteID.Valid {
+			note := LogNote{
+				ID:       noteID.String,
+				Text:     noteText.String,
+				Position: int(notePosition.Int64),
+			}
+			entry.Notes = append(entry.Notes, note)
+		}
+	}
+
+	// Convert map to slice in the correct order
+	for _, id := range entryOrder {
+		j.LogEntries = append(j.LogEntries, *entriesMap[id])
 	}
 
 	// Get wins
@@ -334,6 +376,59 @@ func (r *Repository) GetOpenIntentions(date string) ([]Intention, error) {
 	}
 
 	return intentions, nil
+}
+
+// SaveLogNotes saves notes for a log entry
+// Deletes existing notes and inserts new ones
+func (r *Repository) SaveLogNotes(tx *sql.Tx, logEntryID string, notes []LogNote) error {
+	// Delete existing notes for this log entry
+	_, err := tx.Exec("DELETE FROM log_notes WHERE log_entry_id = ?", logEntryID)
+	if err != nil {
+		return fmt.Errorf("failed to delete old log notes: %w", err)
+	}
+
+	// Insert new notes
+	for _, note := range notes {
+		_, err = tx.Exec(`
+			INSERT INTO log_notes (id, log_entry_id, text, position)
+			VALUES (?, ?, ?, ?)
+		`, note.ID, logEntryID, note.Text, note.Position)
+		if err != nil {
+			return fmt.Errorf("failed to save log note: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// GetLogNotes retrieves notes for a log entry
+func (r *Repository) GetLogNotes(logEntryID string) ([]LogNote, error) {
+	rows, err := r.db.DB().Query(`
+		SELECT id, text, position
+		FROM log_notes
+		WHERE log_entry_id = ?
+		ORDER BY position
+	`, logEntryID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query log notes: %w", err)
+	}
+	defer rows.Close()
+
+	notes := make([]LogNote, 0)
+	for rows.Next() {
+		var note LogNote
+		err := rows.Scan(&note.ID, &note.Text, &note.Position)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan log note: %w", err)
+		}
+		notes = append(notes, note)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating log notes: %w", err)
+	}
+
+	return notes, nil
 }
 
 // ClearAllData deletes all data from the database (for rebuild)
