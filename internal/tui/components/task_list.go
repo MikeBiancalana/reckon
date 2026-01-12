@@ -31,6 +31,12 @@ type TaskToggleMsg struct {
 	TaskID string
 }
 
+// TaskToggleErrorMsg is sent when a task toggle operation fails
+type TaskToggleErrorMsg struct {
+	TaskID string
+	Error  error
+}
+
 // TaskItem represents an item in the task list (either a task or a note)
 type TaskItem struct {
 	task   journal.Task
@@ -48,7 +54,9 @@ func (t TaskItem) FilterValue() string {
 
 // TaskDelegate handles rendering of task items
 type TaskDelegate struct {
-	collapsedMap map[string]bool // taskID -> isCollapsed
+	collapsedMap   map[string]bool        // taskID -> isCollapsed
+	optimisticMap  map[string]journal.TaskStatus // taskID -> optimistic status
+	togglingMap    map[string]bool        // taskID -> isToggling
 }
 
 func (d TaskDelegate) Height() int                               { return 1 }
@@ -69,12 +77,24 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		text = fmt.Sprintf("  - %s", findNoteText(item.task.Notes, item.noteID))
 		style = noteStyle
 	} else {
+		// Determine status to display (optimistic or actual)
+		displayStatus := item.task.Status
+		if optimisticStatus, hasOptimistic := d.optimisticMap[item.task.ID]; hasOptimistic {
+			displayStatus = optimisticStatus
+		}
+
 		// Render task with checkbox
 		checkbox := "[ ]"
 		style = taskStyle
-		if item.task.Status == journal.TaskDone {
+		if displayStatus == journal.TaskDone {
 			checkbox = "[x]"
 			style = taskDoneStyle
+		}
+
+		// Add loading indicator if currently toggling
+		loadingIndicator := ""
+		if d.togglingMap[item.task.ID] {
+			loadingIndicator = "⋯ "
 		}
 
 		// Add expand/collapse indicator if task has notes
@@ -87,7 +107,7 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 			}
 		}
 
-		text = fmt.Sprintf("%s%s %s", indicator, checkbox, item.task.Text)
+		text = fmt.Sprintf("%s%s%s %s", loadingIndicator, indicator, checkbox, item.task.Text)
 	}
 
 	// Highlight selected item
@@ -112,17 +132,25 @@ func findNoteText(notes []journal.TaskNote, noteID string) string {
 
 // TaskList represents the tasks component
 type TaskList struct {
-	list         list.Model
-	collapsedMap map[string]bool
-	tasks        []journal.Task // keep track of original tasks for state management
+	list          list.Model
+	collapsedMap  map[string]bool
+	tasks         []journal.Task // keep track of original tasks for state management
+	optimisticMap map[string]journal.TaskStatus // taskID -> optimistic status
+	togglingMap   map[string]bool        // taskID -> isToggling
 }
 
 // NewTaskList creates a new task list component
 func NewTaskList(tasks []journal.Task) *TaskList {
 	collapsedMap := make(map[string]bool)
+	optimisticMap := make(map[string]journal.TaskStatus)
+	togglingMap := make(map[string]bool)
 	items := buildTaskItems(tasks, collapsedMap)
 
-	delegate := TaskDelegate{collapsedMap: collapsedMap}
+	delegate := TaskDelegate{
+		collapsedMap:  collapsedMap,
+		optimisticMap: optimisticMap,
+		togglingMap:   togglingMap,
+	}
 	l := list.New(items, delegate, 0, 0)
 	l.Title = "Tasks"
 	l.SetShowStatusBar(false)
@@ -130,9 +158,11 @@ func NewTaskList(tasks []journal.Task) *TaskList {
 	l.Styles.Title = taskListTitleStyle
 
 	return &TaskList{
-		list:         l,
-		collapsedMap: collapsedMap,
-		tasks:        tasks,
+		list:          l,
+		collapsedMap:  collapsedMap,
+		tasks:         tasks,
+		optimisticMap: optimisticMap,
+		togglingMap:   togglingMap,
 	}
 }
 
@@ -169,11 +199,27 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeySpace:
-			// Toggle task status
+			// Toggle task status with optimistic update
 			selectedItem := tl.list.SelectedItem()
 			if selectedItem != nil {
 				taskItem, ok := selectedItem.(TaskItem)
 				if ok && !taskItem.isNote {
+					// Apply optimistic update immediately
+					newStatus := journal.TaskOpen
+					if taskItem.task.Status == journal.TaskOpen {
+						newStatus = journal.TaskDone
+					}
+					tl.optimisticMap[taskItem.task.ID] = newStatus
+					tl.togglingMap[taskItem.task.ID] = true
+
+					// Update delegate with new optimistic state
+					delegate := TaskDelegate{
+						collapsedMap:  tl.collapsedMap,
+						optimisticMap: tl.optimisticMap,
+						togglingMap:   tl.togglingMap,
+					}
+					tl.list.SetDelegate(delegate)
+
 					// Return a message to toggle the task status
 					return tl, func() tea.Msg {
 						return TaskToggleMsg{TaskID: taskItem.task.ID}
@@ -257,6 +303,34 @@ func (tl *TaskList) SelectedTask() *journal.Task {
 	return nil
 }
 
+// ClearOptimisticState clears the optimistic state for a task after successful toggle
+func (tl *TaskList) ClearOptimisticState(taskID string) {
+	delete(tl.optimisticMap, taskID)
+	delete(tl.togglingMap, taskID)
+
+	// Update delegate
+	delegate := TaskDelegate{
+		collapsedMap:  tl.collapsedMap,
+		optimisticMap: tl.optimisticMap,
+		togglingMap:   tl.togglingMap,
+	}
+	tl.list.SetDelegate(delegate)
+}
+
+// RevertOptimisticToggle reverts an optimistic toggle when the operation fails
+func (tl *TaskList) RevertOptimisticToggle(taskID string) {
+	delete(tl.optimisticMap, taskID)
+	delete(tl.togglingMap, taskID)
+
+	// Update delegate
+	delegate := TaskDelegate{
+		collapsedMap:  tl.collapsedMap,
+		optimisticMap: tl.optimisticMap,
+		togglingMap:   tl.togglingMap,
+	}
+	tl.list.SetDelegate(delegate)
+}
+
 // UpdateTasks updates the list with new tasks
 func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
 	// Preserve cursor position by finding the currently selected task ID
@@ -282,8 +356,12 @@ func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
 		}
 	}
 
-	// Update delegate with current collapsed map
-	delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
+	// Update delegate with current state (including optimistic and toggling maps)
+	delegate := TaskDelegate{
+		collapsedMap:  tl.collapsedMap,
+		optimisticMap: tl.optimisticMap,
+		togglingMap:   tl.togglingMap,
+	}
 	tl.list.SetDelegate(delegate)
 
 	// Restore cursor to the same task if it still exists

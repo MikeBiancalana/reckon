@@ -237,8 +237,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case taskToggledMsg:
-		// Task toggled successfully, reload tasks
+		// Task toggled successfully, clear optimistic state and reload tasks
+		if m.taskList != nil {
+			m.taskList.ClearOptimisticState(msg.taskID)
+		}
 		return m, m.loadTasks()
+
+	case components.TaskToggleErrorMsg:
+		// Task toggle failed, revert optimistic update
+		if m.taskList != nil {
+			m.taskList.RevertOptimisticToggle(msg.TaskID)
+		}
+		m.lastError = msg.Error
+		return m, nil
 
 	case taskAddedMsg:
 		// Task added successfully, reload tasks
@@ -947,7 +958,9 @@ type tasksLoadedMsg struct {
 	tasks []journal.Task
 }
 
-type taskToggledMsg struct{}
+type taskToggledMsg struct {
+	taskID string
+}
 
 type taskAddedMsg struct{}
 
@@ -977,15 +990,21 @@ func (m *Model) loadTasks() tea.Cmd {
 func (m *Model) toggleTask(taskID string) tea.Cmd {
 	return func() tea.Msg {
 		if m.taskService == nil {
-			return errMsg{fmt.Errorf("task service not available")}
+			return components.TaskToggleErrorMsg{
+				TaskID: taskID,
+				Error:  fmt.Errorf("task service not available"),
+			}
 		}
 
 		err := m.taskService.ToggleTask(taskID)
 		if err != nil {
-			return errMsg{err}
+			return components.TaskToggleErrorMsg{
+				TaskID: taskID,
+				Error:  err,
+			}
 		}
 
-		return taskToggledMsg{}
+		return taskToggledMsg{taskID: taskID}
 	}
 }
 
