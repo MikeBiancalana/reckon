@@ -203,6 +203,11 @@ func (s *Service) DeleteLogEntry(j *Journal, logEntryID string) error {
 
 // AddLogNote adds a note to a log entry
 func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return fmt.Errorf("note text cannot be empty")
+	}
+
 	// Find the log entry
 	var targetEntry *LogEntry
 	for i := range j.LogEntries {
@@ -226,6 +231,11 @@ func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
 
 // UpdateLogNote updates the text of a note in a log entry
 func (s *Service) UpdateLogNote(j *Journal, logEntryID string, noteID string, newText string) error {
+	newText = strings.TrimSpace(newText)
+	if newText == "" {
+		return fmt.Errorf("note text cannot be empty")
+	}
+
 	// Find the log entry
 	var targetEntry *LogEntry
 	for i := range j.LogEntries {

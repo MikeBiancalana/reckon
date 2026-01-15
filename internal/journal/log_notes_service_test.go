@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -157,6 +158,45 @@ func TestAddLogNote_InvalidLogEntryID(t *testing.T) {
 	}
 }
 
+// TestAddLogNote_EmptyText tests adding a note with empty text
+func TestAddLogNote_EmptyText(t *testing.T) {
+	service, tempDir := setupLogNotesTestService(t)
+	defer cleanupLogNotesTestService(t, tempDir)
+
+	journal := NewJournal("2024-01-15")
+	entry := NewLogEntry(time.Now(), "Test entry", EntryTypeLog, 0)
+	journal.LogEntries = append(journal.LogEntries, *entry)
+
+	testCases := []struct {
+		name string
+		text string
+	}{
+		{"empty string", ""},
+		{"whitespace only", "   "},
+		{"tabs only", "\t\t"},
+		{"mixed whitespace", " \t \n "},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := service.AddLogNote(journal, entry.ID, tc.text)
+			if err == nil {
+				t.Fatal("Expected error when adding note with empty text")
+			}
+
+			expectedError := "note text cannot be empty"
+			if err.Error() != expectedError {
+				t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
+			}
+		})
+	}
+
+	// Verify no notes were added
+	if len(journal.LogEntries[0].Notes) != 0 {
+		t.Errorf("Expected 0 notes, got %d", len(journal.LogEntries[0].Notes))
+	}
+}
+
 // TestUpdateLogNote_Success tests updating a note
 func TestUpdateLogNote_Success(t *testing.T) {
 	service, tempDir := setupLogNotesTestService(t)
@@ -231,6 +271,53 @@ func TestUpdateLogNote_InvalidIDs(t *testing.T) {
 	err = service.UpdateLogNote(journal, entry.ID, "invalid-note-id", "New text")
 	if err == nil {
 		t.Fatal("Expected error when updating note with invalid note ID")
+	}
+}
+
+// TestUpdateLogNote_EmptyText tests updating a note with empty text
+func TestUpdateLogNote_EmptyText(t *testing.T) {
+	service, tempDir := setupLogNotesTestService(t)
+	defer cleanupLogNotesTestService(t, tempDir)
+
+	journal := NewJournal("2024-01-15")
+	entry := NewLogEntry(time.Now(), "Test entry", EntryTypeLog, 0)
+	journal.LogEntries = append(journal.LogEntries, *entry)
+
+	// Add a note
+	err := service.AddLogNote(journal, entry.ID, "Original text")
+	if err != nil {
+		t.Fatalf("AddLogNote failed: %v", err)
+	}
+
+	noteID := journal.LogEntries[0].Notes[0].ID
+
+	testCases := []struct {
+		name string
+		text string
+	}{
+		{"empty string", ""},
+		{"whitespace only", "   "},
+		{"tabs only", "\t\t"},
+		{"mixed whitespace", " \t \n "},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := service.UpdateLogNote(journal, entry.ID, noteID, tc.text)
+			if err == nil {
+				t.Fatal("Expected error when updating note with empty text")
+			}
+
+			expectedError := "note text cannot be empty"
+			if err.Error() != expectedError {
+				t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
+			}
+		})
+	}
+
+	// Verify original note text was not changed
+	if journal.LogEntries[0].Notes[0].Text != "Original text" {
+		t.Errorf("Expected original text to remain unchanged, got '%s'", journal.LogEntries[0].Notes[0].Text)
 	}
 }
 
@@ -381,7 +468,7 @@ func TestLogNotes_Integration(t *testing.T) {
 
 	// Add three notes
 	for i := 1; i <= 3; i++ {
-		err := service.AddLogNote(journal, entry.ID, "Note "+string(rune('0'+i)))
+		err := service.AddLogNote(journal, entry.ID, fmt.Sprintf("Note %d", i))
 		if err != nil {
 			t.Fatalf("AddLogNote %d failed: %v", i, err)
 		}

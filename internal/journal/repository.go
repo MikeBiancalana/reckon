@@ -197,7 +197,11 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 				Position:  entryPosition,
 				Notes:     make([]LogNote, 0),
 			}
-			entry.Timestamp, _ = time.Parse(time.RFC3339, timestampStr)
+			parsedTime, err := time.Parse(time.RFC3339, timestampStr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse timestamp for log entry %s: %w", entryID, err)
+			}
+			entry.Timestamp = parsedTime
 			if taskID.Valid {
 				entry.TaskID = taskID.String
 			}
@@ -217,6 +221,10 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 			}
 			entry.Notes = append(entry.Notes, note)
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating log entries: %w", err)
 	}
 
 	// Convert map to slice in the correct order
@@ -295,18 +303,19 @@ func (r *Repository) DeleteJournal(date string) error {
 // deleteJournalData deletes all data for a journal within a transaction
 func (r *Repository) deleteJournalData(tx *sql.Tx, date string) error {
 	// Delete in order due to foreign keys
-	tables := []string{"intentions", "log_notes", "log_entries", "wins", "schedule_items", "journals"}
-	for _, table := range tables {
-		query := fmt.Sprintf("DELETE FROM %s WHERE ", table)
-		if table == "journals" {
-			query += "date = ?"
-		} else if table == "log_notes" {
-			// log_notes is deleted via join with log_entries
-			query = "DELETE FROM log_notes WHERE log_entry_id IN (SELECT id FROM log_entries WHERE journal_date = ?)"
-		} else {
-			query += "journal_date = ?"
-		}
+	// Note: log_notes has ON DELETE CASCADE from log_entries, so it will be automatically deleted
+	queries := map[string]string{
+		"intentions":     "DELETE FROM intentions WHERE journal_date = ?",
+		"log_entries":    "DELETE FROM log_entries WHERE journal_date = ?",
+		"wins":           "DELETE FROM wins WHERE journal_date = ?",
+		"schedule_items": "DELETE FROM schedule_items WHERE journal_date = ?",
+		"journals":       "DELETE FROM journals WHERE date = ?",
+	}
 
+	// Execute deletes in order
+	tables := []string{"intentions", "log_entries", "wins", "schedule_items", "journals"}
+	for _, table := range tables {
+		query := queries[table]
 		_, err := tx.Exec(query, date)
 		if err != nil {
 			return fmt.Errorf("failed to delete from %s: %w", table, err)
