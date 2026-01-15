@@ -123,18 +123,18 @@ bd create "Subtask" --parent <epic-id>
 
 ### Updating Issues
 
-**Basic updates:**
+**Atomic claiming (v0.42.0+) - PREFERRED:**
 ```bash
-bd update <id> --status in_progress
+bd update <id> --claim            # Atomically claim work (sets assignee + status to in_progress)
+# Fails if already claimed - prevents duplicate work in parallel workflows!
+```
+
+**Manual updates (use --claim instead for claiming work):**
+```bash
 bd update <id> --priority 0
 bd update <id> --assignee bob
 bd update <id> --description "New description"
-```
-
-**Atomic claiming (v0.42.0+):**
-```bash
-bd update <id> --claim            # Atomically claim work
-# Fails if already claimed - prevents duplicate work!
+bd update <id> --status in_progress  # Manual claim (prefer --claim for parallel agents)
 ```
 
 **Defer for later:**

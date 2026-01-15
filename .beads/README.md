@@ -22,8 +22,10 @@ bd list
 # View issue details
 bd show <issue-id>
 
+# Claim and work on an issue
+bd update <issue-id> --claim      # Atomically claim (recommended for parallel agents)
+
 # Update issue status
-bd update <issue-id> --status in_progress
 bd update <issue-id> --status done
 
 # Sync with git remote
