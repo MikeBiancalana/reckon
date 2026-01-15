@@ -27,8 +27,8 @@ var (
 	// Log entries - matches "- HH:MM ..." or "- HH:MM:SS ..."
 	logEntryRe = regexp.MustCompile(`^-\s+(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+)$`)
 
-	// Log note - matches indented lines with 2+ spaces or tab followed by "- "
-	logNoteRe = regexp.MustCompile(`^[\s]{2,}-\s+(.+)$`)
+	// Log note - matches indented lines with 2+ spaces or 1+ tabs followed by "- "
+	logNoteRe = regexp.MustCompile(`^(?:[ ]{2,}|\t+)-\s+(.+)$`)
 
 	// Task reference - [task:id]
 	taskRefRe = regexp.MustCompile(`\[task:([^\]]+)\]`)
