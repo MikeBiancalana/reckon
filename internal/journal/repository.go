@@ -295,11 +295,14 @@ func (r *Repository) DeleteJournal(date string) error {
 // deleteJournalData deletes all data for a journal within a transaction
 func (r *Repository) deleteJournalData(tx *sql.Tx, date string) error {
 	// Delete in order due to foreign keys
-	tables := []string{"intentions", "log_entries", "wins", "schedule_items", "journals"}
+	tables := []string{"intentions", "log_notes", "log_entries", "wins", "schedule_items", "journals"}
 	for _, table := range tables {
 		query := fmt.Sprintf("DELETE FROM %s WHERE ", table)
 		if table == "journals" {
 			query += "date = ?"
+		} else if table == "log_notes" {
+			// log_notes is deleted via join with log_entries
+			query = "DELETE FROM log_notes WHERE log_entry_id IN (SELECT id FROM log_entries WHERE journal_date = ?)"
 		} else {
 			query += "journal_date = ?"
 		}
@@ -439,7 +442,7 @@ func (r *Repository) ClearAllData() error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"intentions", "log_entries", "wins", "schedule_items", "journals"}
+	tables := []string{"intentions", "log_notes", "log_entries", "wins", "schedule_items", "journals"}
 	for _, table := range tables {
 		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s", table)); err != nil {
 			return fmt.Errorf("failed to clear %s: %w", table, err)

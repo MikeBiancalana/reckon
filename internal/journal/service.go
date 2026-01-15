@@ -224,6 +224,38 @@ func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
 	return s.save(j)
 }
 
+// UpdateLogNote updates the text of a note in a log entry
+func (s *Service) UpdateLogNote(j *Journal, logEntryID string, noteID string, newText string) error {
+	// Find the log entry
+	var targetEntry *LogEntry
+	for i := range j.LogEntries {
+		if j.LogEntries[i].ID == logEntryID {
+			targetEntry = &j.LogEntries[i]
+			break
+		}
+	}
+
+	if targetEntry == nil {
+		return fmt.Errorf("log entry not found: %s", logEntryID)
+	}
+
+	// Find and update the note
+	found := false
+	for i := range targetEntry.Notes {
+		if targetEntry.Notes[i].ID == noteID {
+			targetEntry.Notes[i].Text = newText
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("note not found: %s", noteID)
+	}
+
+	return s.save(j)
+}
+
 // DeleteLogNote removes a note from a log entry
 func (s *Service) DeleteLogNote(j *Journal, logEntryID string, noteID string) error {
 	// Find the log entry
