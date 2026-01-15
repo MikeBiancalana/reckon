@@ -138,7 +138,7 @@ func NewModel(service *journal.Service) *Model {
 		taskService:    nil, // Will be set via SetJournalTaskService
 		watcher:        watcher,
 		currentDate:    stdtime.Now().Format("2006-01-02"),
-		focusedSection: SectionTasks,
+		focusedSection: SectionLogs,
 		textEntryBar:   components.NewTextEntryBar(),
 		statusBar:      sb,
 		summaryView:    components.NewSummaryView(),

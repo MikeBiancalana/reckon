@@ -203,6 +203,11 @@ func (s *Service) DeleteLogEntry(j *Journal, logEntryID string) error {
 
 // AddLogNote adds a note to a log entry
 func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return fmt.Errorf("note text cannot be empty")
+	}
+
 	// Find the log entry
 	var targetEntry *LogEntry
 	for i := range j.LogEntries {
@@ -220,6 +225,43 @@ func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
 	position := len(targetEntry.Notes)
 	note := NewLogNote(text, position)
 	targetEntry.Notes = append(targetEntry.Notes, *note)
+
+	return s.save(j)
+}
+
+// UpdateLogNote updates the text of a note in a log entry
+func (s *Service) UpdateLogNote(j *Journal, logEntryID string, noteID string, newText string) error {
+	newText = strings.TrimSpace(newText)
+	if newText == "" {
+		return fmt.Errorf("note text cannot be empty")
+	}
+
+	// Find the log entry
+	var targetEntry *LogEntry
+	for i := range j.LogEntries {
+		if j.LogEntries[i].ID == logEntryID {
+			targetEntry = &j.LogEntries[i]
+			break
+		}
+	}
+
+	if targetEntry == nil {
+		return fmt.Errorf("log entry not found: %s", logEntryID)
+	}
+
+	// Find and update the note
+	found := false
+	for i := range targetEntry.Notes {
+		if targetEntry.Notes[i].ID == noteID {
+			targetEntry.Notes[i].Text = newText
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("note not found: %s", noteID)
+	}
 
 	return s.save(j)
 }
