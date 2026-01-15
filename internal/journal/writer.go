@@ -115,6 +115,9 @@ func WriteJournal(j *Journal) string {
 				})
 
 				for _, note := range sortedNotes {
+					if note.Text == "" {
+						continue // Skip empty notes
+					}
 					sb.WriteString(fmt.Sprintf("  - %s %s\n", note.ID, note.Text))
 				}
 			}

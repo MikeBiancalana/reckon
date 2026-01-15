@@ -148,23 +148,24 @@ date: 2023-12-01
 					continue
 				}
 
-				// Compare each note
+				// Compare each note - text should always match
 				for j := 0; j < len(entry1.Notes); j++ {
 					note1 := entry1.Notes[j]
 					note2 := entry2.Notes[j]
-
-					// ID might be generated on second parse if missing in first
-					// So we just check that if original had an ID, it's preserved
-					if note1.ID != "" && note1.Text == note2.Text {
-						// Text should always match
-						continue
-					}
 
 					if note1.Text != note2.Text {
 						t.Errorf("Entry %d, Note %d: text mismatch:\nExpected: %q\nGot:      %q",
 							i, j, note1.Text, note2.Text)
 					}
 				}
+			}
+
+			// For a better idempotency test: parse → write → parse → write
+			// and compare the final two string outputs
+			output2 := WriteJournal(journal2)
+			if output != output2 {
+				t.Errorf("Round-trip not idempotent:\nFirst write:\n%s\n\nSecond write:\n%s",
+					output, output2)
 			}
 		})
 	}
@@ -442,7 +443,7 @@ date: 2023-12-01
 			},
 		},
 		{
-			name: "note with only ID",
+			name: "note with only ID is skipped",
 			markdown: `---
 date: 2023-12-01
 ---
@@ -457,14 +458,83 @@ date: 2023-12-01
 				if len(journal.LogEntries) != 1 {
 					t.Fatalf("Expected 1 log entry, got %d", len(journal.LogEntries))
 				}
+				// Notes with empty text should be skipped
+				if len(journal.LogEntries[0].Notes) != 0 {
+					t.Errorf("Expected 0 notes (empty text notes should be skipped), got %d", len(journal.LogEntries[0].Notes))
+				}
+			},
+		},
+		{
+			name: "note with only whitespace after dash is skipped",
+			markdown: `---
+date: 2023-12-01
+---
+
+## Log
+
+- 09:00 Started work
+  -
+`,
+			expectError: false,
+			checkResult: func(t *testing.T, journal *Journal) {
+				if len(journal.LogEntries) != 1 {
+					t.Fatalf("Expected 1 log entry, got %d", len(journal.LogEntries))
+				}
+				// Whitespace-only notes should be skipped
+				if len(journal.LogEntries[0].Notes) != 0 {
+					t.Errorf("Expected 0 notes (whitespace-only notes should be skipped), got %d", len(journal.LogEntries[0].Notes))
+				}
+			},
+		},
+		{
+			name: "note with malformed ID (dash prefix)",
+			markdown: `---
+date: 2023-12-01
+---
+
+## Log
+
+- 09:00 Started work
+  - -note text here
+`,
+			expectError: false,
+			checkResult: func(t *testing.T, journal *Journal) {
+				if len(journal.LogEntries) != 1 {
+					t.Fatalf("Expected 1 log entry, got %d", len(journal.LogEntries))
+				}
 				if len(journal.LogEntries[0].Notes) != 1 {
 					t.Fatalf("Expected 1 note, got %d", len(journal.LogEntries[0].Notes))
 				}
-				// When only ID is present, extractID should return empty string for text
-				// The note should still be created with empty or ID-only text
 				note := journal.LogEntries[0].Notes[0]
-				if note.ID == "" {
-					t.Error("Expected note to have an ID")
+				// Should treat entire string as text, not extract invalid ID
+				if note.Text != "-note text here" {
+					t.Errorf("Expected text '-note text here', got '%s'", note.Text)
+				}
+			},
+		},
+		{
+			name: "note with malformed ID (dash suffix)",
+			markdown: `---
+date: 2023-12-01
+---
+
+## Log
+
+- 09:00 Started work
+  - note- text here
+`,
+			expectError: false,
+			checkResult: func(t *testing.T, journal *Journal) {
+				if len(journal.LogEntries) != 1 {
+					t.Fatalf("Expected 1 log entry, got %d", len(journal.LogEntries))
+				}
+				if len(journal.LogEntries[0].Notes) != 1 {
+					t.Fatalf("Expected 1 note, got %d", len(journal.LogEntries[0].Notes))
+				}
+				note := journal.LogEntries[0].Notes[0]
+				// Should treat entire string as text, not extract invalid ID
+				if note.Text != "note- text here" {
+					t.Errorf("Expected text 'note- text here', got '%s'", note.Text)
 				}
 			},
 		},

@@ -137,10 +137,14 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 
 		case SectionLog:
 			// Check if it's a log note (indented with 2+ spaces or tab)
-			if match := logNoteRe.FindStringSubmatch(line); match != nil {
+			if match := logNoteRe.FindStringSubmatch(line); match != nil && len(match) >= 2 {
 				if currentLogEntry != nil {
 					noteText := strings.TrimSpace(match[1])
 					noteID, text := extractID(noteText)
+					if text == "" {
+						// Skip notes with no actual content
+						continue
+					}
 					if noteID == "" {
 						noteID = xid.New().String()
 					}
