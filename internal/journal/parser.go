@@ -27,8 +27,8 @@ var (
 	// Log entries - matches "- HH:MM ..." or "- HH:MM:SS ..."
 	logEntryRe = regexp.MustCompile(`^-\s+(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+)$`)
 
-	// Log note - matches indented lines with 2+ spaces or tab followed by "- "
-	logNoteRe = regexp.MustCompile(`^[\s]{2,}-\s+(.+)$`)
+	// Log note - matches indented lines with 2+ spaces or 1+ tabs followed by "- "
+	logNoteRe = regexp.MustCompile(`^(?:[ ]{2,}|\t+)-\s+(.+)$`)
 
 	// Task reference - [task:id]
 	taskRefRe = regexp.MustCompile(`\[task:([^\]]+)\]`)
@@ -137,10 +137,14 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 
 		case SectionLog:
 			// Check if it's a log note (indented with 2+ spaces or tab)
-			if match := logNoteRe.FindStringSubmatch(line); match != nil {
+			if match := logNoteRe.FindStringSubmatch(line); match != nil && len(match) >= 2 {
 				if currentLogEntry != nil {
 					noteText := strings.TrimSpace(match[1])
 					noteID, text := extractID(noteText)
+					if text == "" {
+						// Skip notes with no actual content
+						continue
+					}
 					if noteID == "" {
 						noteID = xid.New().String()
 					}
