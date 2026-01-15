@@ -35,6 +35,11 @@ type TaskToggleMsg struct {
 	TaskID string
 }
 
+// TaskSelectionChangedMsg is sent when the task selection changes
+type TaskSelectionChangedMsg struct {
+	TaskID string
+}
+
 // TaskItem represents an item in the task list (either a task or a note)
 type TaskItem struct {
 	task   journal.Task
@@ -116,10 +121,11 @@ func findNoteText(notes []journal.TaskNote, noteID string) string {
 
 // TaskList represents the tasks component
 type TaskList struct {
-	list         list.Model
-	collapsedMap map[string]bool
-	tasks        []journal.Task // keep track of original tasks for state management
-	focused      bool
+	list               list.Model
+	collapsedMap       map[string]bool
+	tasks              []journal.Task // keep track of original tasks for state management
+	focused            bool
+	lastSelectedTaskID string // Track previous selection to detect changes
 }
 
 // NewTaskList creates a new task list component
@@ -134,10 +140,19 @@ func NewTaskList(tasks []journal.Task) *TaskList {
 	l.SetFilteringEnabled(false)
 	l.Styles.Title = taskListTitleStyle
 
+	// Determine initial selection
+	initialTaskID := ""
+	if len(items) > 0 {
+		if taskItem, ok := items[0].(TaskItem); ok && !taskItem.isNote {
+			initialTaskID = taskItem.task.ID
+		}
+	}
+
 	return &TaskList{
-		list:         l,
-		collapsedMap: collapsedMap,
-		tasks:        tasks,
+		list:               l,
+		collapsedMap:       collapsedMap,
+		tasks:              tasks,
+		lastSelectedTaskID: initialTaskID,
 	}
 }
 
@@ -226,6 +241,25 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 
 	var cmd tea.Cmd
 	tl.list, cmd = tl.list.Update(msg)
+
+	// Only send selection changed message if selection actually changed
+	selectedItem := tl.list.SelectedItem()
+	var currentTaskID string
+	if selectedItem != nil {
+		taskItem, ok := selectedItem.(TaskItem)
+		if ok && !taskItem.isNote {
+			currentTaskID = taskItem.task.ID
+		}
+	}
+
+	// Compare with previous selection
+	if currentTaskID != "" && currentTaskID != tl.lastSelectedTaskID {
+		tl.lastSelectedTaskID = currentTaskID
+		cmd = tea.Batch(cmd, func() tea.Msg {
+			return TaskSelectionChangedMsg{TaskID: currentTaskID}
+		})
+	}
+
 	return tl, cmd
 }
 
@@ -322,5 +356,15 @@ func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
 				break
 			}
 		}
+	}
+
+	// Update lastSelectedTaskID to match restored cursor position
+	selectedItem = tl.list.SelectedItem()
+	if selectedItem != nil {
+		if taskItem, ok := selectedItem.(TaskItem); ok && !taskItem.isNote {
+			tl.lastSelectedTaskID = taskItem.task.ID
+		}
+	} else {
+		tl.lastSelectedTaskID = ""
 	}
 }

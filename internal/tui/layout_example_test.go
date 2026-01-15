@@ -9,7 +9,7 @@ import (
 // ExampleCalculatePaneDimensions demonstrates basic usage of the layout manager
 func ExampleCalculatePaneDimensions() {
 	// Calculate dimensions for a standard 120x30 terminal
-	dims := tui.CalculatePaneDimensions(120, 30)
+	dims := tui.CalculatePaneDimensions(120, 30, false)
 
 	fmt.Printf("Terminal: 120x30\n")
 	fmt.Printf("Left pane (Logs): %dx%d\n", dims.LogsWidth, dims.LogsHeight)
@@ -36,7 +36,7 @@ func ExampleCalculatePaneDimensions() {
 // ExampleCalculatePaneDimensions_minimumTerminal demonstrates layout with minimum terminal size
 func ExampleCalculatePaneDimensions_minimumTerminal() {
 	// Calculate dimensions for minimum 80x24 terminal
-	dims := tui.CalculatePaneDimensions(80, 24)
+	dims := tui.CalculatePaneDimensions(80, 24, false)
 
 	fmt.Printf("Terminal: 80x24 (minimum size)\n")
 	fmt.Printf("Left pane (Logs): %dx%d\n", dims.LogsWidth, dims.LogsHeight)
@@ -53,7 +53,7 @@ func ExampleCalculatePaneDimensions_minimumTerminal() {
 // ExampleCalculatePaneDimensions_largeTerminal demonstrates layout with a large terminal
 func ExampleCalculatePaneDimensions_largeTerminal() {
 	// Calculate dimensions for a large 200x50 terminal
-	dims := tui.CalculatePaneDimensions(200, 50)
+	dims := tui.CalculatePaneDimensions(200, 50, false)
 
 	// Verify the 40-40-18 split
 	logsPercent := float64(dims.LogsWidth) / 200.0 * 100

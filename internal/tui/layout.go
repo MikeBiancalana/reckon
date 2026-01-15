@@ -30,9 +30,9 @@ type PaneDimensions struct {
 
 // CalculatePaneDimensions computes pane sizes based on terminal dimensions.
 // It implements a 40-40-18 horizontal split for the main panes, with the center
-// Tasks pane split vertically 50-50 for Tasks and Notes, and the right
+// Tasks pane split vertically 50-50 for Tasks and Notes (when notes visible), and the right
 // sidebar further divided vertically into 30-35-35 for Schedule, Intentions, and Wins.
-func CalculatePaneDimensions(termWidth, termHeight int) PaneDimensions {
+func CalculatePaneDimensions(termWidth, termHeight int, notesPaneVisible bool) PaneDimensions {
 	dims := PaneDimensions{
 		TextEntryHeight: 3,
 		StatusHeight:    1,
@@ -46,9 +46,21 @@ func CalculatePaneDimensions(termWidth, termHeight int) PaneDimensions {
 
 	// All main panes share the same available height
 	dims.LogsHeight = availableHeight
-	dims.TasksHeight = availableHeight / 2
-	dims.NotesHeight = availableHeight / 2
 	dims.RightHeight = availableHeight
+
+	// Conditionally split Tasks/Notes based on visibility
+	if notesPaneVisible {
+		// Account for separator line between Tasks and Notes (1 line)
+		const separatorHeight = 1
+		// Split Tasks/Notes vertically, accounting for separator
+		effectiveTasksNotesHeight := availableHeight - separatorHeight
+		dims.TasksHeight = effectiveTasksNotesHeight / 2
+		dims.NotesHeight = effectiveTasksNotesHeight - dims.TasksHeight
+	} else {
+		// Notes pane hidden, tasks get full height
+		dims.TasksHeight = availableHeight
+		dims.NotesHeight = 0
+	}
 
 	// Calculate horizontal widths with 40-40-18 split
 	// Use integer arithmetic to ensure sum equals termWidth

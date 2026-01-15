@@ -20,7 +20,7 @@ func TestCalculatePaneDimensions_StandardSizes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(tt.termWidth, tt.termHeight)
+			dims := CalculatePaneDimensions(tt.termWidth, tt.termHeight, false)
 
 			// Verify basic properties
 			if dims.TextEntryHeight != 3 {
@@ -65,7 +65,7 @@ func TestCalculatePaneDimensions_WidthDistribution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(tt.termWidth, 30)
+			dims := CalculatePaneDimensions(tt.termWidth, 30, false)
 
 			// Calculate percentages
 			logsPercent := float64(dims.LogsWidth) / float64(tt.termWidth)
@@ -108,7 +108,7 @@ func TestCalculatePaneDimensions_HeightDistribution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(120, tt.termHeight)
+			dims := CalculatePaneDimensions(120, tt.termHeight, false)
 
 			// Available height should be termHeight - text entry (3) - status (1)
 			expectedAvailableHeight := tt.termHeight - 4
@@ -146,7 +146,7 @@ func TestCalculatePaneDimensions_RightSidebarSplit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(120, tt.termHeight)
+			dims := CalculatePaneDimensions(120, tt.termHeight, false)
 
 			// Calculate percentages
 			schedulePercent := float64(dims.ScheduleHeight) / float64(dims.RightHeight)
@@ -191,7 +191,7 @@ func TestCalculatePaneDimensions_MinimumSizes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(tt.termWidth, tt.termHeight)
+			dims := CalculatePaneDimensions(tt.termWidth, tt.termHeight, false)
 
 			// All dimensions should be non-negative
 			if dims.LogsWidth < 0 {
@@ -245,7 +245,7 @@ func TestCalculatePaneDimensions_MinimumSizes(t *testing.T) {
 // TestCalculatePaneDimensions_SpecificDimensions tests exact calculations
 func TestCalculatePaneDimensions_SpecificDimensions(t *testing.T) {
 	// Test with width=100, height=30
-	dims := CalculatePaneDimensions(100, 30)
+	dims := CalculatePaneDimensions(100, 30, false)
 
 	// Width calculations: 40% = 40, 40% = 40, remaining = 20
 	if dims.LogsWidth != 40 {
@@ -285,7 +285,7 @@ func TestCalculatePaneDimensions_WidthRounding(t *testing.T) {
 
 	for _, width := range widths {
 		t.Run("Width_"+string(rune(width+'0')), func(t *testing.T) {
-			dims := CalculatePaneDimensions(width, 30)
+			dims := CalculatePaneDimensions(width, 30, false)
 
 			totalWidth := dims.LogsWidth + dims.TasksWidth + dims.RightWidth
 			if totalWidth != width {
@@ -303,7 +303,7 @@ func TestCalculatePaneDimensions_HeightRounding(t *testing.T) {
 
 	for _, height := range heights {
 		t.Run("Height_"+string(rune(height+'0')), func(t *testing.T) {
-			dims := CalculatePaneDimensions(120, height)
+			dims := CalculatePaneDimensions(120, height, false)
 
 			totalRightHeight := dims.ScheduleHeight + dims.IntentionsHeight + dims.WinsHeight
 			if totalRightHeight != dims.RightHeight {
@@ -318,8 +318,8 @@ func TestCalculatePaneDimensions_HeightRounding(t *testing.T) {
 func TestCalculatePaneDimensions_Consistency(t *testing.T) {
 	termWidth, termHeight := 120, 30
 
-	dims1 := CalculatePaneDimensions(termWidth, termHeight)
-	dims2 := CalculatePaneDimensions(termWidth, termHeight)
+	dims1 := CalculatePaneDimensions(termWidth, termHeight, false)
+	dims2 := CalculatePaneDimensions(termWidth, termHeight, false)
 
 	if dims1 != dims2 {
 		t.Errorf("Multiple calls with same parameters should produce identical results")

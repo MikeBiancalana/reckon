@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
@@ -84,7 +85,8 @@ type Model struct {
 	tasks []journal.Task
 
 	// Notes pane state
-	selectedTaskID string
+	selectedTaskID    string
+	notesPaneVisible  bool
 
 	// State for modes
 	helpMode         bool
@@ -261,6 +263,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case components.TaskSelectionChangedMsg:
+		// Update notes pane when task selection changes
+		m.updateNotesForSelectedTask()
+		return m, nil
+
 	case taskToggledMsg:
 		// Task toggled successfully, reload tasks
 		return m, m.loadTasks()
@@ -410,6 +417,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.watcher.Stop()
 			}
 			return m, tea.Quit
+		case "N":
+			// Toggle notes pane visibility
+			m.notesPaneVisible = !m.notesPaneVisible
+			return m, nil
 		case "tab":
 			// Cycle sections
 			m.focusedSection = (m.focusedSection + 1) % SectionCount
@@ -763,7 +774,7 @@ func (m *Model) isRightPaneFocused() bool {
 
 // renderNewLayout renders the 40-40-18 layout: Logs | Tasks | Schedule/Intentions/Wins
 func (m *Model) renderNewLayout() string {
-	dims := CalculatePaneDimensions(m.width, m.height)
+	dims := CalculatePaneDimensions(m.width, m.height, m.notesPaneVisible)
 
 	// Border overhead: 2 chars width (left + right), 2 chars height (top + bottom)
 	borderWidth := 2
@@ -825,10 +836,31 @@ func (m *Model) renderNewLayout() string {
 		centerView(logsInnerWidth, logsInnerHeight, logsView),
 	)
 
-	// Center and box Tasks pane (split vertically with notes)
+	// Center and box Tasks pane (conditionally split vertically with notes)
 	tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, tasksView)
-	notesCentered := centerView(notesInnerWidth, notesInnerHeight, notesView)
-	centerContent := lipgloss.JoinVertical(lipgloss.Left, tasksCentered, notesCentered)
+
+	var centerContent string
+	if m.notesPaneVisible {
+		// Show notes pane with separator
+		notesCentered := centerView(notesInnerWidth, notesInnerHeight, notesView)
+
+		// Create separator with proper width matching the actual rendered width
+		separatorWidth := tasksInnerWidth
+		if separatorWidth > notesInnerWidth {
+			separatorWidth = notesInnerWidth
+		}
+		separator := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Width(separatorWidth).
+			Align(lipgloss.Center).
+			Render(strings.Repeat("─", separatorWidth))
+
+		centerContent = lipgloss.JoinVertical(lipgloss.Left, tasksCentered, separator, notesCentered)
+	} else {
+		// Notes pane hidden, show only tasks
+		centerContent = tasksCentered
+	}
+
 	tasksBox := m.getBorderStyle(SectionTasks).Render(centerContent)
 
 	// Build right sidebar with centered, boxed components
