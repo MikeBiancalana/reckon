@@ -81,7 +81,7 @@ func (d LogDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 		// Add expand/collapse indicator if entry has notes
 		indicator := ""
 		if len(item.entry.Notes) > 0 {
-			if d.collapsedMap[item.entry.ID] {
+			if d.collapsedMap != nil && d.collapsedMap[item.entry.ID] {
 				indicator = "▶ "
 			} else {
 				indicator = "▼ "
@@ -169,25 +169,29 @@ type LogNoteDeleteMsg struct {
 
 // Update handles messages for the log view
 func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
-	// Only handle keys when focused
-	if !lv.focused {
-		var cmd tea.Cmd
-		lv.list, cmd = lv.list.Update(msg)
-		return lv, cmd
-	}
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Only handle keyboard input when focused
+		if !lv.focused {
+			var cmd tea.Cmd
+			lv.list, cmd = lv.list.Update(msg)
+			return lv, cmd
+		}
 		switch msg.String() {
 		case "n":
-			// Add note to selected log entry
+			// Add note to selected log entry or parent entry if a note is selected
 			selectedItem := lv.list.SelectedItem()
 			if selectedItem != nil {
 				logItem, ok := selectedItem.(LogEntryItem)
-				if ok && !logItem.isNote {
+				if ok {
+					// Use parent entry ID if a note is selected, otherwise use entry ID
+					entryID := logItem.entry.ID
+					if logItem.isNote {
+						entryID = logItem.logEntryID
+					}
 					// Return a message to add a note to this log entry
 					return lv, func() tea.Msg {
-						return LogNoteAddMsg{LogEntryID: logItem.entry.ID}
+						return LogNoteAddMsg{LogEntryID: entryID}
 					}
 				}
 			}
@@ -218,8 +222,12 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 			if selectedItem != nil {
 				logItem, ok := selectedItem.(LogEntryItem)
 				if ok && !logItem.isNote && len(logItem.entry.Notes) > 0 {
+					// Save selection state BEFORE modifying collapsed map
+					selectedLogEntryID := logItem.entry.ID
+					isCollapsing := !lv.collapsedMap[logItem.entry.ID]
+
 					// Toggle collapsed state
-					lv.collapsedMap[logItem.entry.ID] = !lv.collapsedMap[logItem.entry.ID]
+					lv.collapsedMap[logItem.entry.ID] = isCollapsing
 
 					// Rebuild items with new collapsed state
 					items := buildLogItems(lv.logEntries, lv.collapsedMap)
@@ -229,17 +237,12 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 					delegate := LogDelegate{collapsedMap: lv.collapsedMap}
 					lv.list.SetDelegate(delegate)
 
-					// If collapsing and cursor was on a note, move back to log entry
-					currentIndex := lv.list.Index()
-					if currentIndex < len(items) {
-						currentItem, ok := items[currentIndex].(LogEntryItem)
-						if ok && currentItem.isNote && lv.collapsedMap[logItem.entry.ID] {
-							// Find the log entry item index
-							for i, item := range items {
-								if li, ok := item.(LogEntryItem); ok && !li.isNote && li.entry.ID == logItem.entry.ID {
-									lv.list.Select(i)
-									break
-								}
+					// If collapsing, reposition cursor to the log entry
+					if isCollapsing {
+						for i, item := range items {
+							if li, ok := item.(LogEntryItem); ok && !li.isNote && li.entry.ID == selectedLogEntryID {
+								lv.list.Select(i)
+								break
 							}
 						}
 					}

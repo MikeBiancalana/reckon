@@ -374,6 +374,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.confirmMode = false
 				m.confirmItemType = ""
 				m.confirmItemID = ""
+				m.confirmLogEntryID = ""
 				return m, nil
 			}
 			// Ignore other keys in confirm mode
@@ -636,26 +637,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case "enter":
-			// Handle enter key for toggling intentions
-			if m.focusedSection == SectionIntentions && m.intentionList != nil {
-				intention := m.intentionList.SelectedIntention()
-				if intention != nil {
-					return m, m.toggleIntention(intention.ID)
-				}
-			}
-			// Handle enter key for tasks (expand/collapse)
-			if m.focusedSection == SectionTasks && m.taskList != nil {
-				var cmd tea.Cmd
-				m.taskList, cmd = m.taskList.Update(msg)
-				return m, cmd
-			}
-			// Handle enter key for logs (expand/collapse)
-			if m.focusedSection == SectionLogs && m.logView != nil {
-				var cmd tea.Cmd
-				m.logView, cmd = m.logView.Update(msg)
-				return m, cmd
-			}
 		default:
 			// Delegate to focused component
 			switch m.focusedSection {
