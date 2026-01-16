@@ -169,6 +169,13 @@ type LogNoteDeleteMsg struct {
 
 // Update handles messages for the log view
 func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
+	// Only handle keys when focused
+	if !lv.focused {
+		var cmd tea.Cmd
+		lv.list, cmd = lv.list.Update(msg)
+		return lv, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -186,18 +193,22 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 			}
 			return lv, nil
 		case "d":
-			// Delete selected note
+			// Delete selected note or log entry
 			selectedItem := lv.list.SelectedItem()
 			if selectedItem != nil {
 				logItem, ok := selectedItem.(LogEntryItem)
-				if ok && logItem.isNote {
-					// Return a message to delete this note
-					return lv, func() tea.Msg {
-						return LogNoteDeleteMsg{
-							LogEntryID: logItem.logEntryID,
-							NoteID:     logItem.noteID,
+				if ok {
+					if logItem.isNote {
+						// Return a message to delete this note
+						return lv, func() tea.Msg {
+							return LogNoteDeleteMsg{
+								LogEntryID: logItem.logEntryID,
+								NoteID:     logItem.noteID,
+							}
 						}
 					}
+					// If it's a log entry (not a note), don't handle it here
+					// Let it bubble up to model.go
 				}
 			}
 			return lv, nil
@@ -303,4 +314,17 @@ func (lv *LogView) IsSelectedItemNote() bool {
 		return false
 	}
 	return logItem.isNote
+}
+
+// SelectedLogNote returns the currently selected log entry and note ID (if a note is selected)
+func (lv *LogView) SelectedLogNote() (logEntryID string, noteID string, ok bool) {
+	item := lv.list.SelectedItem()
+	if item == nil {
+		return "", "", false
+	}
+	logItem, itemOK := item.(LogEntryItem)
+	if !itemOK || !logItem.isNote {
+		return "", "", false
+	}
+	return logItem.logEntryID, logItem.noteID, true
 }

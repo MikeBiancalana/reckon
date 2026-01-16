@@ -89,16 +89,17 @@ type Model struct {
 	notesPaneVisible  bool
 
 	// State for modes
-	helpMode         bool
-	taskCreationMode bool
-	confirmMode      bool
-	confirmItemType  string // "intention", "win", "log", "log_note"
-	confirmItemID    string
-	editItemID       string // ID of item being edited
-	editItemType     string // "task", "intention", "win", "log"
-	noteTaskID       string // ID of task being noted
-	noteLogEntryID   string // ID of log entry being noted
-	lastError        error
+	helpMode          bool
+	taskCreationMode  bool
+	confirmMode       bool
+	confirmItemType   string // "intention", "win", "log", "log_note"
+	confirmItemID     string
+	confirmLogEntryID string // For log_note deletion, stores the log entry ID
+	editItemID        string // ID of item being edited
+	editItemType      string // "task", "intention", "win", "log"
+	noteTaskID        string // ID of task being noted
+	noteLogEntryID    string // ID of log entry being noted
+	lastError         error
 
 	// Terminal size validation
 	terminalTooSmall bool
@@ -295,6 +296,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirmMode = true
 		m.confirmItemType = "log_note"
 		m.confirmItemID = msg.NoteID
+		m.confirmLogEntryID = msg.LogEntryID
 		return m, nil
 
 	case logNoteAddedMsg:
@@ -407,6 +409,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.taskList, cmd = m.taskList.Update(msg)
 				return m, cmd
 			}
+			// Handle enter key for logs (expand/collapse)
+			if m.focusedSection == SectionLogs && m.logView != nil {
+				var cmd tea.Cmd
+				m.logView, cmd = m.logView.Update(msg)
+				return m, cmd
+			}
 		}
 
 		// Handle key runes for single characters
@@ -466,6 +474,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return m, m.textEntryBar.Focus()
 				}
+			}
+			// Add note to selected log entry in Logs section
+			if m.focusedSection == SectionLogs && m.logView != nil {
+				// Delegate to log view which will return LogNoteAddMsg if appropriate
+				var cmd tea.Cmd
+				m.logView, cmd = m.logView.Update(msg)
+				return m, cmd
 			}
 			return m, nil
 		case "?":
@@ -537,6 +552,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case SectionLogs:
 				if m.logView != nil {
+					// Check if a note is selected
+					if m.logView.IsSelectedItemNote() {
+						// Delegate to log view to get the LogNoteDeleteMsg
+						var cmd tea.Cmd
+						m.logView, cmd = m.logView.Update(msg)
+						return m, cmd
+					}
+					// Otherwise, it's a log entry
 					entry := m.logView.SelectedLogEntry()
 					if entry != nil {
 						m.confirmMode = true
@@ -627,6 +650,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.taskList, cmd = m.taskList.Update(msg)
 				return m, cmd
 			}
+			// Handle enter key for logs (expand/collapse)
+			if m.focusedSection == SectionLogs && m.logView != nil {
+				var cmd tea.Cmd
+				m.logView, cmd = m.logView.Update(msg)
+				return m, cmd
+			}
 		default:
 			// Delegate to focused component
 			switch m.focusedSection {
@@ -684,6 +713,8 @@ func (m *Model) View() string {
 			itemType = "win"
 		case "log":
 			itemType = "log entry"
+		case "log_note":
+			itemType = "log note"
 		}
 		view := fmt.Sprintf("Delete this %s? (y/n)", itemType)
 		if m.lastError != nil {
@@ -1055,12 +1086,30 @@ func (m *Model) deleteItem() tea.Cmd {
 			err = m.service.DeleteWin(m.currentJournal, m.confirmItemID)
 		case "log":
 			err = m.service.DeleteLogEntry(m.currentJournal, m.confirmItemID)
+		case "log_note":
+			// Delete log note using both log entry ID and note ID
+			err = m.service.DeleteLogNote(m.currentJournal, m.confirmLogEntryID, m.confirmItemID)
+			if err != nil {
+				// Reset confirmation state
+				m.confirmMode = false
+				m.confirmItemType = ""
+				m.confirmItemID = ""
+				m.confirmLogEntryID = ""
+				return errMsg{err}
+			}
+			// Reset confirmation state
+			m.confirmMode = false
+			m.confirmItemType = ""
+			m.confirmItemID = ""
+			m.confirmLogEntryID = ""
+			return logNoteDeletedMsg{}
 		}
 
 		// Reset confirmation state
 		m.confirmMode = false
 		m.confirmItemType = ""
 		m.confirmItemID = ""
+		m.confirmLogEntryID = ""
 
 		if err != nil {
 			return errMsg{err}
