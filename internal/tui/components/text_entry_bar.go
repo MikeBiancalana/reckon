@@ -100,7 +100,7 @@ func (teb *TextEntryBar) View() string {
 func (teb *TextEntryBar) getPromptForMode() string {
 	switch teb.mode {
 	case ModeTask:
-		return "Add task: "
+		return "Add task (#tag1 #tag2): "
 	case ModeIntention:
 		return "Add intention: "
 	case ModeWin:

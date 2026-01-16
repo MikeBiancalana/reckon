@@ -85,8 +85,8 @@ type Model struct {
 	tasks []journal.Task
 
 	// Notes pane state
-	selectedTaskID    string
-	notesPaneVisible  bool
+	selectedTaskID   string
+	notesPaneVisible bool
 
 	// State for modes
 	helpMode         bool
@@ -1152,7 +1152,8 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		case components.ModeTask:
 			// Add task
 			if m.taskService != nil {
-				err = m.taskService.AddTask(inputText, []string{})
+				taskText, tags := parseTaskTags(inputText)
+				err = m.taskService.AddTask(taskText, tags)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -1244,6 +1245,25 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		}
 		return journalUpdatedMsg{}
 	}
+}
+
+func parseTaskTags(input string) (string, []string) {
+	var tags []string
+	words := strings.Fields(input)
+	var filteredWords []string
+
+	for _, word := range words {
+		if strings.HasPrefix(word, "#") && len(word) > 1 {
+			tag := strings.ToLower(strings.TrimPrefix(word, "#"))
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		} else {
+			filteredWords = append(filteredWords, word)
+		}
+	}
+
+	return strings.Join(filteredWords, " "), tags
 }
 
 // waitForFileChange waits for file change events from the watcher
