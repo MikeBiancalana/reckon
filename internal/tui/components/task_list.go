@@ -3,6 +3,7 @@ package components
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/charmbracelet/bubbles/list"
@@ -97,6 +98,11 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		}
 
 		text = fmt.Sprintf("%s%s %s", indicator, checkbox, item.task.Text)
+
+		if len(item.task.Tags) > 0 {
+			tagStr := fmt.Sprintf(" [%s]", strings.Join(item.task.Tags, " "))
+			text = text + tagStr
+		}
 	}
 
 	// Highlight selected item

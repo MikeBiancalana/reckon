@@ -137,7 +137,7 @@ func TestViewActiveState(t *testing.T) {
 		mode   EntryMode
 		prompt string
 	}{
-		{ModeTask, "Add task: "},
+		{ModeTask, "Add task (#tag1 #tag2): "},
 		{ModeIntention, "Add intention: "},
 		{ModeWin, "Add win: "},
 		{ModeLog, "Add log entry: "},
@@ -233,7 +233,7 @@ func TestPromptByMode(t *testing.T) {
 		expectedPrompt string
 	}{
 		{ModeInactive, "Press t (task), i (intention), w (win), L (log), or n (note) to add entry"},
-		{ModeTask, "Add task: "},
+		{ModeTask, "Add task (#tag1 #tag2): "},
 		{ModeIntention, "Add intention: "},
 		{ModeWin, "Add win: "},
 		{ModeLog, "Add log entry: "},
