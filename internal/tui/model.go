@@ -1254,7 +1254,7 @@ func parseTaskTags(input string) (string, []string) {
 
 	for _, word := range words {
 		if strings.HasPrefix(word, "#") && len(word) > 1 {
-			tag := strings.ToLower(strings.TrimPrefix(word, "#"))
+			tag := strings.TrimLeft(strings.ToLower(word), "#")
 			if tag != "" {
 				tags = append(tags, tag)
 			}

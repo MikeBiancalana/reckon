@@ -75,3 +75,88 @@ func TestTerminalTooSmallViewContent(t *testing.T) {
 		t.Error("Expected terminalTooSmallView to return a non-empty string")
 	}
 }
+
+func TestParseTaskTags(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantText string
+		wantTags []string
+	}{
+		{
+			name:     "empty input",
+			input:    "",
+			wantText: "",
+			wantTags: nil,
+		},
+		{
+			name:     "no tags",
+			input:    "Buy milk and eggs",
+			wantText: "Buy milk and eggs",
+			wantTags: nil,
+		},
+		{
+			name:     "single tag at end",
+			input:    "Buy milk #groceries",
+			wantText: "Buy milk",
+			wantTags: []string{"groceries"},
+		},
+		{
+			name:     "single tag at start",
+			input:    "#important Review PR",
+			wantText: "Review PR",
+			wantTags: []string{"important"},
+		},
+		{
+			name:     "multiple tags",
+			input:    "Task #tag1 #tag2 #tag3",
+			wantText: "Task",
+			wantTags: []string{"tag1", "tag2", "tag3"},
+		},
+		{
+			name:     "tags with mixed case",
+			input:    "Task #TAG1 #Tag2",
+			wantText: "Task",
+			wantTags: []string{"tag1", "tag2"},
+		},
+		{
+			name:     "just hash symbol",
+			input:    "Task #",
+			wantText: "Task #",
+			wantTags: nil,
+		},
+		{
+			name:     "double hash",
+			input:    "Task ##",
+			wantText: "Task",
+			wantTags: nil,
+		},
+		{
+			name:     "tag with punctuation",
+			input:    "Task #urgent, #important",
+			wantText: "Task",
+			wantTags: []string{"urgent,", "important"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotText, gotTags := parseTaskTags(tt.input)
+
+			if gotText != tt.wantText {
+				t.Errorf("parseTaskTags(%q) text = %q, want %q", tt.input, gotText, tt.wantText)
+			}
+
+			if len(gotTags) != len(tt.wantTags) {
+				t.Errorf("parseTaskTags(%q) tags count = %d, want %d", tt.input, len(gotTags), len(tt.wantTags))
+				return
+			}
+
+			for i, tag := range gotTags {
+				if tag != tt.wantTags[i] {
+					t.Errorf("parseTaskTags(%q) tags[%d] = %q, want %q", tt.input, i, tag, tt.wantTags[i])
+				}
+			}
+		})
+	}
+}
