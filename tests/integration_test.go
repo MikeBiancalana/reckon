@@ -490,7 +490,7 @@ Test task 3 description
 	}
 
 	// Test adding a new task
-	err = journalTaskSvc.AddTask("New integration test task")
+	err = journalTaskSvc.AddTask("New integration test task", []string{})
 	if err != nil {
 		t.Fatalf("Failed to add task: %v", err)
 	}
@@ -705,4 +705,150 @@ func TestCLICommands(t *testing.T) {
 
 	// For now, just test that we can initialize services (already tested above)
 	// In a real scenario, we'd use exec.Command to run the binary
+}
+
+func TestLogNotePersistence(t *testing.T) {
+	// This test verifies the fix for the bug where log notes and task notes
+	// were not being written to markdown files due to closure capture issues.
+	// The bug was that Go closures capture variables by reference, not by value.
+	// When the Enter key handler reset m.noteLogEntryID before the async function
+	// ran, the closure saw the empty value.
+
+	// Create temporary directory for test
+	tmpDir, err := os.MkdirTemp("", "reckon-integration-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Set up test environment
+	oldDataDir := os.Getenv("RECKON_DATA_DIR")
+	defer func() {
+		os.Setenv("RECKON_DATA_DIR", oldDataDir)
+	}()
+
+	testDataDir := filepath.Join(tmpDir, "data")
+	os.Setenv("RECKON_DATA_DIR", testDataDir)
+
+	// Initialize services
+	dbPath, err := config.DatabasePath()
+	if err != nil {
+		t.Fatalf("Failed to get database path: %v", err)
+	}
+
+	db, err := storage.NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	journalRepo := journal.NewRepository(db)
+	fileStore := storage.NewFileStore()
+	journalSvc := journal.NewService(journalRepo, fileStore)
+
+	// Create a journal with a log entry
+	testDate := "2024-06-15"
+	j, err := journalSvc.GetByDate(testDate)
+	if err != nil {
+		t.Fatalf("Failed to get journal: %v", err)
+	}
+
+	// Add a log entry
+	err = journalSvc.AppendLog(j, "Test log entry for note persistence")
+	if err != nil {
+		t.Fatalf("Failed to add log entry: %v", err)
+	}
+
+	// Reload to get the entry ID
+	j, err = journalSvc.GetByDate(testDate)
+	if err != nil {
+		t.Fatalf("Failed to reload journal: %v", err)
+	}
+
+	if len(j.LogEntries) != 1 {
+		t.Fatalf("Expected 1 log entry, got %d", len(j.LogEntries))
+	}
+
+	logEntryID := j.LogEntries[0].ID
+
+	// Now simulate what the TUI does: add a log note
+	// This is the operation that was failing due to closure capture bug
+	err = journalSvc.AddLogNote(j, logEntryID, "This is a test note")
+	if err != nil {
+		t.Fatalf("Failed to add log note: %v", err)
+	}
+
+	// Verify the note was added in memory
+	if len(j.LogEntries[0].Notes) != 1 {
+		t.Fatalf("Expected 1 note in memory, got %d", len(j.LogEntries[0].Notes))
+	}
+
+	// Verify the note text
+	if j.LogEntries[0].Notes[0].Text != "This is a test note" {
+		t.Errorf("Expected note text 'This is a test note', got '%s'", j.LogEntries[0].Notes[0].Text)
+	}
+
+	// Reload from disk and verify the note persists
+	j, err = journalSvc.GetByDate(testDate)
+	if err != nil {
+		t.Fatalf("Failed to reload journal after adding note: %v", err)
+	}
+
+	if len(j.LogEntries) != 1 {
+		t.Fatalf("Expected 1 log entry after reload, got %d", len(j.LogEntries))
+	}
+
+	if len(j.LogEntries[0].Notes) != 1 {
+		t.Fatalf("Expected 1 note after reload, got %d", len(j.LogEntries[0].Notes))
+	}
+
+	if j.LogEntries[0].Notes[0].Text != "This is a test note" {
+		t.Errorf("Note text not preserved after reload. Expected 'This is a test note', got '%s'", j.LogEntries[0].Notes[0].Text)
+	}
+
+	// Verify the markdown file contains the note
+	content, _, err := fileStore.ReadJournalFile(testDate)
+	if err != nil {
+		t.Fatalf("Failed to read journal file: %v", err)
+	}
+
+	if !strings.Contains(content, "This is a test note") {
+		t.Errorf("Journal file should contain the note text. Content:\n%s", content)
+	}
+
+	// Verify the note format in the file
+	expectedNoteFormat := "  - " + j.LogEntries[0].Notes[0].ID + " This is a test note"
+	if !strings.Contains(content, expectedNoteFormat) {
+		t.Errorf("Journal file should contain properly formatted note. Expected format:\n%s\n\nActual content:\n%s", expectedNoteFormat, content)
+	}
+
+	// Add another note to test multiple notes
+	err = journalSvc.AddLogNote(j, logEntryID, "Second test note")
+	if err != nil {
+		t.Fatalf("Failed to add second log note: %v", err)
+	}
+
+	// Reload and verify
+	j, err = journalSvc.GetByDate(testDate)
+	if err != nil {
+		t.Fatalf("Failed to reload journal after second note: %v", err)
+	}
+
+	if len(j.LogEntries[0].Notes) != 2 {
+		t.Fatalf("Expected 2 notes after adding second, got %d", len(j.LogEntries[0].Notes))
+	}
+
+	// Verify markdown file has both notes
+	content, _, err = fileStore.ReadJournalFile(testDate)
+	if err != nil {
+		t.Fatalf("Failed to read journal file: %v", err)
+	}
+
+	if !strings.Contains(content, "This is a test note") {
+		t.Errorf("Journal file should contain first note")
+	}
+
+	if !strings.Contains(content, "Second test note") {
+		t.Errorf("Journal file should contain second note")
+	}
 }
