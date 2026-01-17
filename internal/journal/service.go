@@ -686,3 +686,19 @@ func (s *Service) GetWeekContent() (string, error) {
 
 	return content, nil
 }
+
+// GetWeekJournals returns the last 7 days of journals as a slice
+func (s *Service) GetWeekJournals() ([]*Journal, error) {
+	journals := make([]*Journal, 0, 7)
+
+	for i := 6; i >= 0; i-- {
+		date := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+		j, err := s.GetByDate(date)
+		if err != nil {
+			continue
+		}
+		journals = append(journals, j)
+	}
+
+	return journals, nil
+}

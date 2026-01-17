@@ -19,11 +19,11 @@ const (
 const maxTaskDurationMinutes = 10 * 60 // 10 hours max
 
 type TimeSummary struct {
-	Meetings     int // minutes
-	Breaks       int // minutes
-	Tasks        int // minutes
-	Untracked    int // minutes
-	TotalTracked int // minutes
+	Meetings     int `json:"meetings"`
+	Breaks       int `json:"breaks"`
+	Tasks        int `json:"tasks"`
+	Untracked    int `json:"untracked"`
+	TotalTracked int `json:"total_tracked"`
 }
 
 func (s *TimeSummary) Add(other TimeSummary) {
