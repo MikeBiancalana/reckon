@@ -282,9 +282,28 @@ func (lv *LogView) SetFocused(focused bool) {
 
 // UpdateLogEntries updates the list with new log entries
 func (lv *LogView) UpdateLogEntries(logEntries []journal.LogEntry) {
+	// Preserve cursor position by finding the currently selected log entry ID
+	selectedItem := lv.list.SelectedItem()
+	var selectedLogEntryID string
+	if selectedItem != nil {
+		if logItem, ok := selectedItem.(LogEntryItem); ok {
+			selectedLogEntryID = logItem.entry.ID
+		}
+	}
+
 	lv.logEntries = logEntries
 	items := buildLogItems(logEntries, lv.collapsedMap)
 	lv.list.SetItems(items)
+
+	// Restore cursor to the previously selected log entry
+	if selectedLogEntryID != "" {
+		for i, item := range items {
+			if logItem, ok := item.(LogEntryItem); ok && !logItem.isNote && logItem.entry.ID == selectedLogEntryID {
+				lv.list.Select(i)
+				break
+			}
+		}
+	}
 
 	// Update delegate with current collapsed map
 	delegate := LogDelegate{collapsedMap: lv.collapsedMap}

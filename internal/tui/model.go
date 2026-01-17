@@ -221,12 +221,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case journalLoadedMsg:
 		m.currentJournal = &msg.journal
-		m.intentionList = components.NewIntentionList(msg.journal.Intentions)
-		m.winsView = components.NewWinsView(msg.journal.Wins)
-		m.logView = components.NewLogView(msg.journal.LogEntries)
 
-		// Initialize new components for 40-40-18 layout
-		m.scheduleView = components.NewScheduleView(msg.journal.ScheduleItems)
+		// Update or create IntentionList
+		if m.intentionList == nil {
+			m.intentionList = components.NewIntentionList(msg.journal.Intentions)
+		} else {
+			m.intentionList.UpdateIntentions(msg.journal.Intentions)
+		}
+
+		// Update or create WinsView
+		if m.winsView == nil {
+			m.winsView = components.NewWinsView(msg.journal.Wins)
+		} else {
+			m.winsView.UpdateWins(msg.journal.Wins)
+		}
+
+		// Update or create LogView
+		if m.logView == nil {
+			m.logView = components.NewLogView(msg.journal.LogEntries)
+		} else {
+			m.logView.UpdateLogEntries(msg.journal.LogEntries)
+		}
+
+		// Update or create ScheduleView
+		if m.scheduleView == nil {
+			m.scheduleView = components.NewScheduleView(msg.journal.ScheduleItems)
+		} else {
+			m.scheduleView.UpdateSchedule(msg.journal.ScheduleItems)
+		}
+
 		// Initialize taskList with cached tasks (if available) or empty
 		if m.taskList == nil {
 			m.taskList = components.NewTaskList(m.tasks)

@@ -147,9 +147,28 @@ func (il *IntentionList) SelectedIntention() *journal.Intention {
 
 // UpdateIntentions updates the list with new intentions
 func (il *IntentionList) UpdateIntentions(intentions []journal.Intention) {
+	// Preserve cursor position by finding the currently selected intention ID
+	selectedItem := il.list.SelectedItem()
+	var selectedIntentionID string
+	if selectedItem != nil {
+		if intentionItem, ok := selectedItem.(IntentionItem); ok {
+			selectedIntentionID = intentionItem.intention.ID
+		}
+	}
+
 	items := make([]list.Item, len(intentions))
 	for i, intention := range intentions {
 		items[i] = IntentionItem{intention}
 	}
 	il.list.SetItems(items)
+
+	// Restore cursor to the previously selected intention
+	if selectedIntentionID != "" {
+		for i, item := range items {
+			if intentionItem, ok := item.(IntentionItem); ok && intentionItem.intention.ID == selectedIntentionID {
+				il.list.Select(i)
+				break
+			}
+		}
+	}
 }
