@@ -17,10 +17,7 @@ type Repository struct {
 
 // NewRepository creates a new repository
 func NewRepository(db *storage.Database, logger *slog.Logger) *Repository {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Repository{db: db, logger: logger}
+	return &Repository{db: db, logger: DefaultLogger(logger)}
 }
 
 // SaveJournal saves a complete journal to the database
@@ -342,6 +339,8 @@ func (r *Repository) DeleteJournal(date string) error {
 
 // deleteJournalData deletes all data for a journal within a transaction
 func (r *Repository) deleteJournalData(tx *sql.Tx, date string) error {
+	r.logger.Debug("deleteJournalData", "journal_date", date)
+
 	// Delete in order due to foreign keys
 	// Note: log_notes has ON DELETE CASCADE from log_entries, so it will be automatically deleted
 	queries := map[string]string{
@@ -358,6 +357,7 @@ func (r *Repository) deleteJournalData(tx *sql.Tx, date string) error {
 		query := queries[table]
 		_, err := tx.Exec(query, date)
 		if err != nil {
+			r.logger.Error("deleteJournalData", "error", err, "journal_date", date, "table", table, "operation", "delete")
 			return fmt.Errorf("failed to delete from %s: %w", table, err)
 		}
 	}
@@ -433,9 +433,11 @@ func (r *Repository) GetOpenIntentions(date string) ([]Intention, error) {
 // SaveLogNotes saves notes for a log entry
 // Deletes existing notes and inserts new ones
 func (r *Repository) SaveLogNotes(tx *sql.Tx, logEntryID string, notes []LogNote) error {
-	// Delete existing notes for this log entry
+	r.logger.Debug("SaveLogNotes", "log_entry_id", logEntryID, "note_count", len(notes))
+
 	_, err := tx.Exec("DELETE FROM log_notes WHERE log_entry_id = ?", logEntryID)
 	if err != nil {
+		r.logger.Error("SaveLogNotes", "error", err, "log_entry_id", logEntryID, "operation", "delete_old_notes")
 		return fmt.Errorf("failed to delete old log notes: %w", err)
 	}
 
@@ -446,6 +448,7 @@ func (r *Repository) SaveLogNotes(tx *sql.Tx, logEntryID string, notes []LogNote
 			VALUES (?, ?, ?, ?)
 		`, note.ID, logEntryID, note.Text, note.Position)
 		if err != nil {
+			r.logger.Error("SaveLogNotes", "error", err, "log_entry_id", logEntryID, "note_id", note.ID, "operation", "insert_note")
 			return fmt.Errorf("failed to save log note: %w", err)
 		}
 	}
@@ -455,6 +458,8 @@ func (r *Repository) SaveLogNotes(tx *sql.Tx, logEntryID string, notes []LogNote
 
 // GetLogNotes retrieves notes for a log entry
 func (r *Repository) GetLogNotes(logEntryID string) ([]LogNote, error) {
+	r.logger.Debug("GetLogNotes", "log_entry_id", logEntryID)
+
 	rows, err := r.db.DB().Query(`
 		SELECT id, text, position
 		FROM log_notes
@@ -462,6 +467,7 @@ func (r *Repository) GetLogNotes(logEntryID string) ([]LogNote, error) {
 		ORDER BY position
 	`, logEntryID)
 	if err != nil {
+		r.logger.Error("GetLogNotes", "error", err, "log_entry_id", logEntryID, "operation", "query")
 		return nil, fmt.Errorf("failed to query log notes: %w", err)
 	}
 	defer rows.Close()
@@ -471,12 +477,14 @@ func (r *Repository) GetLogNotes(logEntryID string) ([]LogNote, error) {
 		var note LogNote
 		err := rows.Scan(&note.ID, &note.Text, &note.Position)
 		if err != nil {
+			r.logger.Error("GetLogNotes", "error", err, "log_entry_id", logEntryID, "note_id", note.ID, "operation", "scan")
 			return nil, fmt.Errorf("failed to scan log note: %w", err)
 		}
 		notes = append(notes, note)
 	}
 
 	if err := rows.Err(); err != nil {
+		r.logger.Error("GetLogNotes", "error", err, "log_entry_id", logEntryID, "operation", "iterate")
 		return nil, fmt.Errorf("error iterating log notes: %w", err)
 	}
 

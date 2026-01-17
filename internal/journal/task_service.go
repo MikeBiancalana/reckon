@@ -32,13 +32,10 @@ type TaskService struct {
 
 // NewTaskService creates a new task service
 func NewTaskService(repo *TaskRepository, store *storage.FileStore, logger *slog.Logger) *TaskService {
-	if logger == nil {
-		logger = slog.Default()
-	}
 	return &TaskService{
 		repo:   repo,
 		store:  store,
-		logger: logger,
+		logger: DefaultLogger(logger),
 	}
 }
 

@@ -21,13 +21,10 @@ type Service struct {
 
 // NewService creates a new journal service
 func NewService(repo *Repository, fileStore *storage.FileStore, logger *slog.Logger) *Service {
-	if logger == nil {
-		logger = slog.Default()
-	}
 	return &Service{
 		repo:      repo,
 		fileStore: fileStore,
-		logger:    logger,
+		logger:    DefaultLogger(logger),
 	}
 }
 
@@ -153,7 +150,7 @@ func (s *Service) ToggleIntention(j *Journal, intentionID string) error {
 	}
 
 	err := fmt.Errorf("intention not found: %s", intentionID)
-	s.logger.Error("ToggleIntention", "error", err, "journal_date", j.Date, "intention_id", intentionID)
+	s.logger.Warn("ToggleIntention", "error", err, "journal_date", j.Date, "intention_id", intentionID)
 	return err
 }
 
@@ -187,7 +184,7 @@ func (s *Service) DeleteIntention(j *Journal, intentionID string) error {
 
 	if !found {
 		err := fmt.Errorf("intention not found: %s", intentionID)
-		s.logger.Error("DeleteIntention", "error", err, "journal_date", j.Date, "intention_id", intentionID)
+		s.logger.Warn("DeleteIntention", "error", err, "journal_date", j.Date, "intention_id", intentionID)
 		return err
 	}
 
@@ -218,7 +215,7 @@ func (s *Service) DeleteWin(j *Journal, winID string) error {
 
 	if !found {
 		err := fmt.Errorf("win not found: %s", winID)
-		s.logger.Error("DeleteWin", "error", err, "journal_date", j.Date, "win_id", winID)
+		s.logger.Warn("DeleteWin", "error", err, "journal_date", j.Date, "win_id", winID)
 		return err
 	}
 
@@ -249,7 +246,7 @@ func (s *Service) DeleteLogEntry(j *Journal, logEntryID string) error {
 
 	if !found {
 		err := fmt.Errorf("log entry not found: %s", logEntryID)
-		s.logger.Error("DeleteLogEntry", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID)
+		s.logger.Warn("DeleteLogEntry", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID)
 		return err
 	}
 
@@ -272,7 +269,7 @@ func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		err := fmt.Errorf("note text cannot be empty")
-		s.logger.Error("AddLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID)
+		s.logger.Warn("AddLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID)
 		return err
 	}
 
@@ -287,7 +284,7 @@ func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
 
 	if targetEntry == nil {
 		err := fmt.Errorf("log entry not found: %s", logEntryID)
-		s.logger.Error("AddLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID)
+		s.logger.Warn("AddLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID)
 		return err
 	}
 
@@ -310,7 +307,7 @@ func (s *Service) UpdateLogNote(j *Journal, logEntryID string, noteID string, ne
 	newText = strings.TrimSpace(newText)
 	if newText == "" {
 		err := fmt.Errorf("note text cannot be empty")
-		s.logger.Error("UpdateLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
+		s.logger.Warn("UpdateLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
 		return err
 	}
 
@@ -325,7 +322,7 @@ func (s *Service) UpdateLogNote(j *Journal, logEntryID string, noteID string, ne
 
 	if targetEntry == nil {
 		err := fmt.Errorf("log entry not found: %s", logEntryID)
-		s.logger.Error("UpdateLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
+		s.logger.Warn("UpdateLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
 		return err
 	}
 
@@ -341,7 +338,7 @@ func (s *Service) UpdateLogNote(j *Journal, logEntryID string, noteID string, ne
 
 	if !found {
 		err := fmt.Errorf("note not found: %s", noteID)
-		s.logger.Error("UpdateLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
+		s.logger.Warn("UpdateLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
 		return err
 	}
 
@@ -367,7 +364,7 @@ func (s *Service) DeleteLogNote(j *Journal, logEntryID string, noteID string) er
 
 	if targetEntry == nil {
 		err := fmt.Errorf("log entry not found: %s", logEntryID)
-		s.logger.Error("DeleteLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
+		s.logger.Warn("DeleteLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
 		return err
 	}
 
@@ -383,7 +380,7 @@ func (s *Service) DeleteLogNote(j *Journal, logEntryID string, noteID string) er
 
 	if !found {
 		err := fmt.Errorf("note not found: %s", noteID)
-		s.logger.Error("DeleteLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
+		s.logger.Warn("DeleteLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", noteID)
 		return err
 	}
 
@@ -414,7 +411,7 @@ func (s *Service) UpdateIntention(j *Journal, intentionID string, newText string
 		}
 	}
 	err := fmt.Errorf("intention not found: %s", intentionID)
-	s.logger.Error("UpdateIntention", "error", err, "journal_date", j.Date, "intention_id", intentionID)
+	s.logger.Warn("UpdateIntention", "error", err, "journal_date", j.Date, "intention_id", intentionID)
 	return err
 }
 
@@ -433,7 +430,7 @@ func (s *Service) UpdateWin(j *Journal, winID string, newText string) error {
 		}
 	}
 	err := fmt.Errorf("win not found: %s", winID)
-	s.logger.Error("UpdateWin", "error", err, "journal_date", j.Date, "win_id", winID)
+	s.logger.Warn("UpdateWin", "error", err, "journal_date", j.Date, "win_id", winID)
 	return err
 }
 
@@ -452,7 +449,7 @@ func (s *Service) UpdateLogEntry(j *Journal, logEntryID string, newContent strin
 		}
 	}
 	err := fmt.Errorf("log entry not found: %s", logEntryID)
-	s.logger.Error("UpdateLogEntry", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID)
+	s.logger.Warn("UpdateLogEntry", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID)
 	return err
 }
 
@@ -463,7 +460,7 @@ func (s *Service) AddScheduleItem(j *Journal, timeStr string, content string) er
 	content = strings.TrimSpace(content)
 	if content == "" {
 		err := fmt.Errorf("schedule item content cannot be empty")
-		s.logger.Error("AddScheduleItem", "error", err, "journal_date", j.Date)
+		s.logger.Warn("AddScheduleItem", "error", err, "journal_date", j.Date)
 		return err
 	}
 
@@ -513,7 +510,7 @@ func (s *Service) DeleteScheduleItem(j *Journal, itemID string) error {
 
 	if !found {
 		err := fmt.Errorf("schedule item not found: %s", itemID)
-		s.logger.Error("DeleteScheduleItem", "error", err, "journal_date", j.Date, "schedule_item_id", itemID)
+		s.logger.Warn("DeleteScheduleItem", "error", err, "journal_date", j.Date, "schedule_item_id", itemID)
 		return err
 	}
 
@@ -544,7 +541,7 @@ func (s *Service) parseScheduleTime(date string, timeStr string) (time.Time, err
 
 // save saves a journal to both filesystem and database
 func (s *Service) save(j *Journal) error {
-	s.logger.Info("save", "journal_date", j.Date, "intentions", len(j.Intentions), "log_entries", len(j.LogEntries), "wins", len(j.Wins), "schedule_items", len(j.ScheduleItems))
+	s.logger.Debug("save", "journal_date", j.Date, "intentions", len(j.Intentions), "log_entries", len(j.LogEntries), "wins", len(j.Wins), "schedule_items", len(j.ScheduleItems))
 
 	// Serialize to markdown
 	content := WriteJournal(j)

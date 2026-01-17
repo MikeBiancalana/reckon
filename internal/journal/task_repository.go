@@ -18,17 +18,17 @@ type TaskRepository struct {
 
 // NewTaskRepository creates a new task repository
 func NewTaskRepository(db *storage.Database, logger *slog.Logger) *TaskRepository {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &TaskRepository{db: db, logger: logger}
+	return &TaskRepository{db: db, logger: DefaultLogger(logger)}
 }
 
 // SaveTask saves a task and its notes to the database
 // Uses a transaction to ensure atomicity
 func (r *TaskRepository) SaveTask(task *Task) error {
+	r.logger.Debug("SaveTask", "task_id", task.ID)
+
 	tx, err := r.db.BeginTx()
 	if err != nil {
+		r.logger.Error("SaveTask", "error", err, "task_id", task.ID, "operation", "begin_transaction")
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
@@ -42,12 +42,14 @@ func (r *TaskRepository) SaveTask(task *Task) error {
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, task.ID, task.Text, task.Status, string(tagsJSON), task.Position, task.CreatedAt.Unix())
 	if err != nil {
+		r.logger.Error("SaveTask", "error", err, "task_id", task.ID, "operation", "insert_task")
 		return fmt.Errorf("failed to save task: %w", err)
 	}
 
 	// Delete existing notes for this task
 	_, err = tx.Exec("DELETE FROM task_notes WHERE task_id = ?", task.ID)
 	if err != nil {
+		r.logger.Error("SaveTask", "error", err, "task_id", task.ID, "operation", "delete_old_notes")
 		return fmt.Errorf("failed to delete old notes: %w", err)
 	}
 
@@ -58,11 +60,17 @@ func (r *TaskRepository) SaveTask(task *Task) error {
 			VALUES (?, ?, ?, ?)
 		`, note.ID, task.ID, note.Text, note.Position)
 		if err != nil {
+			r.logger.Error("SaveTask", "error", err, "task_id", task.ID, "note_id", note.ID, "operation", "insert_note")
 			return fmt.Errorf("failed to save note: %w", err)
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		r.logger.Error("SaveTask", "error", err, "task_id", task.ID, "operation", "commit_transaction")
+		return err
+	}
+
+	return nil
 }
 
 // SaveTasks saves multiple tasks in a single transaction
