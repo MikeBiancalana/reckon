@@ -233,7 +233,15 @@ func parseLogEntry(line string, date string, position int) *LogEntry {
 	}
 
 	timeStr := match[1]
-	content := strings.TrimSpace(match[2])
+	restOfLine := strings.TrimSpace(match[2])
+
+	// Extract ID if present (format: "<ID> <content>")
+	entryID, content := extractID(restOfLine)
+	if entryID == "" {
+		// No ID found, generate one
+		entryID = xid.New().String()
+		content = restOfLine
+	}
 
 	// Parse timestamp
 	timestamp, err := parseTime(date, timeStr)
@@ -241,7 +249,16 @@ func parseLogEntry(line string, date string, position int) *LogEntry {
 		return nil
 	}
 
-	entry := NewLogEntry(timestamp, content, EntryTypeLog, position)
+	// Create entry with explicit ID
+	entry := &LogEntry{
+		ID:              entryID,
+		Timestamp:       timestamp,
+		Content:         content,
+		EntryType:       EntryTypeLog,
+		Notes:           make([]LogNote, 0),
+		Position:        position,
+		DurationMinutes: 0,
+	}
 
 	// Check for task reference [task:id]
 	if taskMatch := taskRefRe.FindStringSubmatch(content); taskMatch != nil {
