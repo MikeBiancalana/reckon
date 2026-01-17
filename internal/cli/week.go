@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var weekJsonFlag bool
+var jsonFlag bool
 
 var weekCmd = &cobra.Command{
 	Use:   "week",
@@ -19,7 +19,7 @@ var weekCmd = &cobra.Command{
 			return fmt.Errorf("journal service not initialized")
 		}
 
-		if weekJsonFlag {
+		if jsonFlag {
 			journals, err := service.GetWeekJournals()
 			if err != nil {
 				return fmt.Errorf("failed to get week's journals: %w", err)
@@ -41,5 +41,5 @@ var weekCmd = &cobra.Command{
 }
 
 func init() {
-	weekCmd.Flags().BoolVar(&weekJsonFlag, "json", false, "Output as JSON")
+	weekCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
 }
