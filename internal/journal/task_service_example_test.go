@@ -31,11 +31,11 @@ func Example_taskService() {
 	defer db.Close()
 
 	// Create repository and file store
-	repo := journal.NewTaskRepository(db)
+	repo := journal.NewTaskRepository(db, nil)
 	store := storage.NewFileStore()
 
 	// Create service
-	service := journal.NewTaskService(repo, store)
+	service := journal.NewTaskService(repo, store, nil)
 
 	// Add some tasks
 	if err := service.AddTask("Complete project documentation", []string{}); err != nil {

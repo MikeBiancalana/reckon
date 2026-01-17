@@ -42,8 +42,8 @@ func setupLogNotesTestService(t *testing.T) (*Service, string) {
 	fileStore := storage.NewFileStore()
 
 	// Create service
-	repo := NewRepository(db)
-	service := NewService(repo, fileStore)
+	repo := NewRepository(db, nil)
+	service := NewService(repo, fileStore, nil)
 
 	return service, tempDir
 }

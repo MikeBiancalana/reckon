@@ -22,8 +22,8 @@ func Example_scheduleItems() {
 	dbPath := filepath.Join(tmpDir, "example.db")
 	db, _ := storage.NewDatabase(dbPath)
 	fileStore := storage.NewFileStore()
-	repo := NewRepository(db)
-	service := NewService(repo, fileStore)
+	repo := NewRepository(db, nil)
+	service := NewService(repo, fileStore, nil)
 
 	// Create a journal for today
 	date := time.Now().Format("2006-01-02")

@@ -20,7 +20,7 @@ func TestNewTaskRepository(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 	if repo == nil {
 		t.Fatal("expected non-nil repository")
 	}
@@ -32,7 +32,7 @@ func TestNewTaskRepository(t *testing.T) {
 func TestSaveTask_NewTask(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	task := &Task{
 		ID:        "task-123",
@@ -80,7 +80,7 @@ func TestSaveTask_NewTask(t *testing.T) {
 func TestSaveTask_UpdateExisting(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	// Save initial task
 	task := &Task{
@@ -130,7 +130,7 @@ func TestSaveTask_UpdateExisting(t *testing.T) {
 func TestSaveTasks_BulkOperation(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	tasks := []Task{
 		{
@@ -170,7 +170,7 @@ func TestSaveTasks_BulkOperation(t *testing.T) {
 func TestGetAllTasks(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	// Save multiple tasks
 	task1 := &Task{
@@ -240,7 +240,7 @@ func TestGetAllTasks(t *testing.T) {
 func TestGetTaskByID_NotFound(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	_, err := repo.GetTaskByID("nonexistent")
 	if err == nil {
@@ -251,7 +251,7 @@ func TestGetTaskByID_NotFound(t *testing.T) {
 func TestDeleteTask(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	// Save a task with notes
 	task := &Task{
@@ -296,7 +296,7 @@ func TestDeleteTask(t *testing.T) {
 func TestDeleteTaskNote(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	// Save a task with notes
 	task := &Task{
@@ -338,7 +338,7 @@ func TestDeleteTaskNote(t *testing.T) {
 func TestSaveTask_EmptyNotes(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	task := &Task{
 		ID:        "task-123",
@@ -367,7 +367,7 @@ func TestSaveTask_EmptyNotes(t *testing.T) {
 func TestGetAllTasks_Empty(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	tasks, err := repo.GetAllTasks()
 	if err != nil {
@@ -382,7 +382,7 @@ func TestGetAllTasks_Empty(t *testing.T) {
 func TestSaveTask_NotesSortedByPosition(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewTaskRepository(db)
+	repo := NewTaskRepository(db, nil)
 
 	task := &Task{
 		ID:        "task-123",
