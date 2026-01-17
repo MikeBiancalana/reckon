@@ -1198,6 +1198,16 @@ func (m *Model) submitTextEntry() tea.Cmd {
 
 	mode := m.textEntryBar.GetMode()
 
+	// CRITICAL: Capture ALL values we need BEFORE creating the async function.
+	// Go closures capture variables by REFERENCE, not by value.
+	// If we don't capture them here, the values may be reset by the key handler
+	// before the async function runs.
+	capturedLogEntryID := m.noteLogEntryID
+	capturedTaskID := m.noteTaskID
+	capturedEditID := m.editItemID
+	capturedEditType := m.editItemType
+	capturedCurrentJournal := m.currentJournal
+
 	return func() tea.Msg {
 		var err error
 
@@ -1230,8 +1240,8 @@ func (m *Model) submitTextEntry() tea.Cmd {
 
 		case components.ModeNote:
 			// Add note to the selected task
-			if m.taskService != nil && m.noteTaskID != "" {
-				err = m.taskService.AddTaskNote(m.noteTaskID, inputText)
+			if m.taskService != nil && capturedTaskID != "" {
+				err = m.taskService.AddTaskNote(capturedTaskID, inputText)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -1246,8 +1256,8 @@ func (m *Model) submitTextEntry() tea.Cmd {
 
 		case components.ModeLogNote:
 			// Add note to the selected log entry
-			if m.noteLogEntryID != "" {
-				err = m.service.AddLogNote(m.currentJournal, m.noteLogEntryID, inputText)
+			if capturedLogEntryID != "" {
+				err = m.service.AddLogNote(capturedCurrentJournal, capturedLogEntryID, inputText)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -1257,8 +1267,8 @@ func (m *Model) submitTextEntry() tea.Cmd {
 
 		case components.ModeEditTask:
 			// Edit task
-			if m.taskService != nil && m.editItemID != "" && m.editItemType == "task" {
-				err = m.taskService.UpdateTask(m.editItemID, inputText, []string{}) // TODO: preserve existing tags
+			if m.taskService != nil && capturedEditID != "" && capturedEditType == "task" {
+				err = m.taskService.UpdateTask(capturedEditID, inputText, []string{}) // TODO: preserve existing tags
 				if err != nil {
 					return errMsg{err}
 				}
@@ -1273,20 +1283,20 @@ func (m *Model) submitTextEntry() tea.Cmd {
 
 		case components.ModeEditIntention:
 			// Edit intention
-			if m.editItemID != "" && m.editItemType == "intention" {
-				err = m.service.UpdateIntention(m.currentJournal, m.editItemID, inputText)
+			if capturedEditID != "" && capturedEditType == "intention" {
+				err = m.service.UpdateIntention(m.currentJournal, capturedEditID, inputText)
 			}
 
 		case components.ModeEditWin:
 			// Edit win
-			if m.editItemID != "" && m.editItemType == "win" {
-				err = m.service.UpdateWin(m.currentJournal, m.editItemID, inputText)
+			if capturedEditID != "" && capturedEditType == "win" {
+				err = m.service.UpdateWin(m.currentJournal, capturedEditID, inputText)
 			}
 
 		case components.ModeEditLog:
 			// Edit log entry
-			if m.editItemID != "" && m.editItemType == "log" {
-				err = m.service.UpdateLogEntry(m.currentJournal, m.editItemID, inputText)
+			if capturedEditID != "" && capturedEditType == "log" {
+				err = m.service.UpdateLogEntry(m.currentJournal, capturedEditID, inputText)
 			}
 
 		default:
