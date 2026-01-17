@@ -81,7 +81,7 @@ func (d LogDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 		// Add expand/collapse indicator if entry has notes
 		indicator := ""
 		if len(item.entry.Notes) > 0 {
-			if d.collapsedMap[item.entry.ID] {
+			if d.collapsedMap != nil && d.collapsedMap[item.entry.ID] {
 				indicator = "▶ "
 			} else {
 				indicator = "▼ "
@@ -171,33 +171,48 @@ type LogNoteDeleteMsg struct {
 func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Only handle keyboard input when focused
+		if !lv.focused {
+			var cmd tea.Cmd
+			lv.list, cmd = lv.list.Update(msg)
+			return lv, cmd
+		}
 		switch msg.String() {
 		case "n":
-			// Add note to selected log entry
+			// Add note to selected log entry or parent entry if a note is selected
 			selectedItem := lv.list.SelectedItem()
 			if selectedItem != nil {
 				logItem, ok := selectedItem.(LogEntryItem)
-				if ok && !logItem.isNote {
+				if ok {
+					// Use parent entry ID if a note is selected, otherwise use entry ID
+					entryID := logItem.entry.ID
+					if logItem.isNote {
+						entryID = logItem.logEntryID
+					}
 					// Return a message to add a note to this log entry
 					return lv, func() tea.Msg {
-						return LogNoteAddMsg{LogEntryID: logItem.entry.ID}
+						return LogNoteAddMsg{LogEntryID: entryID}
 					}
 				}
 			}
 			return lv, nil
 		case "d":
-			// Delete selected note
+			// Delete selected note or log entry
 			selectedItem := lv.list.SelectedItem()
 			if selectedItem != nil {
 				logItem, ok := selectedItem.(LogEntryItem)
-				if ok && logItem.isNote {
-					// Return a message to delete this note
-					return lv, func() tea.Msg {
-						return LogNoteDeleteMsg{
-							LogEntryID: logItem.logEntryID,
-							NoteID:     logItem.noteID,
+				if ok {
+					if logItem.isNote {
+						// Return a message to delete this note
+						return lv, func() tea.Msg {
+							return LogNoteDeleteMsg{
+								LogEntryID: logItem.logEntryID,
+								NoteID:     logItem.noteID,
+							}
 						}
 					}
+					// If it's a log entry (not a note), don't handle it here
+					// Let it bubble up to model.go
 				}
 			}
 			return lv, nil
@@ -207,8 +222,12 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 			if selectedItem != nil {
 				logItem, ok := selectedItem.(LogEntryItem)
 				if ok && !logItem.isNote && len(logItem.entry.Notes) > 0 {
+					// Save selection state BEFORE modifying collapsed map
+					selectedLogEntryID := logItem.entry.ID
+					isCollapsing := !lv.collapsedMap[logItem.entry.ID]
+
 					// Toggle collapsed state
-					lv.collapsedMap[logItem.entry.ID] = !lv.collapsedMap[logItem.entry.ID]
+					lv.collapsedMap[logItem.entry.ID] = isCollapsing
 
 					// Rebuild items with new collapsed state
 					items := buildLogItems(lv.logEntries, lv.collapsedMap)
@@ -218,17 +237,12 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 					delegate := LogDelegate{collapsedMap: lv.collapsedMap}
 					lv.list.SetDelegate(delegate)
 
-					// If collapsing and cursor was on a note, move back to log entry
-					currentIndex := lv.list.Index()
-					if currentIndex < len(items) {
-						currentItem, ok := items[currentIndex].(LogEntryItem)
-						if ok && currentItem.isNote && lv.collapsedMap[logItem.entry.ID] {
-							// Find the log entry item index
-							for i, item := range items {
-								if li, ok := item.(LogEntryItem); ok && !li.isNote && li.entry.ID == logItem.entry.ID {
-									lv.list.Select(i)
-									break
-								}
+					// If collapsing, reposition cursor to the log entry
+					if isCollapsing {
+						for i, item := range items {
+							if li, ok := item.(LogEntryItem); ok && !li.isNote && li.entry.ID == selectedLogEntryID {
+								lv.list.Select(i)
+								break
 							}
 						}
 					}
@@ -303,4 +317,17 @@ func (lv *LogView) IsSelectedItemNote() bool {
 		return false
 	}
 	return logItem.isNote
+}
+
+// SelectedLogNote returns the currently selected log entry and note ID (if a note is selected)
+func (lv *LogView) SelectedLogNote() (logEntryID string, noteID string, ok bool) {
+	item := lv.list.SelectedItem()
+	if item == nil {
+		return "", "", false
+	}
+	logItem, itemOK := item.(LogEntryItem)
+	if !itemOK || !logItem.isNote {
+		return "", "", false
+	}
+	return logItem.logEntryID, logItem.noteID, true
 }
