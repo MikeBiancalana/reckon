@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -386,5 +387,136 @@ date: 2023-12-01
 	// Empty schedule section should result in 0 items
 	if len(journal.ScheduleItems) != 0 {
 		t.Errorf("Expected 0 schedule items for empty section, got %d", len(journal.ScheduleItems))
+	}
+}
+
+func TestExtractID(t *testing.T) {
+	tests := []struct {
+		name              string
+		text              string
+		expectedID        string
+		expectedRemaining string
+	}{
+		{
+			name:              "ID at start with text",
+			text:              "task-123 Buy groceries",
+			expectedID:        "task-123",
+			expectedRemaining: "Buy groceries",
+		},
+		{
+			name:              "ID at start with multi-word text",
+			text:              "note-001 Remember to include examples",
+			expectedID:        "note-001",
+			expectedRemaining: "Remember to include examples",
+		},
+		{
+			name:              "No ID - returns empty",
+			text:              "Just task text without ID",
+			expectedID:        "",
+			expectedRemaining: "Just task text without ID",
+		},
+		{
+			name:              "Single char before hyphen - not valid ID",
+			text:              "a-1 This has only 1 char",
+			expectedID:        "",
+			expectedRemaining: "a-1 This has only 1 char",
+		},
+		{
+			name:              "Two chars before hyphen - valid ID",
+			text:              "ab-123 Two chars before hyphen",
+			expectedID:        "ab-123",
+			expectedRemaining: "Two chars before hyphen",
+		},
+		{
+			name:              "ID with underscore in suffix",
+			text:              "task-001_foo Note with underscore",
+			expectedID:        "task-001_foo",
+			expectedRemaining: "Note with underscore",
+		},
+		{
+			name:              "ID only - no remaining text",
+			text:              "task-123",
+			expectedID:        "task-123",
+			expectedRemaining: "",
+		},
+		{
+			name:              "Note with special characters after ID",
+			text:              "note-001 [brackets] and \"quotes\"",
+			expectedID:        "note-001",
+			expectedRemaining: "[brackets] and \"quotes\"",
+		},
+		{
+			name:              "Number prefix - not valid ID",
+			text:              "123-456 Just numbers",
+			expectedID:        "",
+			expectedRemaining: "123-456 Just numbers",
+		},
+		{
+			name:              "ID without hyphen - not valid",
+			text:              "id1 id2 This is text",
+			expectedID:        "",
+			expectedRemaining: "id1 id2 This is text",
+		},
+		{
+			name:              "Empty string",
+			text:              "",
+			expectedID:        "",
+			expectedRemaining: "",
+		},
+		{
+			name:              "Whitespace only",
+			text:              "   ",
+			expectedID:        "",
+			expectedRemaining: "   ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, remaining := extractID(tt.text)
+			if id != tt.expectedID {
+				t.Errorf("extractID(%q) ID = %q, want %q", tt.text, id, tt.expectedID)
+			}
+			if remaining != tt.expectedRemaining {
+				t.Errorf("extractID(%q) remaining = %q, want %q", tt.text, remaining, tt.expectedRemaining)
+			}
+		})
+	}
+}
+
+func TestParseJournalWithVeryLongNoteText(t *testing.T) {
+	word := "word"
+	longText := strings.Repeat(word+" ", 1250)
+	longText = strings.TrimSpace(longText)
+
+	expectedLength := len(longText)
+
+	markdown := "---\ndate: 2023-12-01\n---\n\n## Log\n\n- 09:00 Started work\n  - note-1 " + longText + "\n"
+
+	journal, err := ParseJournal(markdown, "/test/journal/2023-12-01.md", time.Now())
+	if err != nil {
+		t.Fatalf("ParseJournal failed: %v", err)
+	}
+
+	if len(journal.LogEntries) != 1 {
+		t.Fatalf("Expected 1 log entry, got %d", len(journal.LogEntries))
+	}
+
+	if len(journal.LogEntries[0].Notes) != 1 {
+		t.Fatalf("Expected 1 note, got %d", len(journal.LogEntries[0].Notes))
+	}
+
+	note := journal.LogEntries[0].Notes[0]
+
+	if note.ID != "note-1" {
+		t.Errorf("Expected note ID 'note-1', got '%s'", note.ID)
+	}
+
+	if len(note.Text) != expectedLength {
+		t.Errorf("Expected note text length %d, got %d", expectedLength, len(note.Text))
+	}
+
+	if note.Text != longText {
+		t.Errorf("Note text content mismatch")
 	}
 }
