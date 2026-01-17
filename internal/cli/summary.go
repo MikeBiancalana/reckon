@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
@@ -12,6 +14,7 @@ import (
 )
 
 var weekFlag bool
+var summaryJsonFlag bool
 
 var summaryCmd = &cobra.Command{
 	Use:   "summary",
@@ -38,14 +41,21 @@ func showTodaySummary() error {
 
 	repo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
-	service := journal.NewService(repo, fileStore)
+	svc := journal.NewService(repo, fileStore)
 
-	j, err := service.GetToday()
+	j, err := svc.GetToday()
 	if err != nil {
 		return fmt.Errorf("error getting today's journal: %w", err)
 	}
 
 	summary := time.CalculateDaySummary(j)
+
+	if summaryJsonFlag {
+		if err := json.NewEncoder(os.Stdout).Encode(summary); err != nil {
+			return fmt.Errorf("failed to encode summary as JSON: %w", err)
+		}
+		return nil
+	}
 
 	fmt.Println("Time Summary for Today:")
 	fmt.Println("")
@@ -72,14 +82,14 @@ func showWeekSummary() error {
 
 	repo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
-	service := journal.NewService(repo, fileStore)
+	svc := journal.NewService(repo, fileStore)
 
 	journals := make(map[string]*journal.Journal)
 	today := stdtime.Now()
 
 	for i := 6; i >= 0; i-- {
 		date := today.AddDate(0, 0, -i).Format("2006-01-02")
-		j, err := service.GetByDate(date)
+		j, err := svc.GetByDate(date)
 		if err != nil {
 			continue
 		}
@@ -87,6 +97,13 @@ func showWeekSummary() error {
 	}
 
 	summary := time.CalculateWeekSummary(journals)
+
+	if summaryJsonFlag {
+		if err := json.NewEncoder(os.Stdout).Encode(summary); err != nil {
+			return fmt.Errorf("failed to encode summary as JSON: %w", err)
+		}
+		return nil
+	}
 
 	fmt.Println("Time Summary for the Past Week:")
 	fmt.Println("")
@@ -102,5 +119,6 @@ func showWeekSummary() error {
 
 func init() {
 	summaryCmd.Flags().BoolVarP(&weekFlag, "week", "w", false, "Show summary for the past week")
+	summaryCmd.Flags().BoolVar(&summaryJsonFlag, "json", false, "Output as JSON")
 	RootCmd.AddCommand(summaryCmd)
 }
