@@ -29,11 +29,11 @@ func ExampleDatePicker_parsing() {
 
 	// Test different date formats
 	testInputs := []string{
-		"2025-01-15",    // Absolute date
-		"t",             // Today
-		"tomorrow",      // Tomorrow
-		"+3d",           // 3 days from now
-		"mon",           // Next Monday
+		"2025-01-15", // Absolute date
+		"t",          // Today
+		"tomorrow",   // Tomorrow
+		"+3d",        // 3 days from now
+		"mon",        // Next Monday
 	}
 
 	for _, input := range testInputs {

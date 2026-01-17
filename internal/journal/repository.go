@@ -3,6 +3,7 @@ package journal
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/storage"
@@ -10,25 +11,33 @@ import (
 
 // Repository handles all database operations for journals
 type Repository struct {
-	db *storage.Database
+	db     *storage.Database
+	logger *slog.Logger
 }
 
 // NewRepository creates a new repository
-func NewRepository(db *storage.Database) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *storage.Database, logger *slog.Logger) *Repository {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Repository{db: db, logger: logger}
 }
 
 // SaveJournal saves a complete journal to the database
 // This performs a full replace operation within a transaction
 func (r *Repository) SaveJournal(j *Journal) error {
+	r.logger.Info("SaveJournal", "journal_date", j.Date, "intentions", len(j.Intentions), "log_entries", len(j.LogEntries), "wins", len(j.Wins), "schedule_items", len(j.ScheduleItems))
+
 	tx, err := r.db.BeginTx()
 	if err != nil {
+		r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "operation", "begin_transaction")
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
 	// Delete existing journal data for this date
 	if err := r.deleteJournalData(tx, j.Date); err != nil {
+		r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "operation", "delete_existing_data")
 		return err
 	}
 
@@ -38,6 +47,7 @@ func (r *Repository) SaveJournal(j *Journal) error {
 		j.Date, j.FilePath, j.LastModified.Unix(),
 	)
 	if err != nil {
+		r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "operation", "insert_journal")
 		return fmt.Errorf("failed to insert journal: %w", err)
 	}
 
@@ -50,6 +60,7 @@ func (r *Repository) SaveJournal(j *Journal) error {
 			intention.CarriedFrom, intention.Position,
 		)
 		if err != nil {
+			r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "intention_id", intention.ID)
 			return fmt.Errorf("failed to insert intention: %w", err)
 		}
 	}
@@ -63,11 +74,13 @@ func (r *Repository) SaveJournal(j *Journal) error {
 			entry.TaskID, entry.EntryType, entry.DurationMinutes, entry.Position,
 		)
 		if err != nil {
+			r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "log_entry_id", entry.ID)
 			return fmt.Errorf("failed to insert log entry: %w", err)
 		}
 
 		// Save notes for this log entry
 		if err := r.SaveLogNotes(tx, entry.ID, entry.Notes); err != nil {
+			r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "log_entry_id", entry.ID, "operation", "save_notes")
 			return err
 		}
 	}
@@ -79,6 +92,7 @@ func (r *Repository) SaveJournal(j *Journal) error {
 			win.ID, j.Date, win.Text, win.Position,
 		)
 		if err != nil {
+			r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "win_id", win.ID)
 			return fmt.Errorf("failed to insert win: %w", err)
 		}
 	}
@@ -95,15 +109,22 @@ func (r *Repository) SaveJournal(j *Journal) error {
 			item.ID, j.Date, timeStr, item.Content, item.Position,
 		)
 		if err != nil {
+			r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "schedule_item_id", item.ID)
 			return fmt.Errorf("failed to insert schedule item: %w", err)
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		r.logger.Error("SaveJournal", "error", err, "journal_date", j.Date, "operation", "commit_transaction")
+		return err
+	}
+	return nil
 }
 
 // GetJournalByDate retrieves a journal by date
 func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
+	r.logger.Debug("GetJournalByDate", "journal_date", date)
+
 	j := &Journal{
 		Date:          date,
 		Intentions:    make([]Intention, 0),
@@ -123,6 +144,7 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		return nil, nil // Journal not found
 	}
 	if err != nil {
+		r.logger.Error("GetJournalByDate", "error", err, "journal_date", date)
 		return nil, fmt.Errorf("failed to get journal: %w", err)
 	}
 
@@ -135,6 +157,7 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		date,
 	)
 	if err != nil {
+		r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "query_intentions")
 		return nil, fmt.Errorf("failed to get intentions: %w", err)
 	}
 	defer rows.Close()
@@ -145,6 +168,7 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		err := rows.Scan(&intention.ID, &intention.Text, &intention.Status,
 			&carriedFrom, &intention.Position)
 		if err != nil {
+			r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "scan_intention", "intention_id", intention.ID)
 			return nil, fmt.Errorf("failed to scan intention: %w", err)
 		}
 		if carriedFrom.Valid {
@@ -164,6 +188,7 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		date,
 	)
 	if err != nil {
+		r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "query_log_entries")
 		return nil, fmt.Errorf("failed to get log entries: %w", err)
 	}
 	defer rows.Close()
@@ -184,6 +209,7 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 			&entryType, &durationMinutes, &entryPosition,
 			&noteID, &noteText, &notePosition)
 		if err != nil {
+			r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "scan_log_entry", "entry_id", entryID)
 			return nil, fmt.Errorf("failed to scan log entry: %w", err)
 		}
 
@@ -238,6 +264,7 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		date,
 	)
 	if err != nil {
+		r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "query_wins")
 		return nil, fmt.Errorf("failed to get wins: %w", err)
 	}
 	defer rows.Close()
@@ -246,6 +273,7 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		var win Win
 		err := rows.Scan(&win.ID, &win.Text, &win.Position)
 		if err != nil {
+			r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "scan_win", "win_id", win.ID)
 			return nil, fmt.Errorf("failed to scan win: %w", err)
 		}
 		j.Wins = append(j.Wins, win)
@@ -258,6 +286,7 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		date,
 	)
 	if err != nil {
+		r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "query_schedule_items")
 		return nil, fmt.Errorf("failed to get schedule items: %w", err)
 	}
 	defer rows.Close()
@@ -268,12 +297,14 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 
 		err := rows.Scan(&item.ID, &timeStr, &item.Content, &item.Position)
 		if err != nil {
+			r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "scan_schedule_item", "item_id", item.ID)
 			return nil, fmt.Errorf("failed to scan schedule item: %w", err)
 		}
 
 		if timeStr != "" {
 			parsedTime, err := time.Parse(time.RFC3339, timeStr)
 			if err != nil {
+				r.logger.Error("GetJournalByDate", "error", err, "journal_date", date, "operation", "parse_schedule_time", "item_id", item.ID)
 				return nil, fmt.Errorf("failed to parse schedule item time for item %s: %w", item.ID, err)
 			}
 			item.Time = parsedTime
@@ -282,22 +313,31 @@ func (r *Repository) GetJournalByDate(date string) (*Journal, error) {
 		j.ScheduleItems = append(j.ScheduleItems, item)
 	}
 
+	r.logger.Debug("GetJournalByDate", "journal_date", date, "intentions", len(j.Intentions), "log_entries", len(j.LogEntries), "wins", len(j.Wins), "schedule_items", len(j.ScheduleItems))
 	return j, nil
 }
 
 // DeleteJournal deletes a journal and all its associated data
 func (r *Repository) DeleteJournal(date string) error {
+	r.logger.Info("DeleteJournal", "journal_date", date)
+
 	tx, err := r.db.BeginTx()
 	if err != nil {
+		r.logger.Error("DeleteJournal", "error", err, "journal_date", date, "operation", "begin_transaction")
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
 	if err := r.deleteJournalData(tx, date); err != nil {
+		r.logger.Error("DeleteJournal", "error", err, "journal_date", date, "operation", "delete_journal_data")
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		r.logger.Error("DeleteJournal", "error", err, "journal_date", date, "operation", "commit_transaction")
+		return err
+	}
+	return nil
 }
 
 // deleteJournalData deletes all data for a journal within a transaction
@@ -445,8 +485,11 @@ func (r *Repository) GetLogNotes(logEntryID string) ([]LogNote, error) {
 
 // ClearAllData deletes all data from the database (for rebuild)
 func (r *Repository) ClearAllData() error {
+	r.logger.Info("ClearAllData", "operation", "start")
+
 	tx, err := r.db.BeginTx()
 	if err != nil {
+		r.logger.Error("ClearAllData", "error", err, "operation", "begin_transaction")
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
@@ -454,9 +497,16 @@ func (r *Repository) ClearAllData() error {
 	tables := []string{"intentions", "log_notes", "log_entries", "wins", "schedule_items", "journals"}
 	for _, table := range tables {
 		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s", table)); err != nil {
+			r.logger.Error("ClearAllData", "error", err, "operation", "delete_table", "table", table)
 			return fmt.Errorf("failed to clear %s: %w", table, err)
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		r.logger.Error("ClearAllData", "error", err, "operation", "commit_transaction")
+		return err
+	}
+
+	r.logger.Info("ClearAllData", "operation", "complete")
+	return nil
 }

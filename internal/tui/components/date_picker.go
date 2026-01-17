@@ -171,9 +171,9 @@ func (dp *DatePicker) View() string {
 
 	// Preview or error
 	if dp.error != "" {
-		content += datePickerErrorStyle.Render("✗ " + dp.error) + "\n"
+		content += datePickerErrorStyle.Render("✗ "+dp.error) + "\n"
 	} else if dp.preview != "" {
-		content += datePickerPreviewStyle.Render("→ " + dp.preview) + "\n"
+		content += datePickerPreviewStyle.Render("→ "+dp.preview) + "\n"
 	} else {
 		content += "\n"
 	}

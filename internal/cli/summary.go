@@ -36,9 +36,9 @@ func showTodaySummary() error {
 		return fmt.Errorf("error opening database: %w", err)
 	}
 
-	repo := journal.NewRepository(db)
+	repo := journal.NewRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	service := journal.NewService(repo, fileStore)
+	service := journal.NewService(repo, fileStore, nil)
 
 	j, err := service.GetToday()
 	if err != nil {
@@ -70,9 +70,9 @@ func showWeekSummary() error {
 		return fmt.Errorf("error opening database: %w", err)
 	}
 
-	repo := journal.NewRepository(db)
+	repo := journal.NewRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	service := journal.NewService(repo, fileStore)
+	service := journal.NewService(repo, fileStore, nil)
 
 	journals := make(map[string]*journal.Journal)
 	today := stdtime.Now()

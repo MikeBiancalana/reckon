@@ -62,13 +62,13 @@ func initService() {
 		os.Exit(1)
 	}
 
-	repo := journal.NewRepository(db)
+	repo := journal.NewRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	service = journal.NewService(repo, fileStore)
+	service = journal.NewService(repo, fileStore, nil)
 
 	// Initialize journal task service
-	journalTaskRepo := journal.NewTaskRepository(db)
-	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
+	journalTaskRepo := journal.NewTaskRepository(db, nil)
+	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore, nil)
 }
 
 // Execute runs the root command

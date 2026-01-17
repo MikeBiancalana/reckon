@@ -44,9 +44,9 @@ func TestJournalCRUD(t *testing.T) {
 	defer db.Close()
 
 	// Create services
-	journalRepo := journal.NewRepository(db)
+	journalRepo := journal.NewRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	journalSvc := journal.NewService(journalRepo, fileStore)
+	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
 	// Test creating and retrieving a journal
 	testDate := "2023-12-25"
@@ -169,9 +169,9 @@ func TestBackwardCompatibility(t *testing.T) {
 	}
 	defer db.Close()
 
-	journalRepo := journal.NewRepository(db)
+	journalRepo := journal.NewRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	journalSvc := journal.NewService(journalRepo, fileStore)
+	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
 	// Create an "old format" journal file (without Schedule section)
 	oldJournalContent := `---
@@ -281,9 +281,9 @@ func TestScheduleAdditionToOldJournals(t *testing.T) {
 	}
 	defer db.Close()
 
-	journalRepo := journal.NewRepository(db)
+	journalRepo := journal.NewRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	journalSvc := journal.NewService(journalRepo, fileStore)
+	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
 	// Create an old format journal
 	oldJournalContent := `---
@@ -384,9 +384,9 @@ func TestJournalTaskServiceIntegration(t *testing.T) {
 	}
 	defer db.Close()
 
-	taskRepo := journal.NewTaskRepository(db)
+	taskRepo := journal.NewTaskRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	journalTaskSvc := journal.NewTaskService(taskRepo, fileStore)
+	journalTaskSvc := journal.NewTaskService(taskRepo, fileStore, nil)
 
 	// Create individual task files
 	task1Content := `---
@@ -607,9 +607,9 @@ func TestEdgeCases(t *testing.T) {
 	}
 	defer db.Close()
 
-	journalRepo := journal.NewRepository(db)
+	journalRepo := journal.NewRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	journalSvc := journal.NewService(journalRepo, fileStore)
+	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
 	// Test journal with very long content
 	longText := strings.Repeat("This is a very long line of text that should test the parser's ability to handle extended content. ", 19) + "This is a very long line of text that should test the parser's ability to handle extended content."
@@ -742,9 +742,9 @@ func TestLogNotePersistence(t *testing.T) {
 	}
 	defer db.Close()
 
-	journalRepo := journal.NewRepository(db)
+	journalRepo := journal.NewRepository(db, nil)
 	fileStore := storage.NewFileStore()
-	journalSvc := journal.NewService(journalRepo, fileStore)
+	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
 	// Create a journal with a log entry
 	testDate := "2024-06-15"

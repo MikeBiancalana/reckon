@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/storage"
@@ -11,12 +12,16 @@ import (
 
 // TaskRepository handles database operations for tasks
 type TaskRepository struct {
-	db *storage.Database
+	db     *storage.Database
+	logger *slog.Logger
 }
 
 // NewTaskRepository creates a new task repository
-func NewTaskRepository(db *storage.Database) *TaskRepository {
-	return &TaskRepository{db: db}
+func NewTaskRepository(db *storage.Database, logger *slog.Logger) *TaskRepository {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &TaskRepository{db: db, logger: logger}
 }
 
 // SaveTask saves a task and its notes to the database
@@ -63,8 +68,11 @@ func (r *TaskRepository) SaveTask(task *Task) error {
 // SaveTasks saves multiple tasks in a single transaction
 // This is a bulk operation for efficiency
 func (r *TaskRepository) SaveTasks(tasks []Task) error {
+	r.logger.Info("SaveTasks", "task_count", len(tasks))
+
 	tx, err := r.db.BeginTx()
 	if err != nil {
+		r.logger.Error("SaveTasks", "error", err, "operation", "begin_transaction")
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
@@ -79,12 +87,14 @@ func (r *TaskRepository) SaveTasks(tasks []Task) error {
 			VALUES (?, ?, ?, ?, ?, ?)
 		`, task.ID, task.Text, task.Status, string(tagsJSON), task.Position, task.CreatedAt.Unix())
 		if err != nil {
+			r.logger.Error("SaveTasks", "error", err, "task_id", task.ID)
 			return fmt.Errorf("failed to save task %s: %w", task.ID, err)
 		}
 
 		// Delete existing notes for this task
 		_, err = tx.Exec("DELETE FROM task_notes WHERE task_id = ?", task.ID)
 		if err != nil {
+			r.logger.Error("SaveTasks", "error", err, "task_id", task.ID, "operation", "delete_notes")
 			return fmt.Errorf("failed to delete old notes for task %s: %w", task.ID, err)
 		}
 
@@ -95,17 +105,24 @@ func (r *TaskRepository) SaveTasks(tasks []Task) error {
 				VALUES (?, ?, ?, ?)
 			`, note.ID, task.ID, note.Text, note.Position)
 			if err != nil {
+				r.logger.Error("SaveTasks", "error", err, "task_id", task.ID, "note_id", note.ID)
 				return fmt.Errorf("failed to save note %s for task %s: %w", note.ID, task.ID, err)
 			}
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		r.logger.Error("SaveTasks", "error", err, "operation", "commit_transaction")
+		return err
+	}
+	return nil
 }
 
 // GetAllTasks retrieves all tasks with their notes
 // Tasks and notes are sorted by position
 func (r *TaskRepository) GetAllTasks() ([]Task, error) {
+	r.logger.Debug("GetAllTasks", "operation", "start")
+
 	// Use LEFT JOIN to get tasks and notes in a single query
 	rows, err := r.db.DB().Query(`
 		SELECT
@@ -116,6 +133,7 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 		ORDER BY t.position, n.position
 	`)
 	if err != nil {
+		r.logger.Error("GetAllTasks", "error", err, "operation", "query_tasks")
 		return nil, fmt.Errorf("failed to query tasks: %w", err)
 	}
 	defer rows.Close()
@@ -136,6 +154,7 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 			&noteID, &noteText, &notePosition,
 		)
 		if err != nil {
+			r.logger.Error("GetAllTasks", "error", err, "operation", "scan_row", "task_id", taskID)
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
 
@@ -175,6 +194,7 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 		tasks = append(tasks, *tasksMap[id])
 	}
 
+	r.logger.Debug("GetAllTasks", "operation", "complete", "total_tasks", len(tasks))
 	return tasks, nil
 }
 
@@ -211,8 +231,11 @@ func (r *TaskRepository) GetTaskByID(id string) (*Task, error) {
 // DeleteTask deletes a task and its notes from the database
 // Notes are automatically deleted by CASCADE
 func (r *TaskRepository) DeleteTask(id string) error {
+	r.logger.Info("DeleteTask", "task_id", id)
+
 	_, err := r.db.DB().Exec("DELETE FROM tasks WHERE id = ?", id)
 	if err != nil {
+		r.logger.Error("DeleteTask", "error", err, "task_id", id)
 		return fmt.Errorf("failed to delete task: %w", err)
 	}
 	return nil
