@@ -104,11 +104,30 @@ func (wv *WinsView) SetFocused(focused bool) {
 
 // UpdateWins updates the list with new wins
 func (wv *WinsView) UpdateWins(wins []journal.Win) {
+	// Preserve cursor position by finding the currently selected win ID
+	selectedItem := wv.list.SelectedItem()
+	var selectedWinID string
+	if selectedItem != nil {
+		if winItem, ok := selectedItem.(WinItem); ok {
+			selectedWinID = winItem.win.ID
+		}
+	}
+
 	items := make([]list.Item, len(wins))
 	for i, win := range wins {
 		items[i] = WinItem{win}
 	}
 	wv.list.SetItems(items)
+
+	// Restore cursor to the previously selected win
+	if selectedWinID != "" {
+		for i, item := range items {
+			if winItem, ok := item.(WinItem); ok && winItem.win.ID == selectedWinID {
+				wv.list.Select(i)
+				break
+			}
+		}
+	}
 }
 
 // SelectedWin returns the currently selected win

@@ -67,6 +67,19 @@ date: 2023-12-01
 			inLog = true
 		}
 		if inLog {
+			// Mask generated IDs in log entry lines (format: "- HH:MM <ID> <content>")
+			if len(line) > 2 && line[0:2] == "- " {
+				// This is a log entry line
+				parts := splitOnce(line[2:], " ") // Split after "- "
+				if len(parts) == 2 {
+					// parts[0] is the timestamp, parts[1] is "<ID> <content>"
+					restParts := splitOnce(parts[1], " ") // Split "<ID> <content>"
+					if len(restParts) == 2 && len(restParts[0]) > 15 {
+						// Mask the ID
+						line = "- " + parts[0] + " " + restParts[1]
+					}
+				}
+			}
 			// Mask generated IDs in note lines
 			if len(line) > 4 && line[0:4] == "  - " {
 				// This is a note line - check if it has a long ID
