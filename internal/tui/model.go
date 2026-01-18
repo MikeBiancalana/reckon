@@ -7,6 +7,7 @@ import (
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/logger"
+	"github.com/MikeBiancalana/reckon/internal/perf"
 	"github.com/MikeBiancalana/reckon/internal/sync"
 	"github.com/MikeBiancalana/reckon/internal/time"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
@@ -179,6 +180,9 @@ func (m *Model) Init() tea.Cmd {
 // loadJournal loads the journal for the current date
 func (m *Model) loadJournal() tea.Cmd {
 	return func() tea.Msg {
+		timer := perf.NewTimer("tui.loadJournal", nil, 100)
+		defer timer.Stop()
+
 		logger.Debug("tui: loading journal", "date", m.currentDate)
 		j, err := m.service.GetByDate(m.currentDate)
 		if err != nil {
@@ -1179,6 +1183,9 @@ type logNoteDeletedMsg struct{}
 // loadTasks loads all tasks from the task service
 func (m *Model) loadTasks() tea.Cmd {
 	return func() tea.Msg {
+		timer := perf.NewTimer("tui.loadTasks", nil, 100)
+		defer timer.Stop()
+
 		if m.taskService == nil {
 			return errMsg{fmt.Errorf("task service not available")}
 		}

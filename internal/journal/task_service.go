@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
+	"github.com/MikeBiancalana/reckon/internal/perf"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/rs/xid"
 	"gopkg.in/yaml.v3"
@@ -42,6 +43,9 @@ func NewTaskService(repo *TaskRepository, store *storage.FileStore, logger *slog
 // GetAllTasks loads tasks from individual task files (source of truth)
 // The files are the authoritative source; DB is just an index/cache
 func (s *TaskService) GetAllTasks() ([]Task, error) {
+	timer := perf.NewTimer("TaskService.GetAllTasks", s.logger, 100)
+	defer timer.Stop()
+
 	s.logger.Info("GetAllTasks", "operation", "start")
 
 	// Get tasks directory

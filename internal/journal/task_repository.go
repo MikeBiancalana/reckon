@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/MikeBiancalana/reckon/internal/perf"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 )
 
@@ -129,6 +130,9 @@ func (r *TaskRepository) SaveTasks(tasks []Task) error {
 // GetAllTasks retrieves all tasks with their notes
 // Tasks and notes are sorted by position
 func (r *TaskRepository) GetAllTasks() ([]Task, error) {
+	timer := perf.NewTimer("TaskRepository.GetAllTasks", r.logger, 50)
+	defer timer.Stop()
+
 	r.logger.Debug("GetAllTasks", "operation", "start")
 
 	// Use LEFT JOIN to get tasks and notes in a single query
