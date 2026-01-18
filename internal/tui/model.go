@@ -6,6 +6,7 @@ import (
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/MikeBiancalana/reckon/internal/sync"
 	"github.com/MikeBiancalana/reckon/internal/time"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
@@ -178,10 +179,13 @@ func (m *Model) Init() tea.Cmd {
 // loadJournal loads the journal for the current date
 func (m *Model) loadJournal() tea.Cmd {
 	return func() tea.Msg {
+		logger.Debug("tui: loading journal", "date", m.currentDate)
 		j, err := m.service.GetByDate(m.currentDate)
 		if err != nil {
+			logger.Debug("tui: failed to load journal", "date", m.currentDate, "error", err)
 			return errMsg{err}
 		}
+		logger.Debug("tui: journal loaded successfully", "date", m.currentDate)
 		return journalLoadedMsg{*j}
 	}
 }
@@ -220,6 +224,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case journalLoadedMsg:
+		logger.Debug("tui: handling journalLoadedMsg", "date", msg.journal.Date, "intentions", len(msg.journal.Intentions), "wins", len(msg.journal.Wins), "logs", len(msg.journal.LogEntries))
 		m.currentJournal = &msg.journal
 
 		// Update or create IntentionList
@@ -271,6 +276,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tasksLoadedMsg:
 		// New journal tasks loaded, update task list
+		logger.Debug("tui: handling tasksLoadedMsg", "taskCount", len(msg.tasks))
 		m.tasks = msg.tasks
 		if m.taskList != nil {
 			m.taskList.UpdateTasks(msg.tasks)
@@ -282,6 +288,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case components.TaskToggleMsg:
 		// Task toggled, update in service
+		logger.Debug("tui: handling TaskToggleMsg", "taskID", msg.TaskID)
 		if m.taskService != nil {
 			return m, m.toggleTask(msg.TaskID)
 		}
@@ -316,6 +323,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case components.LogNoteDeleteMsg:
 		// Confirm deletion of log note
+		logger.Debug("tui: entering confirm mode for log note deletion", "logEntryID", msg.LogEntryID, "noteID", msg.NoteID)
 		m.confirmMode = true
 		m.confirmItemType = "log_note"
 		m.confirmItemID = msg.NoteID
@@ -394,6 +402,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.deleteItem()
 			case "n", "N", "esc":
 				// Cancel deletion
+				logger.Debug("tui: cancelled deletion in confirm mode", "itemType", m.confirmItemType)
 				m.confirmMode = false
 				m.confirmItemType = ""
 				m.confirmItemID = ""
@@ -452,10 +461,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "N":
 			// Toggle notes pane visibility
 			m.notesPaneVisible = !m.notesPaneVisible
+			logger.Debug("tui: toggled notes pane visibility", "visible", m.notesPaneVisible)
 			return m, nil
 		case "tab":
 			// Cycle sections
+			oldSection := m.focusedSection
 			m.focusedSection = (m.focusedSection + 1) % SectionCount
+			logger.Debug("tui: section changed", "oldSection", sectionName(oldSection), "newSection", sectionName(m.focusedSection))
 			if m.statusBar != nil {
 				m.statusBar.SetSection(sectionName(m.focusedSection))
 			}
@@ -509,6 +521,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "?":
 			m.helpMode = !m.helpMode
+			logger.Debug("tui: toggled help mode", "helpMode", m.helpMode)
 			return m, nil
 		case "s":
 			// Toggle time summary view
@@ -560,6 +573,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.intentionList != nil {
 					intention := m.intentionList.SelectedIntention()
 					if intention != nil {
+						logger.Debug("tui: entering confirm mode for intention deletion", "intentionID", intention.ID)
 						m.confirmMode = true
 						m.confirmItemType = "intention"
 						m.confirmItemID = intention.ID
@@ -569,6 +583,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.winsView != nil {
 					win := m.winsView.SelectedWin()
 					if win != nil {
+						logger.Debug("tui: entering confirm mode for win deletion", "winID", win.ID)
 						m.confirmMode = true
 						m.confirmItemType = "win"
 						m.confirmItemID = win.ID
@@ -586,6 +601,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Otherwise, it's a log entry
 					entry := m.logView.SelectedLogEntry()
 					if entry != nil {
+						logger.Debug("tui: entering confirm mode for log entry deletion", "logEntryID", entry.ID)
 						m.confirmMode = true
 						m.confirmItemType = "log"
 						m.confirmItemID = entry.ID
@@ -1030,8 +1046,10 @@ func (m *Model) prevDay() tea.Cmd {
 		m.currentDate = stdtime.Now().Format("2006-01-02")
 		return m.loadJournal()
 	}
+	oldDate := m.currentDate
 	newDate := date.AddDate(0, 0, -1).Format("2006-01-02")
 	m.currentDate = newDate
+	logger.Debug("tui: navigating to previous day", "oldDate", oldDate, "newDate", newDate)
 	return m.loadJournal()
 }
 
@@ -1050,7 +1068,9 @@ func (m *Model) nextDay() tea.Cmd {
 		return nil
 	}
 
+	oldDate := m.currentDate
 	m.currentDate = newDate
+	logger.Debug("tui: navigating to next day", "oldDate", oldDate, "newDate", newDate)
 	return m.loadJournal()
 }
 
@@ -1061,10 +1081,13 @@ func (m *Model) jumpToToday() tea.Cmd {
 
 func (m *Model) toggleIntention(intentionID string) tea.Cmd {
 	return func() tea.Msg {
+		logger.Debug("tui: toggling intention", "intentionID", intentionID)
 		err := m.service.ToggleIntention(m.currentJournal, intentionID)
 		if err != nil {
+			logger.Debug("tui: failed to toggle intention", "intentionID", intentionID, "error", err)
 			return errMsg{err}
 		}
+		logger.Debug("tui: intention toggled successfully", "intentionID", intentionID)
 		return journalUpdatedMsg{}
 	}
 }
