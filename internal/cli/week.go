@@ -20,11 +20,15 @@ var weekCmd = &cobra.Command{
 			return fmt.Errorf("journal service not initialized")
 		}
 
+		effectiveDate, err := getEffectiveDate()
+		if err != nil {
+			return err
+		}
+
 		if jsonFlag {
 			var journals []*journal.Journal
-			var err error
 			if dateFlag != "" {
-				journals, err = service.GetWeekJournalsFromDate(dateFlag)
+				journals, err = service.GetWeekJournalsFromDate(effectiveDate)
 			} else {
 				journals, err = service.GetWeekJournals()
 			}
@@ -38,9 +42,8 @@ var weekCmd = &cobra.Command{
 		}
 
 		var content string
-		var err error
 		if dateFlag != "" {
-			content, err = service.GetWeekContentFromDate(dateFlag)
+			content, err = service.GetWeekContentFromDate(effectiveDate)
 		} else {
 			content, err = service.GetWeekContent()
 		}

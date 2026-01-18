@@ -19,7 +19,10 @@ var todayCmd = &cobra.Command{
 			return fmt.Errorf("journal service not initialized")
 		}
 
-		today := getEffectiveDate()
+		today, err := getEffectiveDate()
+		if err != nil {
+			return err
+		}
 
 		if todayJsonFlag {
 			j, err := service.GetByDate(today)

@@ -78,11 +78,14 @@ func initService() {
 }
 
 // getEffectiveDate returns the date to operate on, either from --date flag or today
-func getEffectiveDate() string {
+func getEffectiveDate() (string, error) {
 	if dateFlag != "" {
-		return dateFlag
+		if _, err := time.Parse("2006-01-02", dateFlag); err != nil {
+			return "", fmt.Errorf("invalid date format: %s (expected YYYY-MM-DD)", dateFlag)
+		}
+		return dateFlag, nil
 	}
-	return time.Now().Format("2006-01-02")
+	return time.Now().Format("2006-01-02"), nil
 }
 
 // Execute runs the root command

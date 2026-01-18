@@ -42,9 +42,14 @@ var scheduleAddCmd = &cobra.Command{
 		}
 
 		// Get the journal for the effective date
-		j, err := service.GetByDate(getEffectiveDate())
+		effectiveDate, err := getEffectiveDate()
 		if err != nil {
-			return fmt.Errorf("failed to get journal for %s: %w", getEffectiveDate(), err)
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
 		// Add schedule item
@@ -72,9 +77,14 @@ var scheduleListCmd = &cobra.Command{
 		}
 
 		// Get the journal for the effective date
-		j, err := service.GetByDate(getEffectiveDate())
+		effectiveDate, err := getEffectiveDate()
 		if err != nil {
-			return fmt.Errorf("failed to get journal for %s: %w", getEffectiveDate(), err)
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
 		if scheduleJsonFlag {
@@ -85,11 +95,11 @@ var scheduleListCmd = &cobra.Command{
 		}
 
 		if len(j.ScheduleItems) == 0 {
-			fmt.Printf("No schedule items for %s\n", getEffectiveDate())
+			fmt.Printf("No schedule items for %s\n", effectiveDate)
 			return nil
 		}
 
-		fmt.Printf("Schedule for %s:\n\n", getEffectiveDate())
+		fmt.Printf("Schedule for %s:\n\n", effectiveDate)
 		for i, item := range j.ScheduleItems {
 			if !item.Time.IsZero() {
 				fmt.Printf("[%d] %s: %s\n", i+1, item.Time.Format("15:04"), item.Content)
@@ -120,9 +130,14 @@ var scheduleDeleteCmd = &cobra.Command{
 		}
 
 		// Get the journal for the effective date
-		j, err := service.GetByDate(getEffectiveDate())
+		effectiveDate, err := getEffectiveDate()
 		if err != nil {
-			return fmt.Errorf("failed to get journal for %s: %w", getEffectiveDate(), err)
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
 		if index > len(j.ScheduleItems) {

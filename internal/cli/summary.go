@@ -6,9 +6,7 @@ import (
 	"os"
 	stdtime "time"
 
-	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
-	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/MikeBiancalana/reckon/internal/time"
 	"github.com/spf13/cobra"
 )
@@ -29,23 +27,14 @@ var summaryCmd = &cobra.Command{
 }
 
 func showTodaySummary() error {
-	dbPath, err := config.DatabasePath()
+	effectiveDate, err := getEffectiveDate()
 	if err != nil {
-		return fmt.Errorf("error getting database path: %w", err)
+		return err
 	}
 
-	db, err := storage.NewDatabase(dbPath)
+	j, err := service.GetByDate(effectiveDate)
 	if err != nil {
-		return fmt.Errorf("error opening database: %w", err)
-	}
-
-	repo := journal.NewRepository(db, nil)
-	fileStore := storage.NewFileStore()
-	service := journal.NewService(repo, fileStore, nil)
-
-	j, err := service.GetToday()
-	if err != nil {
-		return fmt.Errorf("error getting today's journal: %w", err)
+		return fmt.Errorf("error getting journal for %s: %w", effectiveDate, err)
 	}
 
 	summary := time.CalculateDaySummary(j)
@@ -57,7 +46,11 @@ func showTodaySummary() error {
 		return nil
 	}
 
-	fmt.Println("Time Summary for Today:")
+	if dateFlag != "" {
+		fmt.Printf("Time Summary for %s:\n", effectiveDate)
+	} else {
+		fmt.Println("Time Summary for Today:")
+	}
 	fmt.Println("")
 	fmt.Printf("  Meetings:   %s\n", summary.MeetingsFormatted())
 	fmt.Printf("  Tasks:      %s\n", summary.TasksFormatted())
@@ -70,25 +63,22 @@ func showTodaySummary() error {
 }
 
 func showWeekSummary() error {
-	dbPath, err := config.DatabasePath()
+	effectiveDate, err := getEffectiveDate()
 	if err != nil {
-		return fmt.Errorf("error getting database path: %w", err)
+		return err
 	}
-
-	db, err := storage.NewDatabase(dbPath)
-	if err != nil {
-		return fmt.Errorf("error opening database: %w", err)
-	}
-
-	repo := journal.NewRepository(db, nil)
-	fileStore := storage.NewFileStore()
-	service := journal.NewService(repo, fileStore, nil)
 
 	journals := make(map[string]*journal.Journal)
-	today := stdtime.Now()
+	start := stdtime.Now()
+	if dateFlag != "" {
+		start, err = stdtime.Parse("2006-01-02", effectiveDate)
+		if err != nil {
+			return fmt.Errorf("invalid effective date: %w", err)
+		}
+	}
 
 	for i := 6; i >= 0; i-- {
-		date := today.AddDate(0, 0, -i).Format("2006-01-02")
+		date := start.AddDate(0, 0, -i).Format("2006-01-02")
 		j, err := service.GetByDate(date)
 		if err != nil {
 			continue
@@ -105,7 +95,11 @@ func showWeekSummary() error {
 		return nil
 	}
 
-	fmt.Println("Time Summary for the Past Week:")
+	if dateFlag != "" {
+		fmt.Printf("Time Summary for the Week of %s:\n", effectiveDate)
+	} else {
+		fmt.Println("Time Summary for the Past Week:")
+	}
 	fmt.Println("")
 	fmt.Printf("  Meetings:   %s\n", summary.MeetingsFormatted())
 	fmt.Printf("  Tasks:      %s\n", summary.TasksFormatted())
