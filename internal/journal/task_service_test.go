@@ -169,7 +169,10 @@ func TestAddTask(t *testing.T) {
 
 	// Verify the task file exists in tasks directory
 	tasksDir := filepath.Join(tmpDir, "tasks")
-	taskFile := filepath.Join(tasksDir, tasks[0].ID+".md")
+	files, err := os.ReadDir(tasksDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	taskFile := filepath.Join(tasksDir, files[0].Name())
 	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "New task to complete")
@@ -222,7 +225,10 @@ func TestToggleTask_OpenToDone(t *testing.T) {
 
 	// Verify file was updated
 	tasksDir := filepath.Join(tmpDir, "tasks")
-	taskFile := filepath.Join(tasksDir, "task-1.md")
+	files, err := os.ReadDir(tasksDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	taskFile := filepath.Join(tasksDir, files[0].Name())
 	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "status: done")
@@ -247,7 +253,10 @@ func TestToggleTask_DoneToOpen(t *testing.T) {
 
 	// Verify file was updated
 	tasksDir := filepath.Join(tmpDir, "tasks")
-	taskFile := filepath.Join(tasksDir, "task-1.md")
+	files, err := os.ReadDir(tasksDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	taskFile := filepath.Join(tasksDir, files[0].Name())
 	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "status: open")
@@ -283,7 +292,10 @@ func TestAddTaskNote(t *testing.T) {
 
 	// Verify file was updated
 	tasksDir := filepath.Join(tmpDir, "tasks")
-	taskFile := filepath.Join(tasksDir, "task-1.md")
+	files, err := os.ReadDir(tasksDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	taskFile := filepath.Join(tasksDir, files[0].Name())
 	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "This is a note")
@@ -360,7 +372,10 @@ func TestService_DeleteTaskNote(t *testing.T) {
 
 	// Verify file was updated
 	tasksDir := filepath.Join(tmpDir, "tasks")
-	taskFile := filepath.Join(tasksDir, "task-1.md")
+	files, err := os.ReadDir(tasksDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	taskFile := filepath.Join(tasksDir, files[0].Name())
 	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "First note")
@@ -402,10 +417,12 @@ func TestSave_UpdatesBothFileAndDB(t *testing.T) {
 	tasks, err := service.GetAllTasks()
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
-	taskID := tasks[0].ID
 
 	tasksDir := filepath.Join(tmpDir, "tasks")
-	taskFile := filepath.Join(tasksDir, taskID+".md")
+	files, err := os.ReadDir(tasksDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	taskFile := filepath.Join(tasksDir, files[0].Name())
 	content, err := os.ReadFile(taskFile)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "Test task")
