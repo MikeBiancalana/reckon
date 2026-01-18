@@ -1,12 +1,16 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+var scheduleJsonFlag bool
 
 var scheduleCmd = &cobra.Command{
 	Use:   "schedule",
@@ -73,6 +77,13 @@ var scheduleListCmd = &cobra.Command{
 			return fmt.Errorf("failed to get today's journal: %w", err)
 		}
 
+		if scheduleJsonFlag {
+			if err := json.NewEncoder(os.Stdout).Encode(j.ScheduleItems); err != nil {
+				return fmt.Errorf("failed to encode schedule items as JSON: %w", err)
+			}
+			return nil
+		}
+
 		if len(j.ScheduleItems) == 0 {
 			fmt.Println("No schedule items for today")
 			return nil
@@ -136,6 +147,9 @@ func init() {
 	scheduleCmd.AddCommand(scheduleAddCmd)
 	scheduleCmd.AddCommand(scheduleListCmd)
 	scheduleCmd.AddCommand(scheduleDeleteCmd)
+
+	// Flags
+	scheduleListCmd.Flags().BoolVar(&scheduleJsonFlag, "json", false, "Output as JSON")
 }
 
 // GetScheduleCommand returns the schedule command
