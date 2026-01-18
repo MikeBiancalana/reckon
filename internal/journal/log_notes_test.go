@@ -194,11 +194,13 @@ date: 2023-12-01
 			expectEntries: 1,
 			expectNotes:   []int{1},
 			checkNote: func(t *testing.T, entry LogEntry, noteIdx int) {
-				if entry.Notes[0].ID != "note-1" {
-					t.Errorf("Expected note ID 'note-1', got '%s'", entry.Notes[0].ID)
+				// IDs are now generated, not extracted from markdown
+				// The "note-1" prefix becomes part of the text
+				if entry.Notes[0].ID == "" {
+					t.Error("Expected generated ID, got empty string")
 				}
-				if entry.Notes[0].Text != "First note" {
-					t.Errorf("Expected note text 'First note', got '%s'", entry.Notes[0].Text)
+				if entry.Notes[0].Text != "note-1 First note" {
+					t.Errorf("Expected note text 'note-1 First note', got '%s'", entry.Notes[0].Text)
 				}
 			},
 		},
@@ -244,11 +246,12 @@ date: 2023-12-01
 				if len(entry.Notes) != 3 {
 					t.Fatalf("Expected 3 notes, got %d", len(entry.Notes))
 				}
-				if entry.Notes[0].ID != "note-1" {
-					t.Errorf("Expected first note ID 'note-1', got '%s'", entry.Notes[0].ID)
+				// All IDs are now generated, the "ID prefix" becomes part of text
+				if entry.Notes[0].ID == "" {
+					t.Error("Expected generated ID for first note")
 				}
-				if entry.Notes[0].Text != "First note" {
-					t.Errorf("Expected first note text 'First note', got '%s'", entry.Notes[0].Text)
+				if entry.Notes[0].Text != "note-1 First note" {
+					t.Errorf("Expected first note text 'note-1 First note', got '%s'", entry.Notes[0].Text)
 				}
 				if entry.Notes[1].ID == "" {
 					t.Error("Expected generated ID for second note")
@@ -256,11 +259,11 @@ date: 2023-12-01
 				if entry.Notes[1].Text != "Second note without ID" {
 					t.Errorf("Expected second note text 'Second note without ID', got '%s'", entry.Notes[1].Text)
 				}
-				if entry.Notes[2].ID != "note-3" {
-					t.Errorf("Expected third note ID 'note-3', got '%s'", entry.Notes[2].ID)
+				if entry.Notes[2].ID == "" {
+					t.Error("Expected generated ID for third note")
 				}
-				if entry.Notes[2].Text != "Third note" {
-					t.Errorf("Expected third note text 'Third note', got '%s'", entry.Notes[2].Text)
+				if entry.Notes[2].Text != "note-3 Third note" {
+					t.Errorf("Expected third note text 'note-3 Third note', got '%s'", entry.Notes[2].Text)
 				}
 			},
 		},
@@ -298,8 +301,9 @@ date: 2023-12-01
 			expectEntries: 1,
 			expectNotes:   []int{1},
 			checkNote: func(t *testing.T, entry LogEntry, noteIdx int) {
-				if entry.Notes[0].Text != "Note with 3 spaces" {
-					t.Errorf("Expected note text 'Note with 3 spaces', got '%s'", entry.Notes[0].Text)
+				// Note: the "note-1" prefix is now part of the text
+				if entry.Notes[0].Text != "note-1 Note with 3 spaces" {
+					t.Errorf("Expected note text 'note-1 Note with 3 spaces', got '%s'", entry.Notes[0].Text)
 				}
 			},
 		},
@@ -317,8 +321,9 @@ date: 2023-12-01
 			expectEntries: 1,
 			expectNotes:   []int{1},
 			checkNote: func(t *testing.T, entry LogEntry, noteIdx int) {
-				if entry.Notes[0].Text != "Note with tab" {
-					t.Errorf("Expected note text 'Note with tab', got '%s'", entry.Notes[0].Text)
+				// Note: the "note-1" prefix is now part of the text
+				if entry.Notes[0].Text != "note-1 Note with tab" {
+					t.Errorf("Expected note text 'note-1 Note with tab', got '%s'", entry.Notes[0].Text)
 				}
 			},
 		},
@@ -443,7 +448,7 @@ date: 2023-12-01
 			},
 		},
 		{
-			name: "note with only ID is skipped",
+			name: "note with only ID is NOT skipped (ID becomes text)",
 			markdown: `---
 date: 2023-12-01
 ---
@@ -458,9 +463,10 @@ date: 2023-12-01
 				if len(journal.LogEntries) != 1 {
 					t.Fatalf("Expected 1 log entry, got %d", len(journal.LogEntries))
 				}
-				// Notes with empty text should be skipped
-				if len(journal.LogEntries[0].Notes) != 0 {
-					t.Errorf("Expected 0 notes (empty text notes should be skipped), got %d", len(journal.LogEntries[0].Notes))
+				// Notes with only "note-1" now have text "note-1" (ID is generated, prefix becomes text)
+				// So they are NOT skipped
+				if len(journal.LogEntries[0].Notes) != 1 {
+					t.Errorf("Expected 1 note (note-1 becomes text), got %d", len(journal.LogEntries[0].Notes))
 				}
 			},
 		},

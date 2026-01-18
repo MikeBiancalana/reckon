@@ -230,7 +230,7 @@ date: 2025-12-28
 
 ## Log
 
-- 10:00 log1 Started work
+- 10:00 Started work
 `,
 		},
 	}
@@ -421,12 +421,12 @@ date: 2025-12-28
 
 ## Log
 
-- 10:00 log1 Started work
-  - note1 This is the first note
-  - note2 This is the second note
-- 11:00 log2 Continued work
-- 12:00 log3 Finished task
-  - note3 Task completed successfully
+- 10:00 Started work
+  - This is the first note
+  - This is the second note
+- 11:00 Continued work
+- 12:00 Finished task
+  - Task completed successfully
 `
 
 	result := WriteJournal(journal)
