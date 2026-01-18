@@ -227,6 +227,7 @@ LOG_FORMAT=json rk log "Started working on feature"
 Combine settings:
 ```bash
 LOG_LEVEL=DEBUG LOG_FORMAT=json rk
+```
 
 ## Development
 
