@@ -8,9 +8,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/sahilm/fuzzy"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/MikeBiancalana/reckon/internal/journal"
 )
 
 const (
@@ -30,6 +32,7 @@ var (
 	taskEditTitleFlag       string
 	taskEditDescriptionFlag string
 	taskEditTagsFlag        []string
+	taskMatchFlag           string
 )
 
 // taskCmd represents the task command
@@ -232,17 +235,37 @@ var taskListCmd = &cobra.Command{
 
 // taskShowCmd shows a task
 var taskShowCmd = &cobra.Command{
-	Use:   "show [task-id]",
+	Use:   "show [task-id|--match <pattern>]",
 	Short: "Show task details",
-	Args:  cobra.ExactArgs(1),
+	Long: `Show task details.
+
+Use task index (1, 2, 3...) or exact task ID.
+Or use --match to fuzzy-match by task title.
+
+Examples:
+  rk task show 1
+  rk task show abc123
+  rk task show --match auth`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
 		}
 
-		// Resolve task ID (supports numeric indices)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		// Validate mutually exclusive options
+		if tmpMatch != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if tmpMatch == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -283,17 +306,37 @@ var taskShowCmd = &cobra.Command{
 
 // taskLogCmd appends a log entry to a task (now adds as a note)
 var taskLogCmd = &cobra.Command{
-	Use:   "log [task-id] [message]",
+	Use:   "log [task-id|--match <pattern>] [message]",
 	Short: "Append a note to a task",
-	Args:  cobra.MinimumNArgs(2),
+	Long: `Append a note to a task.
+
+Use task index (1, 2, 3...) or exact task ID.
+Or use --match to fuzzy-match by task title.
+
+Examples:
+  rk task log 1 "Started working on this"
+  rk task log abc123 "Progress update"
+  rk task log --match auth "Authentication implemented"`,
+	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
 		}
 
-		// Resolve task ID (supports numeric indices)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		// Validate mutually exclusive options
+		if tmpMatch != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if tmpMatch == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -313,17 +356,37 @@ var taskLogCmd = &cobra.Command{
 
 // taskDoneCmd marks a task as done
 var taskDoneCmd = &cobra.Command{
-	Use:   "done [task-id]",
+	Use:   "done [task-id|--match <pattern>]",
 	Short: "Mark a task as done (toggle status)",
-	Args:  cobra.ExactArgs(1),
+	Long: `Mark a task as done (toggle status).
+
+Use task index (1, 2, 3...) or exact task ID.
+Or use --match to fuzzy-match by task title.
+
+Examples:
+  rk task done 1
+  rk task done abc123
+  rk task done --match auth`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
 		}
 
-		// Resolve task ID (supports numeric indices)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		// Validate mutually exclusive options
+		if tmpMatch != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if tmpMatch == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -341,18 +404,37 @@ var taskDoneCmd = &cobra.Command{
 
 // taskEditCmd edits a task's details
 var taskEditCmd = &cobra.Command{
-	Use:   "edit [task-id]",
+	Use:   "edit [task-id|--match <pattern>]",
 	Short: "Edit task details",
-	Long:  "Edit a task's title using the --title flag. Tags support will be added in a future update.",
-	Args:  cobra.ExactArgs(1),
+	Long: `Edit a task's title using the --title flag. Tags support will be added in a future update.
+
+Use task index (1, 2, 3...) or exact task ID.
+Or use --match to fuzzy-match by task title.
+
+Examples:
+  rk task edit 1 --title "New Title"
+  rk task edit abc123 --title "New Title"
+  rk task edit --match auth --title "Authentication Feature"`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
 		}
 
-		// Resolve task ID (supports numeric indices)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		// Validate mutually exclusive options
+		if tmpMatch != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if tmpMatch == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -381,17 +463,37 @@ var taskEditCmd = &cobra.Command{
 
 // taskNoteCmd adds a note to a task
 var taskNoteCmd = &cobra.Command{
-	Use:   "note [task-id] [note-text]",
+	Use:   "note [task-id|--match <pattern>] [note-text]",
 	Short: "Add a note to a task",
-	Args:  cobra.MinimumNArgs(2),
+	Long: `Add a note to a task.
+
+Use task index (1, 2, 3...) or exact task ID.
+Or use --match to fuzzy-match by task title.
+
+Examples:
+  rk task note 1 "Some note"
+  rk task note abc123 "Another note"
+  rk task note --match auth "Auth-related note"`,
+	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
 		}
 
-		// Resolve task ID (supports numeric indices)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		// Validate mutually exclusive options
+		if tmpMatch != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if tmpMatch == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -428,10 +530,20 @@ func init() {
 	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
 	taskEditCmd.Flags().StringVarP(&taskEditDescriptionFlag, "description", "d", "", "New task description")
 	taskEditCmd.Flags().StringSliceVar(&taskEditTagsFlag, "tags", []string{}, "New task tags (comma-separated)")
+
+	// Commands that support --match flag for fuzzy title matching
+	taskShowCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+	taskLogCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+	taskDoneCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+	taskEditCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+	taskNoteCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 }
 
-// resolveJournalTaskID resolves a task identifier (numeric index or string ID) to a task ID
-func resolveJournalTaskID(identifier string, svc *journal.TaskService) (string, error) {
+// resolveJournalTaskID resolves a task identifier (numeric index, exact ID, or fuzzy-matched title) to a task ID
+func resolveJournalTaskID(identifier string, matchPattern string, svc *journal.TaskService) (string, error) {
+	if matchPattern != "" {
+		return resolveJournalTaskIDByMatch(matchPattern, svc)
+	}
 	// Try to parse as number (1-based index)
 	if index, err := strconv.Atoi(identifier); err == nil && index > 0 {
 		// Get all tasks (unfiltered) to find by index
@@ -446,6 +558,44 @@ func resolveJournalTaskID(identifier string, svc *journal.TaskService) (string, 
 	}
 	// Otherwise, treat as direct task ID
 	return identifier, nil
+}
+
+// resolveJournalTaskIDByMatch finds a task by fuzzy-matching its title against the given pattern
+func resolveJournalTaskIDByMatch(pattern string, svc *journal.TaskService) (string, error) {
+	tasks, err := svc.GetAllTasks()
+	if err != nil {
+		return "", fmt.Errorf("failed to list tasks: %w", err)
+	}
+
+	if len(tasks) == 0 {
+		return "", fmt.Errorf("no tasks found")
+	}
+
+	// Build a list of task titles for fuzzy matching
+	names := make([]string, len(tasks))
+	for i, t := range tasks {
+		names[i] = t.Text
+	}
+
+	// Perform fuzzy matching
+	matches := fuzzy.Find(pattern, names)
+
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no tasks match pattern: %s", pattern)
+	}
+
+	if len(matches) > 1 {
+		// Multiple matches - show candidates and return error
+		candidates := make([]string, 0, len(matches))
+		for _, m := range matches {
+			candidates = append(candidates, fmt.Sprintf("  - %s", tasks[m.Index].Text))
+		}
+		return "", fmt.Errorf("multiple tasks match pattern %q:\n%s\nUse a more specific pattern", pattern, strings.Join(candidates, "\n"))
+	}
+
+	// Single match found
+	matchedTask := tasks[matches[0].Index]
+	return matchedTask.ID, nil
 }
 
 // GetTaskCommand returns the task command
