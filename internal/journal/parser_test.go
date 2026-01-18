@@ -93,27 +93,19 @@ date: 2023-12-01
 	if len(journal.LogEntries[0].Notes) != 2 {
 		t.Errorf("Expected first log entry to have 2 notes, got %d", len(journal.LogEntries[0].Notes))
 	}
-	if journal.LogEntries[0].Notes[0].ID != "note-1" {
-		t.Errorf("Expected first note ID 'note-1', got '%s'", journal.LogEntries[0].Notes[0].ID)
+	// Notes now have generated IDs, the ID prefix becomes part of text
+	if journal.LogEntries[0].Notes[0].Text != "note-1 First note on work" {
+		t.Errorf("Expected first note text 'note-1 First note on work', got '%s'", journal.LogEntries[0].Notes[0].Text)
 	}
-	if journal.LogEntries[0].Notes[0].Text != "First note on work" {
-		t.Errorf("Expected first note text 'First note on work', got '%s'", journal.LogEntries[0].Notes[0].Text)
-	}
-	if journal.LogEntries[0].Notes[1].ID != "note-2" {
-		t.Errorf("Expected second note ID 'note-2', got '%s'", journal.LogEntries[0].Notes[1].ID)
-	}
-	if journal.LogEntries[0].Notes[1].Text != "Second note on work" {
-		t.Errorf("Expected second note text 'Second note on work', got '%s'", journal.LogEntries[0].Notes[1].Text)
+	if journal.LogEntries[0].Notes[1].Text != "note-2 Second note on work" {
+		t.Errorf("Expected second note text 'note-2 Second note on work', got '%s'", journal.LogEntries[0].Notes[1].Text)
 	}
 
 	if len(journal.LogEntries[1].Notes) != 1 {
 		t.Errorf("Expected second log entry to have 1 note, got %d", len(journal.LogEntries[1].Notes))
 	}
-	if journal.LogEntries[1].Notes[0].ID != "meeting-note" {
-		t.Errorf("Expected meeting note ID 'meeting-note', got '%s'", journal.LogEntries[1].Notes[0].ID)
-	}
-	if journal.LogEntries[1].Notes[0].Text != "Discussed project timeline" {
-		t.Errorf("Expected meeting note text 'Discussed project timeline', got '%s'", journal.LogEntries[1].Notes[0].Text)
+	if journal.LogEntries[1].Notes[0].Text != "meeting-note Discussed project timeline" {
+		t.Errorf("Expected meeting note text 'meeting-note Discussed project timeline', got '%s'", journal.LogEntries[1].Notes[0].Text)
 	}
 
 	if len(journal.LogEntries[2].Notes) != 0 {
@@ -489,7 +481,7 @@ func TestParseJournalWithVeryLongNoteText(t *testing.T) {
 	longText := strings.Repeat(word+" ", 1250)
 	longText = strings.TrimSpace(longText)
 
-	expectedLength := len(longText)
+	expectedLength := len("note-1 " + longText)
 
 	markdown := "---\ndate: 2023-12-01\n---\n\n## Log\n\n- 09:00 Started work\n  - note-1 " + longText + "\n"
 
@@ -508,15 +500,14 @@ func TestParseJournalWithVeryLongNoteText(t *testing.T) {
 
 	note := journal.LogEntries[0].Notes[0]
 
-	if note.ID != "note-1" {
-		t.Errorf("Expected note ID 'note-1', got '%s'", note.ID)
-	}
-
+	// Note ID is now generated, not extracted from markdown
 	if len(note.Text) != expectedLength {
 		t.Errorf("Expected note text length %d, got %d", expectedLength, len(note.Text))
 	}
 
-	if note.Text != longText {
+	// Verify the text starts with the ID prefix followed by the actual text
+	expectedText := "note-1 " + longText
+	if note.Text != expectedText {
 		t.Errorf("Note text content mismatch")
 	}
 }
