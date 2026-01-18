@@ -248,6 +248,7 @@ Examples:
   rk task show --match auth`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
 		// Use global journalTaskService
@@ -256,10 +257,10 @@ Examples:
 		}
 
 		// Validate mutually exclusive options
-		if taskMatchFlag != "" && len(args) > 0 {
+		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if taskMatchFlag == "" && len(args) == 0 {
+		if tmpMatch == "" && len(args) == 0 {
 			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
@@ -318,6 +319,7 @@ Examples:
   rk task log --match auth "Authentication implemented"`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
 		// Use global journalTaskService
@@ -326,10 +328,10 @@ Examples:
 		}
 
 		// Validate mutually exclusive options
-		if taskMatchFlag != "" && len(args) > 0 {
+		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if taskMatchFlag == "" && len(args) == 0 {
+		if tmpMatch == "" && len(args) == 0 {
 			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
@@ -367,6 +369,7 @@ Examples:
   rk task done --match auth`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
 		// Use global journalTaskService
@@ -375,10 +378,10 @@ Examples:
 		}
 
 		// Validate mutually exclusive options
-		if taskMatchFlag != "" && len(args) > 0 {
+		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if taskMatchFlag == "" && len(args) == 0 {
+		if tmpMatch == "" && len(args) == 0 {
 			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
@@ -414,6 +417,7 @@ Examples:
   rk task edit --match auth --title "Authentication Feature"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
 		// Use global journalTaskService
@@ -422,10 +426,10 @@ Examples:
 		}
 
 		// Validate mutually exclusive options
-		if taskMatchFlag != "" && len(args) > 0 {
+		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if taskMatchFlag == "" && len(args) == 0 {
+		if tmpMatch == "" && len(args) == 0 {
 			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
@@ -472,6 +476,7 @@ Examples:
   rk task note --match auth "Auth-related note"`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
 		// Use global journalTaskService
@@ -480,10 +485,10 @@ Examples:
 		}
 
 		// Validate mutually exclusive options
-		if taskMatchFlag != "" && len(args) > 0 {
+		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if taskMatchFlag == "" && len(args) == 0 {
+		if tmpMatch == "" && len(args) == 0 {
 			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
