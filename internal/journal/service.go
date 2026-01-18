@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikeBiancalana/reckon/internal/perf"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 )
 
@@ -36,6 +37,9 @@ func (s *Service) GetToday() (*Journal, error) {
 
 // GetByDate returns a journal for the given date, creating it if it doesn't exist
 func (s *Service) GetByDate(date string) (*Journal, error) {
+	timer := perf.NewTimer("Service.GetByDate", s.logger, 100)
+	defer timer.Stop()
+
 	s.logger.Info("GetByDate", "journal_date", date)
 
 	// Try to read from filesystem first
