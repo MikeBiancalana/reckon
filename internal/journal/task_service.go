@@ -50,8 +50,11 @@ func generateSlug(text string) string {
 	slug = strings.Trim(slug, "-")
 	if len(slug) > 50 {
 		slug = slug[:50]
+		slug = strings.Trim(slug, "-")
 	}
-	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		slug = "untitled"
+	}
 	return slug
 }
 
@@ -530,7 +533,10 @@ func (s *TaskService) save(tasks []Task) error {
 		if oldPath, exists := oldFiles[oldFileName]; exists {
 			delete(oldFiles, oldFileName)
 			if oldFileName != taskFilename(task) {
-				os.Rename(oldPath, newFilePath)
+				if err := os.Rename(oldPath, newFilePath); err != nil {
+					s.logger.Error("save", "error", err, "old_path", oldPath, "new_path", newFilePath)
+					return fmt.Errorf("failed to rename task file: %w", err)
+				}
 			}
 		}
 
@@ -538,11 +544,6 @@ func (s *TaskService) save(tasks []Task) error {
 			s.logger.Error("save", "error", err, "task_id", task.ID, "file_path", newFilePath)
 			return fmt.Errorf("failed to write task file %s: %w", newFilePath, err)
 		}
-	}
-
-	// Remove old files that were renamed
-	for _, oldFilePath := range oldFiles {
-		os.Remove(oldFilePath)
 	}
 
 	// Write to DB for indexing/querying
