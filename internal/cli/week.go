@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/spf13/cobra"
 )
 
@@ -19,8 +20,18 @@ var weekCmd = &cobra.Command{
 			return fmt.Errorf("journal service not initialized")
 		}
 
+		effectiveDate, err := getEffectiveDate()
+		if err != nil {
+			return err
+		}
+
 		if jsonFlag {
-			journals, err := service.GetWeekJournals()
+			var journals []*journal.Journal
+			if dateFlag != "" {
+				journals, err = service.GetWeekJournalsFromDate(effectiveDate)
+			} else {
+				journals, err = service.GetWeekJournals()
+			}
 			if err != nil {
 				return fmt.Errorf("failed to get week's journals: %w", err)
 			}
@@ -30,7 +41,12 @@ var weekCmd = &cobra.Command{
 			return nil
 		}
 
-		content, err := service.GetWeekContent()
+		var content string
+		if dateFlag != "" {
+			content, err = service.GetWeekContentFromDate(effectiveDate)
+		} else {
+			content, err = service.GetWeekContent()
+		}
 		if err != nil {
 			return fmt.Errorf("failed to get week's journals: %w", err)
 		}

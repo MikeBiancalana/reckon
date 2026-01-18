@@ -41,10 +41,15 @@ var scheduleAddCmd = &cobra.Command{
 			content = strings.Join(args[1:], " ")
 		}
 
-		// Get today's journal
-		j, err := service.GetToday()
+		// Get the journal for the effective date
+		effectiveDate, err := getEffectiveDate()
 		if err != nil {
-			return fmt.Errorf("failed to get today's journal: %w", err)
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
 		// Add schedule item
@@ -71,10 +76,15 @@ var scheduleListCmd = &cobra.Command{
 			return fmt.Errorf("journal service not initialized")
 		}
 
-		// Get today's journal
-		j, err := service.GetToday()
+		// Get the journal for the effective date
+		effectiveDate, err := getEffectiveDate()
 		if err != nil {
-			return fmt.Errorf("failed to get today's journal: %w", err)
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
 		if scheduleJsonFlag {
@@ -85,11 +95,11 @@ var scheduleListCmd = &cobra.Command{
 		}
 
 		if len(j.ScheduleItems) == 0 {
-			fmt.Println("No schedule items for today")
+			fmt.Printf("No schedule items for %s\n", effectiveDate)
 			return nil
 		}
 
-		fmt.Printf("Schedule for today:\n\n")
+		fmt.Printf("Schedule for %s:\n\n", effectiveDate)
 		for i, item := range j.ScheduleItems {
 			if !item.Time.IsZero() {
 				fmt.Printf("[%d] %s: %s\n", i+1, item.Time.Format("15:04"), item.Content)
@@ -119,10 +129,15 @@ var scheduleDeleteCmd = &cobra.Command{
 			return fmt.Errorf("invalid index: %s (must be a positive number)", args[0])
 		}
 
-		// Get today's journal
-		j, err := service.GetToday()
+		// Get the journal for the effective date
+		effectiveDate, err := getEffectiveDate()
 		if err != nil {
-			return fmt.Errorf("failed to get today's journal: %w", err)
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
 		if index > len(j.ScheduleItems) {

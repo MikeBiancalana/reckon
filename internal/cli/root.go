@@ -3,9 +3,11 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/MikeBiancalana/reckon/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,6 +17,7 @@ import (
 var (
 	service            *journal.Service
 	journalTaskService *journal.TaskService
+	dateFlag           string
 )
 
 // RootCmd is the root command for the CLI
@@ -37,6 +40,9 @@ var RootCmd = &cobra.Command{
 func init() {
 	// Initialize service
 	cobra.OnInitialize(initService)
+
+	// Add global flags
+	RootCmd.Flags().StringVar(&dateFlag, "date", "", "Date to operate on in YYYY-MM-DD format")
 
 	// Add subcommands
 	RootCmd.AddCommand(logCmd)
@@ -62,13 +68,24 @@ func initService() {
 		os.Exit(1)
 	}
 
-	repo := journal.NewRepository(db, nil)
+	log := logger.GetLogger()
+	repo := journal.NewRepository(db, log)
 	fileStore := storage.NewFileStore()
-	service = journal.NewService(repo, fileStore, nil)
+	service = journal.NewService(repo, fileStore, log)
 
-	// Initialize journal task service
-	journalTaskRepo := journal.NewTaskRepository(db, nil)
-	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore, nil)
+	journalTaskRepo := journal.NewTaskRepository(db, log)
+	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore, log)
+}
+
+// getEffectiveDate returns the date to operate on, either from --date flag or today
+func getEffectiveDate() (string, error) {
+	if dateFlag != "" {
+		if _, err := time.Parse("2006-01-02", dateFlag); err != nil {
+			return "", fmt.Errorf("invalid date format: %s (expected YYYY-MM-DD)", dateFlag)
+		}
+		return dateFlag, nil
+	}
+	return time.Now().Format("2006-01-02"), nil
 }
 
 // Execute runs the root command

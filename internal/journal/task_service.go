@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -38,6 +39,109 @@ func NewTaskService(repo *TaskRepository, store *storage.FileStore, logger *slog
 		store:  store,
 		logger: DefaultLogger(logger),
 	}
+}
+
+// slugRegex matches non-alphanumeric characters for removal in slugs
+var slugRegex = regexp.MustCompile(`[^a-z0-9]+`)
+
+func generateSlug(text string) string {
+	slug := strings.ToLower(text)
+	slug = slugRegex.ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-")
+	if len(slug) > 50 {
+		slug = slug[:50]
+		slug = strings.Trim(slug, "-")
+	}
+	if slug == "" {
+		slug = "untitled"
+	}
+	return slug
+}
+
+func taskFilename(task Task) string {
+	datePrefix := task.CreatedAt.Format("2006-01-02")
+	slug := generateSlug(task.Text)
+	return fmt.Sprintf("%s-%s.md", datePrefix, slug)
+}
+
+func taskFilePath(task Task) (string, error) {
+	tasksDir, err := config.TasksDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(tasksDir, taskFilename(task)), nil
+}
+
+// MigrateTaskFilenames renames existing task files from {ID}.md to YYYY-MM-DD-slug.md format
+func (s *TaskService) MigrateTaskFilenames() error {
+	s.logger.Info("MigrateTaskFilenames", "operation", "start")
+
+	tasksDir, err := config.TasksDir()
+	if err != nil {
+		s.logger.Error("MigrateTaskFilenames", "error", err, "operation", "get_tasks_dir")
+		return fmt.Errorf("failed to get tasks directory: %w", err)
+	}
+
+	files, err := os.ReadDir(tasksDir)
+	if err != nil {
+		s.logger.Error("MigrateTaskFilenames", "error", err, "operation", "read_tasks_dir")
+		return fmt.Errorf("failed to read tasks directory: %w", err)
+	}
+
+	migrated := 0
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ".md") || file.IsDir() {
+			continue
+		}
+
+		// Skip files already in new format (YYYY-MM-DD-slug.md)
+		if len(file.Name()) > 11 && file.Name()[4] == '-' && file.Name()[7] == '-' {
+			continue
+		}
+
+		// Parse the file to get task info
+		filePath := filepath.Join(tasksDir, file.Name())
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			s.logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
+			continue
+		}
+
+		frontmatter, _, err := parseTaskFile(string(content))
+		if err != nil {
+			s.logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
+			continue
+		}
+
+		// Create a temporary task to generate the filename
+		createdAt := time.Now()
+		if frontmatter.Created != "" {
+			if parsed, err := time.Parse("2006-01-02", frontmatter.Created); err == nil {
+				createdAt = parsed
+			}
+		}
+
+		tempTask := Task{
+			ID:        frontmatter.ID,
+			Text:      frontmatter.Title,
+			CreatedAt: createdAt,
+		}
+
+		newFileName := taskFilename(tempTask)
+		newFilePath := filepath.Join(tasksDir, newFileName)
+
+		if file.Name() != newFileName {
+			if err := os.Rename(filePath, newFilePath); err != nil {
+				s.logger.Error("MigrateTaskFilenames", "error", err, "old_path", filePath, "new_path", newFilePath)
+				continue
+			}
+			migrated++
+			s.logger.Info("MigrateTaskFilenames", "migrated", file.Name(), "to", newFileName)
+		}
+	}
+
+	s.logger.Info("MigrateTaskFilenames", "operation", "complete", "files_migrated", migrated)
+	return nil
 }
 
 // GetAllTasks loads tasks from individual task files (source of truth)
@@ -400,13 +504,45 @@ func (s *TaskService) save(tasks []Task) error {
 		return fmt.Errorf("failed to get tasks directory: %w", err)
 	}
 
+	// Read existing files to detect renames
+	existingFiles, err := os.ReadDir(tasksDir)
+	if err != nil && !os.IsNotExist(err) {
+		s.logger.Error("save", "error", err, "operation", "read_tasks_dir")
+		return fmt.Errorf("failed to read tasks directory: %w", err)
+	}
+
+	// Build map of old filenames to detect renames
+	oldFiles := make(map[string]string)
+	for _, file := range existingFiles {
+		if strings.HasSuffix(file.Name(), ".md") && !file.IsDir() {
+			oldFiles[file.Name()] = filepath.Join(tasksDir, file.Name())
+		}
+	}
+
 	// Write each task to individual file
 	for _, task := range tasks {
 		content := writeTaskFile(task)
-		filePath := filepath.Join(tasksDir, task.ID+".md")
-		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-			s.logger.Error("save", "error", err, "task_id", task.ID, "file_path", filePath)
-			return fmt.Errorf("failed to write task file %s: %w", filePath, err)
+		newFilePath, err := taskFilePath(task)
+		if err != nil {
+			s.logger.Error("save", "error", err, "task_id", task.ID)
+			return fmt.Errorf("failed to get task file path: %w", err)
+		}
+
+		// Check if file needs to be renamed
+		oldFileName := task.ID + ".md"
+		if oldPath, exists := oldFiles[oldFileName]; exists {
+			delete(oldFiles, oldFileName)
+			if oldFileName != taskFilename(task) {
+				if err := os.Rename(oldPath, newFilePath); err != nil {
+					s.logger.Error("save", "error", err, "old_path", oldPath, "new_path", newFilePath)
+					return fmt.Errorf("failed to rename task file: %w", err)
+				}
+			}
+		}
+
+		if err := os.WriteFile(newFilePath, []byte(content), 0644); err != nil {
+			s.logger.Error("save", "error", err, "task_id", task.ID, "file_path", newFilePath)
+			return fmt.Errorf("failed to write task file %s: %w", newFilePath, err)
 		}
 	}
 
