@@ -181,6 +181,54 @@ Reckon stores its data in:
 - **Database**: `~/.config/reckon/reckon.db` (SQLite)
 - **Journal files**: User-configured location (markdown files)
 
+### Log Configuration
+
+Reckon supports environment variables to configure logging behavior:
+
+| Variable | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARN`, `ERROR` | `INFO` | Minimum log level to output |
+| `LOG_FORMAT` | `text`, `json` | `text` | Output format for logs |
+| `RECKON_DEBUG` | `1`, `true` | - | Legacy override for DEBUG level (use LOG_LEVEL instead) |
+
+#### Log Levels
+
+- `DEBUG` - Detailed output for debugging
+- `INFO` - Standard operational messages (default)
+- `WARN` - Warning messages only
+- `ERROR` - Error messages only
+
+#### Output Formats
+
+**Text (default):**
+```
+2025-12-22T09:00:00Z INFO Starting application
+2025-12-22T09:00:01Z DEBUG Loaded 42 journal entries
+```
+
+**JSON (machine-parseable):**
+```json
+{"time":"2025-12-22T09:00:00Z","level":"INFO","msg":"Starting application"}
+{"time":"2025-12-22T09:00:01Z","level":"DEBUG","msg":"Loaded 42 journal entries"}
+```
+
+#### Examples
+
+Enable debug logging:
+```bash
+LOG_LEVEL=DEBUG rk
+```
+
+Enable JSON output for log aggregation:
+```bash
+LOG_FORMAT=json rk log "Started working on feature"
+```
+
+Combine settings:
+```bash
+LOG_LEVEL=DEBUG LOG_FORMAT=json rk
+```
+
 ## Development
 
 ### Build
