@@ -6,6 +6,7 @@ import (
 
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/MikeBiancalana/reckon/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -62,13 +63,13 @@ func initService() {
 		os.Exit(1)
 	}
 
-	repo := journal.NewRepository(db, nil)
+	log := logger.GetLogger()
+	repo := journal.NewRepository(db, log)
 	fileStore := storage.NewFileStore()
-	service = journal.NewService(repo, fileStore, nil)
+	service = journal.NewService(repo, fileStore, log)
 
-	// Initialize journal task service
-	journalTaskRepo := journal.NewTaskRepository(db, nil)
-	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore, nil)
+	journalTaskRepo := journal.NewTaskRepository(db, log)
+	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore, log)
 }
 
 // Execute runs the root command

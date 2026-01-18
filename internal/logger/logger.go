@@ -3,37 +3,102 @@ package logger
 import (
 	"log/slog"
 	"os"
+	"strings"
 )
 
-var debugLogger *slog.Logger
-var isDebugEnabled bool
+var (
+	logger        *slog.Logger
+	logLevel      slog.Level
+	logFormat     string
+	isInitialized bool
+)
 
 func init() {
-	// Check if RECKON_DEBUG environment variable is set
-	debugEnv := os.Getenv("RECKON_DEBUG")
-	isDebugEnabled = debugEnv == "1" || debugEnv == "true"
+	Initialize()
+}
 
-	if isDebugEnabled {
-		// Create a debug logger that writes to stderr with DEBUG level
-		debugLogger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		}))
+func Initialize() {
+	if isInitialized {
+		return
+	}
+
+	levelStr := os.Getenv("LOG_LEVEL")
+	if levelStr == "" {
+		levelStr = os.Getenv("RECKON_DEBUG")
+		if levelStr == "1" || levelStr == "true" {
+			levelStr = "DEBUG"
+		} else {
+			levelStr = "INFO"
+		}
+	}
+
+	logFormat = os.Getenv("LOG_FORMAT")
+	if logFormat == "" {
+		logFormat = "text"
+	}
+	logFormat = strings.ToLower(logFormat)
+
+	switch strings.ToUpper(levelStr) {
+	case "DEBUG":
+		logLevel = slog.LevelDebug
+	case "INFO":
+		logLevel = slog.LevelInfo
+	case "WARN", "WARNING":
+		logLevel = slog.LevelWarn
+	case "ERROR":
+		logLevel = slog.LevelError
+	default:
+		logLevel = slog.LevelInfo
+	}
+
+	var handler slog.Handler
+	opts := &slog.HandlerOptions{
+		Level: logLevel,
+	}
+
+	if logFormat == "json" {
+		handler = slog.NewJSONHandler(os.Stderr, opts)
 	} else {
-		// Create a no-op logger that discards everything
-		debugLogger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelError + 1, // Level higher than ERROR to discard everything
-		}))
+		handler = slog.NewTextHandler(os.Stderr, opts)
 	}
+
+	logger = slog.New(handler)
+	isInitialized = true
 }
 
-// Debug logs a debug-level message with optional key-value pairs
+func GetLogger() *slog.Logger {
+	if !isInitialized {
+		Initialize()
+	}
+	return logger
+}
+
+func GetLevel() slog.Level {
+	if !isInitialized {
+		Initialize()
+	}
+	return logLevel
+}
+
+func GetFormat() string {
+	if !isInitialized {
+		Initialize()
+	}
+	return logFormat
+}
+
 func Debug(msg string, args ...any) {
-	if isDebugEnabled {
-		debugLogger.Debug(msg, args...)
-	}
+	GetLogger().Debug(msg, args...)
 }
 
-// IsDebugEnabled returns whether debug logging is enabled
-func IsDebugEnabled() bool {
-	return isDebugEnabled
+func Info(msg string, args ...any) {
+	GetLogger().Info(msg, args...)
+}
+
+func Warn(msg string, args ...any) {
+	GetLogger().Warn(msg, args...)
+}
+
+func Error(msg string, args ...any) {
+	GetLogger().Error(msg, args...)
 }
