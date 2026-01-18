@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
@@ -16,6 +17,7 @@ import (
 var (
 	service            *journal.Service
 	journalTaskService *journal.TaskService
+	dateFlag           string
 )
 
 // RootCmd is the root command for the CLI
@@ -38,6 +40,9 @@ var RootCmd = &cobra.Command{
 func init() {
 	// Initialize service
 	cobra.OnInitialize(initService)
+
+	// Add global flags
+	RootCmd.Flags().StringVar(&dateFlag, "date", "", "Date to operate on in YYYY-MM-DD format")
 
 	// Add subcommands
 	RootCmd.AddCommand(logCmd)
@@ -70,6 +75,14 @@ func initService() {
 
 	journalTaskRepo := journal.NewTaskRepository(db, log)
 	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore, log)
+}
+
+// getEffectiveDate returns the date to operate on, either from --date flag or today
+func getEffectiveDate() string {
+	if dateFlag != "" {
+		return dateFlag
+	}
+	return time.Now().Format("2006-01-02")
 }
 
 // Execute runs the root command

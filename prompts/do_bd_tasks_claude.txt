@@ -1,0 +1,6 @@
+Have the @agent-principal-engineer work off tasks from `bd` and @agent-code-reviewer check the work.
+When starting on a task, pin it using `bd pin` and create a new branch off of `origin/main`. Since there are other worktrees, try not to checkout main. Call the agent fresh, starting with no residual context for each task. After the initial coding is
+complete, the task is not done until the @agent-code-reviewer reviews the code and approves. Iterate between the two agents on a task as much as necessary. When the task is complete, make sure the code is checked in and a PR is created. Finally, mark the
+task done in `bd`, and squash merge the PR to main. `gh` is present and works.
+Continue working on tasks.
+

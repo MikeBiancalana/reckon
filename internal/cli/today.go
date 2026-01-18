@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -20,12 +19,12 @@ var todayCmd = &cobra.Command{
 			return fmt.Errorf("journal service not initialized")
 		}
 
-		today := time.Now().Format("2006-01-02")
+		today := getEffectiveDate()
 
 		if todayJsonFlag {
 			j, err := service.GetByDate(today)
 			if err != nil {
-				return fmt.Errorf("failed to get today's journal: %w", err)
+				return fmt.Errorf("failed to get journal for %s: %w", today, err)
 			}
 			if err := json.NewEncoder(os.Stdout).Encode(j); err != nil {
 				return fmt.Errorf("failed to encode journal as JSON: %w", err)
@@ -35,7 +34,7 @@ var todayCmd = &cobra.Command{
 
 		content, err := service.GetJournalContent(today)
 		if err != nil {
-			return fmt.Errorf("failed to get today's journal: %w", err)
+			return fmt.Errorf("failed to get journal for %s: %w", today, err)
 		}
 
 		fmt.Print(content)
