@@ -27,5 +27,5 @@ tags
 # OS
 .DS_Store
 Thumbs.db
-# bd worktree
-reckon-uai/
+.worktrees/
+reckon-32t/

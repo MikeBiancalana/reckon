@@ -706,3 +706,54 @@ func (s *Service) GetWeekJournals() ([]*Journal, error) {
 
 	return journals, nil
 }
+
+// GetWeekContentFromDate returns journals from date-6 to date as markdown
+func (s *Service) GetWeekContentFromDate(startDate string) (string, error) {
+	var content string
+
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return "", fmt.Errorf("invalid date format: %w", err)
+	}
+
+	for i := 6; i >= 0; i-- {
+		date := start.AddDate(0, 0, -i).Format("2006-01-02")
+
+		// Read file directly instead of parsing
+		filePath, err := s.fileStore.GetJournalPath(date)
+		if err != nil {
+			continue
+		}
+
+		fileContent, err := os.ReadFile(filePath)
+		if err != nil {
+			continue // Skip missing days
+		}
+
+		content += fmt.Sprintf("# %s\n\n", date)
+		content += string(fileContent) + "\n\n---\n\n"
+	}
+
+	return content, nil
+}
+
+// GetWeekJournalsFromDate returns journals from date-6 to date as slice
+func (s *Service) GetWeekJournalsFromDate(startDate string) ([]*Journal, error) {
+	journals := make([]*Journal, 0, 7)
+
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date format: %w", err)
+	}
+
+	for i := 6; i >= 0; i-- {
+		date := start.AddDate(0, 0, -i).Format("2006-01-02")
+		j, err := s.GetByDate(date)
+		if err != nil {
+			continue
+		}
+		journals = append(journals, j)
+	}
+
+	return journals, nil
+}

@@ -84,9 +84,14 @@ var logCmd = &cobra.Command{
 			return fmt.Errorf("log message cannot be empty")
 		}
 
-		j, err := service.GetToday()
+		effectiveDate, err := getEffectiveDate()
 		if err != nil {
-			return fmt.Errorf("failed to get today's journal: %w", err)
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
 		if err := service.AppendLog(j, message); err != nil {
