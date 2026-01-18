@@ -354,16 +354,6 @@ func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
 	delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
 	tl.list.SetDelegate(delegate)
 
-	// Restore cursor to the same task if it still exists
-	if selectedTaskID != "" {
-		for i, item := range items {
-			if taskItem, ok := item.(TaskItem); ok && taskItem.task.ID == selectedTaskID {
-				tl.list.Select(i)
-				break
-			}
-		}
-	}
-
 	// Update lastSelectedTaskID to match restored cursor position
 	selectedItem = tl.list.SelectedItem()
 	if selectedItem != nil {
