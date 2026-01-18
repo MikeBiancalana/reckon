@@ -265,7 +265,7 @@ Examples:
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -336,7 +336,7 @@ Examples:
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -386,7 +386,7 @@ Examples:
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -434,7 +434,7 @@ Examples:
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -493,7 +493,7 @@ Examples:
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
-		taskID, err := resolveJournalTaskID(args[0], journalTaskService)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
 		}
@@ -540,9 +540,9 @@ func init() {
 }
 
 // resolveJournalTaskID resolves a task identifier (numeric index, exact ID, or fuzzy-matched title) to a task ID
-func resolveJournalTaskID(identifier string, svc *journal.TaskService) (string, error) {
-	if taskMatchFlag != "" {
-		return resolveJournalTaskIDByMatch(taskMatchFlag, svc)
+func resolveJournalTaskID(identifier string, matchPattern string, svc *journal.TaskService) (string, error) {
+	if matchPattern != "" {
+		return resolveJournalTaskIDByMatch(matchPattern, svc)
 	}
 	// Try to parse as number (1-based index)
 	if index, err := strconv.Atoi(identifier); err == nil && index > 0 {
