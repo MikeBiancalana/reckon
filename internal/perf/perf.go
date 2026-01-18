@@ -14,7 +14,6 @@ type Timer struct {
 }
 
 type Counter struct {
-	name  string
 	value int64
 }
 
@@ -57,8 +56,8 @@ func (t *Timer) Stop() {
 	}
 }
 
-func NewCounter(name string) *Counter {
-	return &Counter{name: name}
+func NewCounter() *Counter {
+	return &Counter{}
 }
 
 func (c *Counter) Inc() {
@@ -158,8 +157,8 @@ func (r *Recorder) LogStats(level slog.Level) {
 }
 
 func Measure(name string, logger *slog.Logger, threshMs int64) func() {
-	start := time.Now()
 	return func() {
+		start := time.Now()
 		elapsed := time.Since(start)
 		if logger != nil {
 			logger.Debug(name, "duration_ms", elapsed.Milliseconds())
