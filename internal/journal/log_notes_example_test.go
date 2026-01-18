@@ -8,6 +8,7 @@ import (
 // Example_logNotes demonstrates parsing and writing log notes in journal markdown
 func Example_logNotes() {
 	// Sample journal with log entries and nested note bullets
+	// Note: IDs are no longer written to markdown - they're generated from position
 	markdown := `---
 date: 2023-12-01
 ---
@@ -23,11 +24,11 @@ date: 2023-12-01
 ## Log
 
 - 09:00 Started work on feature [task:xyz123]
-  - note-1 Reviewed existing implementation
-  - note-2 Identified key refactoring opportunities
+  - Reviewed existing implementation
+  - Identified key refactoring opportunities
 - 10:30 [meeting:standup] 15m Daily standup meeting
-  - meeting-note Discussed deployment timeline
-  - meeting-note-2 Action items assigned to team
+  - Discussed deployment timeline
+  - Action items assigned to team
 - 12:00 [break] 1h Lunch break
 - 13:00 Resumed work on feature
   - Generated note without explicit ID
@@ -46,20 +47,16 @@ date: 2023-12-01
 	for i, entry := range journal.LogEntries {
 		fmt.Printf("Entry %d: %s - %s\n", i+1, entry.Timestamp.Format("15:04"), entry.Content)
 		for j, note := range entry.Notes {
-			// Mask generated IDs (20+ chars) as [...] for consistent output
-			displayID := note.ID
-			if len(note.ID) > 15 {
-				displayID = "..."
-			}
-			fmt.Printf("  Note %d: [%s] %s\n", j+1, displayID, note.Text)
+			// IDs are now position-based (date:entry_pos:note_pos)
+			fmt.Printf("  Note %d: [%s] %s\n", j+1, note.ID, note.Text)
 		}
 	}
 
 	fmt.Println("\nWritten Markdown:")
-	// Write back to markdown
+	// Write back to markdown - note that IDs are NOT included in output
 	output := WriteJournal(journal)
 
-	// Show just the Log section, masking generated IDs
+	// Show just the Log section
 	lines := splitLines(output)
 	inLog := false
 	for _, line := range lines {
@@ -67,27 +64,6 @@ date: 2023-12-01
 			inLog = true
 		}
 		if inLog {
-			// Mask generated IDs in log entry lines (format: "- HH:MM <ID> <content>")
-			if len(line) > 2 && line[0:2] == "- " {
-				// This is a log entry line
-				parts := splitOnce(line[2:], " ") // Split after "- "
-				if len(parts) == 2 {
-					// parts[0] is the timestamp, parts[1] is "<ID> <content>"
-					restParts := splitOnce(parts[1], " ") // Split "<ID> <content>"
-					if len(restParts) == 2 && len(restParts[0]) > 15 {
-						// Mask the ID
-						line = "- " + parts[0] + " " + restParts[1]
-					}
-				}
-			}
-			// Mask generated IDs in note lines
-			if len(line) > 4 && line[0:4] == "  - " {
-				// This is a note line - check if it has a long ID
-				parts := splitOnce(line[4:], " ")
-				if len(parts) == 2 && len(parts[0]) > 15 {
-					line = "  - ... " + parts[1]
-				}
-			}
 			fmt.Println(line)
 		}
 	}
@@ -95,29 +71,29 @@ date: 2023-12-01
 	// Output:
 	// Parsed Log Entries:
 	// Entry 1: 09:00 - Started work on feature [task:xyz123]
-	//   Note 1: [note-1] Reviewed existing implementation
-	//   Note 2: [note-2] Identified key refactoring opportunities
+	//   Note 1: [2023-12-01:0:0] Reviewed existing implementation
+	//   Note 2: [2023-12-01:0:1] Identified key refactoring opportunities
 	// Entry 2: 10:30 - [meeting:standup] 15m Daily standup meeting
-	//   Note 1: [meeting-note] Discussed deployment timeline
-	//   Note 2: [meeting-note-2] Action items assigned to team
+	//   Note 1: [2023-12-01:1:0] Discussed deployment timeline
+	//   Note 2: [2023-12-01:1:1] Action items assigned to team
 	// Entry 3: 12:00 - [break] 1h Lunch break
 	// Entry 4: 13:00 - Resumed work on feature
-	//   Note 1: [...] Generated note without explicit ID
-	//   Note 2: [...] Another generated note
+	//   Note 1: [2023-12-01:3:0] Generated note without explicit ID
+	//   Note 2: [2023-12-01:3:1] Another generated note
 	//
 	// Written Markdown:
 	// ## Log
 	//
 	// - 09:00 Started work on feature [task:xyz123]
-	//   - note-1 Reviewed existing implementation
-	//   - note-2 Identified key refactoring opportunities
+	//   - Reviewed existing implementation
+	//   - Identified key refactoring opportunities
 	// - 10:30 [meeting:standup] 15m Daily standup meeting
-	//   - meeting-note Discussed deployment timeline
-	//   - meeting-note-2 Action items assigned to team
+	//   - Discussed deployment timeline
+	//   - Action items assigned to team
 	// - 12:00 [break] 1h Lunch break
 	// - 13:00 Resumed work on feature
-	//   - ... Generated note without explicit ID
-	//   - ... Another generated note
+	//   - Generated note without explicit ID
+	//   - Another generated note
 }
 
 func splitLines(s string) []string {

@@ -181,7 +181,7 @@ func TestLogNotesParsing(t *testing.T) {
 		checkNote     func(t *testing.T, entry LogEntry, noteIdx int)
 	}{
 		{
-			name: "parse note with explicit ID",
+			name: "parse note with explicit ID (now ignored, position-based ID generated)",
 			markdown: `---
 date: 2023-12-01
 ---
@@ -194,8 +194,10 @@ date: 2023-12-01
 			expectEntries: 1,
 			expectNotes:   []int{1},
 			checkNote: func(t *testing.T, entry LogEntry, noteIdx int) {
-				if entry.Notes[0].ID != "note-1" {
-					t.Errorf("Expected note ID 'note-1', got '%s'", entry.Notes[0].ID)
+				// IDs are now position-based, old explicit IDs are ignored
+				expectedID := "2023-12-01:0:0"
+				if entry.Notes[0].ID != expectedID {
+					t.Errorf("Expected note ID '%s', got '%s'", expectedID, entry.Notes[0].ID)
 				}
 				if entry.Notes[0].Text != "First note" {
 					t.Errorf("Expected note text 'First note', got '%s'", entry.Notes[0].Text)
@@ -225,7 +227,7 @@ date: 2023-12-01
 			},
 		},
 		{
-			name: "parse multiple notes with mixed IDs",
+			name: "parse multiple notes with mixed IDs (all IDs now position-based)",
 			markdown: `---
 date: 2023-12-01
 ---
@@ -240,24 +242,24 @@ date: 2023-12-01
 			expectEntries: 1,
 			expectNotes:   []int{3},
 			checkNote: func(t *testing.T, entry LogEntry, noteIdx int) {
-				// Check all three notes
+				// Check all three notes - all have position-based IDs now
 				if len(entry.Notes) != 3 {
 					t.Fatalf("Expected 3 notes, got %d", len(entry.Notes))
 				}
-				if entry.Notes[0].ID != "note-1" {
-					t.Errorf("Expected first note ID 'note-1', got '%s'", entry.Notes[0].ID)
+				if entry.Notes[0].ID != "2023-12-01:0:0" {
+					t.Errorf("Expected first note ID '2023-12-01:0:0', got '%s'", entry.Notes[0].ID)
 				}
 				if entry.Notes[0].Text != "First note" {
 					t.Errorf("Expected first note text 'First note', got '%s'", entry.Notes[0].Text)
 				}
-				if entry.Notes[1].ID == "" {
-					t.Error("Expected generated ID for second note")
+				if entry.Notes[1].ID != "2023-12-01:0:1" {
+					t.Errorf("Expected second note ID '2023-12-01:0:1', got '%s'", entry.Notes[1].ID)
 				}
 				if entry.Notes[1].Text != "Second note without ID" {
 					t.Errorf("Expected second note text 'Second note without ID', got '%s'", entry.Notes[1].Text)
 				}
-				if entry.Notes[2].ID != "note-3" {
-					t.Errorf("Expected third note ID 'note-3', got '%s'", entry.Notes[2].ID)
+				if entry.Notes[2].ID != "2023-12-01:0:2" {
+					t.Errorf("Expected third note ID '2023-12-01:0:2', got '%s'", entry.Notes[2].ID)
 				}
 				if entry.Notes[2].Text != "Third note" {
 					t.Errorf("Expected third note text 'Third note', got '%s'", entry.Notes[2].Text)
@@ -443,7 +445,7 @@ date: 2023-12-01
 			},
 		},
 		{
-			name: "note with only ID is skipped",
+			name: "note with only text (no longer treated as ID)",
 			markdown: `---
 date: 2023-12-01
 ---
@@ -458,9 +460,12 @@ date: 2023-12-01
 				if len(journal.LogEntries) != 1 {
 					t.Fatalf("Expected 1 log entry, got %d", len(journal.LogEntries))
 				}
-				// Notes with empty text should be skipped
-				if len(journal.LogEntries[0].Notes) != 0 {
-					t.Errorf("Expected 0 notes (empty text notes should be skipped), got %d", len(journal.LogEntries[0].Notes))
+				// "note-1" is now treated as text, not an ID
+				if len(journal.LogEntries[0].Notes) != 1 {
+					t.Fatalf("Expected 1 note, got %d", len(journal.LogEntries[0].Notes))
+				}
+				if journal.LogEntries[0].Notes[0].Text != "note-1" {
+					t.Errorf("Expected note text 'note-1', got '%s'", journal.LogEntries[0].Notes[0].Text)
 				}
 			},
 		},

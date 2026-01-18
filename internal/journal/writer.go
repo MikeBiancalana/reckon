@@ -103,8 +103,8 @@ func WriteJournal(j *Journal) string {
 				}
 			}
 
-			// Write log entry with ID (similar to notes)
-			sb.WriteString(fmt.Sprintf("- %s %s %s\n", timeStr, entry.ID, content))
+			// Write log entry without ID
+			sb.WriteString(fmt.Sprintf("- %s %s\n", timeStr, content))
 
 			// Write notes if present
 			if len(entry.Notes) > 0 {
@@ -119,7 +119,8 @@ func WriteJournal(j *Journal) string {
 					if note.Text == "" {
 						continue // Skip empty notes
 					}
-					sb.WriteString(fmt.Sprintf("  - %s %s\n", note.ID, note.Text))
+					// Write note without ID
+					sb.WriteString(fmt.Sprintf("  - %s\n", note.Text))
 				}
 			}
 		}

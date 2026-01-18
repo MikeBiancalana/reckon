@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/rs/xid"
 )
 
 var (
@@ -140,14 +138,18 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 			if match := logNoteRe.FindStringSubmatch(line); match != nil && len(match) >= 2 {
 				if currentLogEntry != nil {
 					noteText := strings.TrimSpace(match[1])
-					noteID, text := extractID(noteText)
+					// Extract ID if present for backward compatibility, but ignore it
+					_, text := extractID(noteText)
+					if text == "" {
+						text = noteText // If no ID found, use entire text
+					}
 					if text == "" {
 						// Skip notes with no actual content
 						continue
 					}
-					if noteID == "" {
-						noteID = xid.New().String()
-					}
+
+					// Generate position-based ID for log note
+					noteID := fmt.Sprintf("%s:%d", currentLogEntry.ID, logNotePos)
 
 					note := LogNote{
 						ID:       noteID,
@@ -161,15 +163,19 @@ func ParseJournal(content string, filePath string, lastModified time.Time) (*Jou
 			}
 
 			// Check if it's a new log entry
-			if entry := parseLogEntry(trimmed, j.Date, logPos); entry != nil {
+			if logEntryMatch := logEntryRe.FindStringSubmatch(trimmed); logEntryMatch != nil {
 				// Finalize previous log entry
 				if currentLogEntry != nil {
 					j.LogEntries = append(j.LogEntries, *currentLogEntry)
 					logPos++
 				}
-				// Start new log entry
-				currentLogEntry = entry
-				logNotePos = 0
+				// Parse new log entry with correct position
+				entry := parseLogEntry(trimmed, j.Date, logPos)
+				if entry != nil {
+					// Start new log entry
+					currentLogEntry = entry
+					logNotePos = 0
+				}
 			}
 
 		case SectionSchedule:
@@ -235,12 +241,10 @@ func parseLogEntry(line string, date string, position int) *LogEntry {
 	timeStr := match[1]
 	restOfLine := strings.TrimSpace(match[2])
 
-	// Extract ID if present (format: "<ID> <content>")
-	entryID, content := extractID(restOfLine)
-	if entryID == "" {
-		// No ID found, generate one
-		entryID = xid.New().String()
-		content = restOfLine
+	// Extract ID if present for backward compatibility, but ignore it
+	_, content := extractID(restOfLine)
+	if content == "" {
+		content = restOfLine // If no ID found, use entire text
 	}
 
 	// Parse timestamp
@@ -249,7 +253,10 @@ func parseLogEntry(line string, date string, position int) *LogEntry {
 		return nil
 	}
 
-	// Create entry with explicit ID
+	// Generate position-based ID
+	entryID := fmt.Sprintf("%s:%d", date, position)
+
+	// Create entry with position-based ID
 	entry := &LogEntry{
 		ID:              entryID,
 		Timestamp:       timestamp,
