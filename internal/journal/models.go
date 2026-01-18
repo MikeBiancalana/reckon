@@ -151,7 +151,11 @@ type LogNote struct {
 	// Future: NoteSlug string for zettelkasten
 }
 
-// NewLogNote creates a new log note with a generated ID
+// NewLogNote creates a new log note with a generated XID.
+// Deprecated: This function generates XID-format IDs which are inconsistent with
+// the parser's position-based ID format. Service layer methods (AddLogNote, etc.)
+// now generate position-based IDs directly. This function is retained only for
+// backward compatibility with existing tests.
 func NewLogNote(text string, position int) *LogNote {
 	return &LogNote{
 		ID:       xid.New().String(),

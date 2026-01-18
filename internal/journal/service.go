@@ -292,10 +292,15 @@ func (s *Service) AddLogNote(j *Journal, logEntryID string, text string) error {
 		return err
 	}
 
-	// Create new note
+	// Create new note with position-based ID (consistent with parser)
 	position := len(targetEntry.Notes)
-	note := NewLogNote(text, position)
-	targetEntry.Notes = append(targetEntry.Notes, *note)
+	noteID := fmt.Sprintf("%s:%d", logEntryID, position)
+	note := LogNote{
+		ID:       noteID,
+		Text:     text,
+		Position: position,
+	}
+	targetEntry.Notes = append(targetEntry.Notes, note)
 
 	if err := s.save(j); err != nil {
 		s.logger.Error("AddLogNote", "error", err, "journal_date", j.Date, "log_entry_id", logEntryID, "note_id", note.ID)
@@ -388,9 +393,10 @@ func (s *Service) DeleteLogNote(j *Journal, logEntryID string, noteID string) er
 		return err
 	}
 
-	// Re-index positions
+	// Re-index positions and update IDs to match new positions
 	for i := range targetEntry.Notes {
 		targetEntry.Notes[i].Position = i
+		targetEntry.Notes[i].ID = fmt.Sprintf("%s:%d", logEntryID, i)
 	}
 
 	if err := s.save(j); err != nil {

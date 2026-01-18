@@ -576,3 +576,85 @@ func TestLogNotes_RoundTripWithMarkdown(t *testing.T) {
 		}
 	}
 }
+
+// TestPositionBasedIDConsistency verifies that service layer generates
+// position-based IDs consistent with parser format
+func TestPositionBasedIDConsistency(t *testing.T) {
+	service, tempDir := setupLogNotesTestService(t)
+	defer os.RemoveAll(tempDir)
+
+	journal := NewJournal("2024-01-15")
+	journal.FilePath = filepath.Join(tempDir, "2024-01-15.md")
+	entry := NewLogEntry(time.Now(), "Test entry", EntryTypeLog, 0)
+	journal.LogEntries = append(journal.LogEntries, *entry)
+
+	// Add three notes via service layer
+	if err := service.AddLogNote(journal, entry.ID, "First note"); err != nil {
+		t.Fatalf("AddLogNote 1 failed: %v", err)
+	}
+
+	if err := service.AddLogNote(journal, entry.ID, "Second note"); err != nil {
+		t.Fatalf("AddLogNote 2 failed: %v", err)
+	}
+
+	if err := service.AddLogNote(journal, entry.ID, "Third note"); err != nil {
+		t.Fatalf("AddLogNote 3 failed: %v", err)
+	}
+
+	// Verify position-based ID format matches parser
+	expectedIDs := []string{
+		entry.ID + ":0",
+		entry.ID + ":1",
+		entry.ID + ":2",
+	}
+
+	for i, note := range journal.LogEntries[0].Notes {
+		if note.ID != expectedIDs[i] {
+			t.Errorf("Note %d: expected ID '%s', got '%s'", i, expectedIDs[i], note.ID)
+		}
+		if note.Position != i {
+			t.Errorf("Note %d: expected position %d, got %d", i, i, note.Position)
+		}
+	}
+
+	// Delete middle note
+	if err := service.DeleteLogNote(journal, entry.ID, expectedIDs[1]); err != nil {
+		t.Fatalf("DeleteLogNote failed: %v", err)
+	}
+
+	// Verify IDs were reindexed
+	expectedIDsAfterDelete := []string{
+		entry.ID + ":0",
+		entry.ID + ":1", // Third note moved to position 1
+	}
+
+	if len(journal.LogEntries[0].Notes) != 2 {
+		t.Fatalf("Expected 2 notes after delete, got %d", len(journal.LogEntries[0].Notes))
+	}
+
+	for i, note := range journal.LogEntries[0].Notes {
+		if note.ID != expectedIDsAfterDelete[i] {
+			t.Errorf("After delete, note %d: expected ID '%s', got '%s'", i, expectedIDsAfterDelete[i], note.ID)
+		}
+		if note.Position != i {
+			t.Errorf("After delete, note %d: expected position %d, got %d", i, i, note.Position)
+		}
+	}
+
+	// Verify round-trip through file system produces same IDs
+	retrieved, err := service.GetByDate("2024-01-15")
+	if err != nil {
+		t.Fatalf("Failed to retrieve journal: %v", err)
+	}
+
+	if len(retrieved.LogEntries) != 1 || len(retrieved.LogEntries[0].Notes) != 2 {
+		t.Fatalf("Expected 1 entry with 2 notes after round-trip")
+	}
+
+	for i, note := range retrieved.LogEntries[0].Notes {
+		expectedID := fmt.Sprintf("%s:%d", retrieved.LogEntries[0].ID, i)
+		if note.ID != expectedID {
+			t.Errorf("After round-trip, note %d: expected ID '%s', got '%s'", i, expectedID, note.ID)
+		}
+	}
+}
