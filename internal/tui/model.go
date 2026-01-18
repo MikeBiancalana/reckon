@@ -16,6 +16,42 @@ import (
 )
 
 // Section represents different sections of the journal
+//
+// Async Closure Capture Pattern
+// ==============================
+// When using tea.Cmd (async functions), Go closures capture variables by REFERENCE,
+// not by value. This is a common source of bugs in event-driven code where model
+// state may change between when the closure is created and when it executes.
+//
+// WRONG (buggy):
+//
+//	func (m *Model) submitTextEntry() tea.Cmd {
+//	    inputText := m.textEntryBar.GetValue()
+//	    mode := m.textEntryBar.GetMode()
+//	    return func() tea.Msg {
+//	        // BUG: m.currentJournal may have changed by the time this runs!
+//	        err := m.service.AddWin(m.currentJournal, inputText)
+//	        return errMsg{err}
+//	    }
+//	}
+//
+// CORRECT (captured values):
+//
+//	func (m *Model) submitTextEntry() tea.Cmd {
+//	    inputText := m.textEntryBar.GetValue()
+//	    mode := m.textEntryBar.GetMode()
+//	    capturedJournal := m.currentJournal  // Capture BEFORE creating closure
+//	    return func() tea.Msg {
+//	        // Safe: capturedJournal preserves the value at capture time
+//	        err := m.service.AddWin(capturedJournal, inputText)
+//	        return errMsg{err}
+//	    }
+//	}
+//
+// Key principles:
+// 1. Capture all model values you need BEFORE returning the closure
+// 2. Use descriptive variable names: capturedXxx for clarity
+// 3. Function parameters are captured at the point of definition
 type Section int
 
 const (
@@ -178,6 +214,9 @@ func (m *Model) Init() tea.Cmd {
 }
 
 // loadJournal loads the journal for the current date
+// Note: m.currentDate is accessed safely because its value is captured at
+// the time of closure creation. For strings and other immutable types,
+// this pattern is safe because the closure executes before any state change.
 func (m *Model) loadJournal() tea.Cmd {
 	return func() tea.Msg {
 		timer := perf.NewTimer("tui.loadJournal", nil, 100)
@@ -1084,9 +1123,10 @@ func (m *Model) jumpToToday() tea.Cmd {
 }
 
 func (m *Model) toggleIntention(intentionID string) tea.Cmd {
+	capturedJournal := m.currentJournal
 	return func() tea.Msg {
 		logger.Debug("tui: toggling intention", "intentionID", intentionID)
-		err := m.service.ToggleIntention(m.currentJournal, intentionID)
+		err := m.service.ToggleIntention(capturedJournal, intentionID)
 		if err != nil {
 			logger.Debug("tui: failed to toggle intention", "intentionID", intentionID, "error", err)
 			return errMsg{err}
@@ -1232,26 +1272,41 @@ func (m *Model) submitTextEntry() tea.Cmd {
 	// Go closures capture variables by REFERENCE, not by value.
 	// If we don't capture them here, the values may be reset by the key handler
 	// before the async function runs.
+	//
+	// Example of the bug this prevents:
+	//   // WRONG - captures m.noteLogEntryID by reference
+	//   return func() tea.Msg {
+	//       err := m.service.AddLogNote(m.currentJournal, m.noteLogEntryID, inputText)
+	//       // If key handler runs before this, m.noteLogEntryID could be reset!
+	//   }
+	//
+	//   // CORRECT - captures value at this point in time
+	//   capturedLogEntryID := m.noteLogEntryID
+	//   return func() tea.Msg {
+	//       err := m.service.AddLogNote(m.currentJournal, capturedLogEntryID, inputText)
+	//   }
 	capturedLogEntryID := m.noteLogEntryID
 	capturedTaskID := m.noteTaskID
 	capturedEditID := m.editItemID
 	capturedEditType := m.editItemType
 	capturedCurrentJournal := m.currentJournal
+	capturedMode := mode
+	capturedTaskService := m.taskService
 
 	return func() tea.Msg {
 		var err error
 
-		switch mode {
+		switch capturedMode {
 		case components.ModeTask:
 			// Add task
-			if m.taskService != nil {
+			if capturedTaskService != nil {
 				taskText, tags := parseTaskTags(inputText)
-				err = m.taskService.AddTask(taskText, tags)
+				err = capturedTaskService.AddTask(taskText, tags)
 				if err != nil {
 					return errMsg{err}
 				}
 				// Reload tasks
-				tasks, errGetTasks := m.taskService.GetAllTasks()
+				tasks, errGetTasks := capturedTaskService.GetAllTasks()
 				if errGetTasks != nil {
 					return errMsg{errGetTasks}
 				}
@@ -1260,18 +1315,18 @@ func (m *Model) submitTextEntry() tea.Cmd {
 			return errMsg{fmt.Errorf("task service not available")}
 
 		case components.ModeIntention:
-			err = m.service.AddIntention(m.currentJournal, inputText)
+			err = m.service.AddIntention(capturedCurrentJournal, inputText)
 
 		case components.ModeWin:
-			err = m.service.AddWin(m.currentJournal, inputText)
+			err = m.service.AddWin(capturedCurrentJournal, inputText)
 
 		case components.ModeLog:
-			err = m.service.AppendLog(m.currentJournal, inputText)
+			err = m.service.AppendLog(capturedCurrentJournal, inputText)
 
 		case components.ModeNote:
 			// Add note to the selected task
-			if m.taskService != nil && capturedTaskID != "" {
-				err = m.taskService.AddTaskNote(capturedTaskID, inputText)
+			if capturedTaskService != nil && capturedTaskID != "" {
+				err = capturedTaskService.AddTaskNote(capturedTaskID, inputText)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -1297,13 +1352,13 @@ func (m *Model) submitTextEntry() tea.Cmd {
 
 		case components.ModeEditTask:
 			// Edit task
-			if m.taskService != nil && capturedEditID != "" && capturedEditType == "task" {
-				err = m.taskService.UpdateTask(capturedEditID, inputText, []string{}) // TODO: preserve existing tags
+			if capturedTaskService != nil && capturedEditID != "" && capturedEditType == "task" {
+				err = capturedTaskService.UpdateTask(capturedEditID, inputText, []string{}) // TODO: preserve existing tags
 				if err != nil {
 					return errMsg{err}
 				}
 				// Reload tasks
-				tasks, errGetTasks := m.taskService.GetAllTasks()
+				tasks, errGetTasks := capturedTaskService.GetAllTasks()
 				if errGetTasks != nil {
 					return errMsg{errGetTasks}
 				}
@@ -1314,19 +1369,19 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		case components.ModeEditIntention:
 			// Edit intention
 			if capturedEditID != "" && capturedEditType == "intention" {
-				err = m.service.UpdateIntention(m.currentJournal, capturedEditID, inputText)
+				err = m.service.UpdateIntention(capturedCurrentJournal, capturedEditID, inputText)
 			}
 
 		case components.ModeEditWin:
 			// Edit win
 			if capturedEditID != "" && capturedEditType == "win" {
-				err = m.service.UpdateWin(m.currentJournal, capturedEditID, inputText)
+				err = m.service.UpdateWin(capturedCurrentJournal, capturedEditID, inputText)
 			}
 
 		case components.ModeEditLog:
 			// Edit log entry
 			if capturedEditID != "" && capturedEditType == "log" {
-				err = m.service.UpdateLogEntry(m.currentJournal, capturedEditID, inputText)
+				err = m.service.UpdateLogEntry(capturedCurrentJournal, capturedEditID, inputText)
 			}
 
 		default:
@@ -1359,7 +1414,9 @@ func parseTaskTags(input string) (string, []string) {
 	return strings.Join(filteredWords, " "), tags
 }
 
-// waitForFileChange waits for file change events from the watcher
+// waitForFileChange waits for file change events from the watcher.
+// This is a non-blocking async command - it returns immediately and the
+// closure waits for the watcher channel to signal changes.
 func (m *Model) waitForFileChange() tea.Cmd {
 	if m.watcher == nil {
 		return nil
