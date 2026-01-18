@@ -69,6 +69,78 @@ func taskFilePath(task Task) (string, error) {
 	return filepath.Join(tasksDir, taskFilename(task)), nil
 }
 
+// MigrateTaskFilenames renames existing task files from {ID}.md to YYYY-MM-DD-slug.md format
+func (s *TaskService) MigrateTaskFilenames() error {
+	s.logger.Info("MigrateTaskFilenames", "operation", "start")
+
+	tasksDir, err := config.TasksDir()
+	if err != nil {
+		s.logger.Error("MigrateTaskFilenames", "error", err, "operation", "get_tasks_dir")
+		return fmt.Errorf("failed to get tasks directory: %w", err)
+	}
+
+	files, err := os.ReadDir(tasksDir)
+	if err != nil {
+		s.logger.Error("MigrateTaskFilenames", "error", err, "operation", "read_tasks_dir")
+		return fmt.Errorf("failed to read tasks directory: %w", err)
+	}
+
+	migrated := 0
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ".md") || file.IsDir() {
+			continue
+		}
+
+		// Skip files already in new format (YYYY-MM-DD-slug.md)
+		if len(file.Name()) > 11 && file.Name()[4] == '-' && file.Name()[7] == '-' {
+			continue
+		}
+
+		// Parse the file to get task info
+		filePath := filepath.Join(tasksDir, file.Name())
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			s.logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
+			continue
+		}
+
+		frontmatter, _, err := parseTaskFile(string(content))
+		if err != nil {
+			s.logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
+			continue
+		}
+
+		// Create a temporary task to generate the filename
+		createdAt := time.Now()
+		if frontmatter.Created != "" {
+			if parsed, err := time.Parse("2006-01-02", frontmatter.Created); err == nil {
+				createdAt = parsed
+			}
+		}
+
+		tempTask := Task{
+			ID:        frontmatter.ID,
+			Text:      frontmatter.Title,
+			CreatedAt: createdAt,
+		}
+
+		newFileName := taskFilename(tempTask)
+		newFilePath := filepath.Join(tasksDir, newFileName)
+
+		if file.Name() != newFileName {
+			if err := os.Rename(filePath, newFilePath); err != nil {
+				s.logger.Error("MigrateTaskFilenames", "error", err, "old_path", filePath, "new_path", newFilePath)
+				continue
+			}
+			migrated++
+			s.logger.Info("MigrateTaskFilenames", "migrated", file.Name(), "to", newFileName)
+		}
+	}
+
+	s.logger.Info("MigrateTaskFilenames", "operation", "complete", "files_migrated", migrated)
+	return nil
+}
+
 // GetAllTasks loads tasks from individual task files (source of truth)
 // The files are the authoritative source; DB is just an index/cache
 func (s *TaskService) GetAllTasks() ([]Task, error) {
