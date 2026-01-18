@@ -8,10 +8,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/sahilm/fuzzy"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/MikeBiancalana/reckon/internal/journal"
 )
 
 const (
@@ -247,9 +248,19 @@ Examples:
   rk task show --match auth`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Validate mutually exclusive options
+		if taskMatchFlag != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if taskMatchFlag == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -307,9 +318,19 @@ Examples:
   rk task log --match auth "Authentication implemented"`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Validate mutually exclusive options
+		if taskMatchFlag != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if taskMatchFlag == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -346,9 +367,19 @@ Examples:
   rk task done --match auth`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Validate mutually exclusive options
+		if taskMatchFlag != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if taskMatchFlag == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -383,9 +414,19 @@ Examples:
   rk task edit --match auth --title "Authentication Feature"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Validate mutually exclusive options
+		if taskMatchFlag != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if taskMatchFlag == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -431,9 +472,19 @@ Examples:
   rk task note --match auth "Auth-related note"`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		taskMatchFlag = ""
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Validate mutually exclusive options
+		if taskMatchFlag != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if taskMatchFlag == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -534,7 +585,7 @@ func resolveJournalTaskIDByMatch(pattern string, svc *journal.TaskService) (stri
 		for _, m := range matches {
 			candidates = append(candidates, fmt.Sprintf("  - %s", tasks[m.Index].Text))
 		}
-		return "", fmt.Errorf("multiple tasks match pattern %q:\n%s\nUse a more specific pattern or use task index", pattern, strings.Join(candidates, "\n"))
+		return "", fmt.Errorf("multiple tasks match pattern %q:\n%s\nUse a more specific pattern", pattern, strings.Join(candidates, "\n"))
 	}
 
 	// Single match found
