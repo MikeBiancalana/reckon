@@ -25,10 +25,10 @@ date: 2023-12-01
 ## Log
 
 - 09:00 Started work
-  - note-1 First note on work
-  - note-2 Second note on work
+  - First note on work
+  - Second note on work
 - 10:30 [meeting:standup] 30m Meeting notes
-  - meeting-note Discussed project timeline
+  - Discussed project timeline
 - 11:00 [task:abc123] Worked on feature
 - 12:00 [break] 45m Lunch break`
 
@@ -93,19 +93,31 @@ date: 2023-12-01
 	if len(journal.LogEntries[0].Notes) != 2 {
 		t.Errorf("Expected first log entry to have 2 notes, got %d", len(journal.LogEntries[0].Notes))
 	}
-	// Notes now have generated IDs, the ID prefix becomes part of text
-	if journal.LogEntries[0].Notes[0].Text != "note-1 First note on work" {
-		t.Errorf("Expected first note text 'note-1 First note on work', got '%s'", journal.LogEntries[0].Notes[0].Text)
+	// Check that IDs are position-based
+	expectedFirstNoteID := "2023-12-01:0:0"
+	if journal.LogEntries[0].Notes[0].ID != expectedFirstNoteID {
+		t.Errorf("Expected first note ID '%s', got '%s'", expectedFirstNoteID, journal.LogEntries[0].Notes[0].ID)
 	}
-	if journal.LogEntries[0].Notes[1].Text != "note-2 Second note on work" {
-		t.Errorf("Expected second note text 'note-2 Second note on work', got '%s'", journal.LogEntries[0].Notes[1].Text)
+	if journal.LogEntries[0].Notes[0].Text != "First note on work" {
+		t.Errorf("Expected first note text 'First note on work', got '%s'", journal.LogEntries[0].Notes[0].Text)
+	}
+	expectedSecondNoteID := "2023-12-01:0:1"
+	if journal.LogEntries[0].Notes[1].ID != expectedSecondNoteID {
+		t.Errorf("Expected second note ID '%s', got '%s'", expectedSecondNoteID, journal.LogEntries[0].Notes[1].ID)
+	}
+	if journal.LogEntries[0].Notes[1].Text != "Second note on work" {
+		t.Errorf("Expected second note text 'Second note on work', got '%s'", journal.LogEntries[0].Notes[1].Text)
 	}
 
 	if len(journal.LogEntries[1].Notes) != 1 {
 		t.Errorf("Expected second log entry to have 1 note, got %d", len(journal.LogEntries[1].Notes))
 	}
-	if journal.LogEntries[1].Notes[0].Text != "meeting-note Discussed project timeline" {
-		t.Errorf("Expected meeting note text 'meeting-note Discussed project timeline', got '%s'", journal.LogEntries[1].Notes[0].Text)
+	expectedMeetingNoteID := "2023-12-01:1:0"
+	if journal.LogEntries[1].Notes[0].ID != expectedMeetingNoteID {
+		t.Errorf("Expected meeting note ID '%s', got '%s'", expectedMeetingNoteID, journal.LogEntries[1].Notes[0].ID)
+	}
+	if journal.LogEntries[1].Notes[0].Text != "Discussed project timeline" {
+		t.Errorf("Expected meeting note text 'Discussed project timeline', got '%s'", journal.LogEntries[1].Notes[0].Text)
 	}
 
 	if len(journal.LogEntries[2].Notes) != 0 {
@@ -481,9 +493,9 @@ func TestParseJournalWithVeryLongNoteText(t *testing.T) {
 	longText := strings.Repeat(word+" ", 1250)
 	longText = strings.TrimSpace(longText)
 
-	expectedLength := len("note-1 " + longText)
+	expectedLength := len(longText)
 
-	markdown := "---\ndate: 2023-12-01\n---\n\n## Log\n\n- 09:00 Started work\n  - note-1 " + longText + "\n"
+	markdown := "---\ndate: 2023-12-01\n---\n\n## Log\n\n- 09:00 Started work\n  - " + longText + "\n"
 
 	journal, err := ParseJournal(markdown, "/test/journal/2023-12-01.md", time.Now())
 	if err != nil {
@@ -500,14 +512,17 @@ func TestParseJournalWithVeryLongNoteText(t *testing.T) {
 
 	note := journal.LogEntries[0].Notes[0]
 
-	// Note ID is now generated, not extracted from markdown
+	// Check for position-based ID
+	expectedNoteID := "2023-12-01:0:0"
+	if note.ID != expectedNoteID {
+		t.Errorf("Expected note ID '%s', got '%s'", expectedNoteID, note.ID)
+	}
+
 	if len(note.Text) != expectedLength {
 		t.Errorf("Expected note text length %d, got %d", expectedLength, len(note.Text))
 	}
 
-	// Verify the text starts with the ID prefix followed by the actual text
-	expectedText := "note-1 " + longText
-	if note.Text != expectedText {
+	if note.Text != longText {
 		t.Errorf("Note text content mismatch")
 	}
 }

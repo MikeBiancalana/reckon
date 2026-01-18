@@ -119,6 +119,7 @@ func WriteJournal(j *Journal) string {
 					if note.Text == "" {
 						continue // Skip empty notes
 					}
+					// Write note without ID
 					sb.WriteString(fmt.Sprintf("  - %s\n", note.Text))
 				}
 			}

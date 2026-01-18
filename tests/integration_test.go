@@ -816,8 +816,8 @@ func TestLogNotePersistence(t *testing.T) {
 		t.Errorf("Journal file should contain the note text. Content:\n%s", content)
 	}
 
-	// Verify the note format in the file
-	expectedNoteFormat := "  - " + j.LogEntries[0].Notes[0].ID + " This is a test note"
+	// Verify the note format in the file (IDs are no longer in markdown)
+	expectedNoteFormat := "  - This is a test note"
 	if !strings.Contains(content, expectedNoteFormat) {
 		t.Errorf("Journal file should contain properly formatted note. Expected format:\n%s\n\nActual content:\n%s", expectedNoteFormat, content)
 	}
