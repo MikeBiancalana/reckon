@@ -67,36 +67,40 @@ func (m *Model) jumpToToday() tea.Cmd {
 }
 
 // loadJournal loads the journal for the current date
-// Note: m.currentDate is accessed safely because its value is captured at
-// the time of closure creation. For strings and other immutable types,
-// this pattern is safe because the closure executes before any state change.
 func (m *Model) loadJournal() tea.Cmd {
+	// Capture values before creating closure
+	capturedDate := m.currentDate
+	capturedService := m.service
+
 	return func() tea.Msg {
 		timer := perf.NewTimer("tui.loadJournal", nil, 100)
 		defer timer.Stop()
 
-		logger.Debug("tui: loading journal", "date", m.currentDate)
-		j, err := m.service.GetByDate(m.currentDate)
+		logger.Debug("tui: loading journal", "date", capturedDate)
+		j, err := capturedService.GetByDate(capturedDate)
 		if err != nil {
-			logger.Debug("tui: failed to load journal", "date", m.currentDate, "error", err)
+			logger.Debug("tui: failed to load journal", "date", capturedDate, "error", err)
 			return errMsg{err}
 		}
-		logger.Debug("tui: journal loaded successfully", "date", m.currentDate)
+		logger.Debug("tui: journal loaded successfully", "date", capturedDate)
 		return journalLoadedMsg{*j}
 	}
 }
 
 // loadTasks loads all tasks from the task service
 func (m *Model) loadTasks() tea.Cmd {
+	// Capture values before creating closure
+	capturedTaskService := m.taskService
+
 	return func() tea.Msg {
 		timer := perf.NewTimer("tui.loadTasks", nil, 100)
 		defer timer.Stop()
 
-		if m.taskService == nil {
+		if capturedTaskService == nil {
 			return errMsg{fmt.Errorf("task service not available")}
 		}
 
-		tasks, err := m.taskService.GetAllTasks()
+		tasks, err := capturedTaskService.GetAllTasks()
 		if err != nil {
 			return errMsg{err}
 		}
@@ -107,12 +111,15 @@ func (m *Model) loadTasks() tea.Cmd {
 
 // toggleTask toggles a task's completion status
 func (m *Model) toggleTask(taskID string) tea.Cmd {
+	// Capture values before creating closure
+	capturedTaskService := m.taskService
+
 	return func() tea.Msg {
-		if m.taskService == nil {
+		if capturedTaskService == nil {
 			return errMsg{fmt.Errorf("task service not available")}
 		}
 
-		err := m.taskService.ToggleTask(taskID)
+		err := capturedTaskService.ToggleTask(taskID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -138,70 +145,52 @@ func (m *Model) toggleIntention(intentionID string) tea.Cmd {
 
 // deleteItem deletes the item in confirmation mode
 func (m *Model) deleteItem() tea.Cmd {
+	// Capture all values before creating closure
+	capturedService := m.service
+	capturedTaskService := m.taskService
+	capturedJournal := m.currentJournal
+	capturedItemType := m.confirmItemType
+	capturedItemID := m.confirmItemID
+	capturedLogEntryID := m.confirmLogEntryID
+
 	return func() tea.Msg {
 		var err error
-		switch m.confirmItemType {
+		switch capturedItemType {
 		case "intention":
-			err = m.service.DeleteIntention(m.currentJournal, m.confirmItemID)
+			err = capturedService.DeleteIntention(capturedJournal, capturedItemID)
 
 		case "win":
-			err = m.service.DeleteWin(m.currentJournal, m.confirmItemID)
+			err = capturedService.DeleteWin(capturedJournal, capturedItemID)
 
 		case "log":
-			err = m.service.DeleteLogEntry(m.currentJournal, m.confirmItemID)
+			err = capturedService.DeleteLogEntry(capturedJournal, capturedItemID)
 
 		case "task":
-			if m.taskService != nil {
-				err = m.taskService.DeleteTask(m.confirmItemID)
+			if capturedTaskService != nil {
+				err = capturedTaskService.DeleteTask(capturedItemID)
 			} else {
 				err = fmt.Errorf("task service not available")
 			}
 
 		case "log_note":
 			// Delete log note using both log entry ID and note ID
-			err = m.service.DeleteLogNote(m.currentJournal, m.confirmLogEntryID, m.confirmItemID)
+			err = capturedService.DeleteLogNote(capturedJournal, capturedLogEntryID, capturedItemID)
 			if err != nil {
-				// Reset confirmation state
-				m.confirmMode = false
-				m.confirmItemType = ""
-				m.confirmItemID = ""
-				m.confirmLogEntryID = ""
 				return errMsg{err}
 			}
-			// Reset confirmation state
-			m.confirmMode = false
-			m.confirmItemType = ""
-			m.confirmItemID = ""
-			m.confirmLogEntryID = ""
 			return logNoteDeletedMsg{}
 
 		case "task_note":
 			// Delete task note using both task ID and note ID
-			if m.taskService != nil {
-				err = m.taskService.DeleteTaskNote(m.confirmLogEntryID, m.confirmItemID)
+			if capturedTaskService != nil {
+				err = capturedTaskService.DeleteTaskNote(capturedLogEntryID, capturedItemID)
 				if err != nil {
-					// Reset confirmation state
-					m.confirmMode = false
-					m.confirmItemType = ""
-					m.confirmItemID = ""
-					m.confirmLogEntryID = ""
 					return errMsg{err}
 				}
-				// Reset confirmation state
-				m.confirmMode = false
-				m.confirmItemType = ""
-				m.confirmItemID = ""
-				m.confirmLogEntryID = ""
 				return taskNoteDeletedMsg{}
 			}
 			return errMsg{fmt.Errorf("task service not available")}
 		}
-
-		// Reset confirmation state
-		m.confirmMode = false
-		m.confirmItemType = ""
-		m.confirmItemID = ""
-		m.confirmLogEntryID = ""
 
 		if err != nil {
 			return errMsg{err}
@@ -244,9 +233,11 @@ func (m *Model) submitTextEntry() tea.Cmd {
 	capturedTaskID := m.noteTaskID
 	capturedEditID := m.editItemID
 	capturedEditType := m.editItemType
+	capturedEditTags := m.editItemTags
 	capturedCurrentJournal := m.currentJournal
 	capturedMode := mode
 	capturedTaskService := m.taskService
+	capturedService := m.service
 
 	return func() tea.Msg {
 		var err error
@@ -270,13 +261,25 @@ func (m *Model) submitTextEntry() tea.Cmd {
 			return errMsg{fmt.Errorf("task service not available")}
 
 		case components.ModeIntention:
-			err = m.service.AddIntention(capturedCurrentJournal, inputText)
+			err = capturedService.AddIntention(capturedCurrentJournal, inputText)
+			if err != nil {
+				return errMsg{err}
+			}
+			return journalUpdatedMsg{}
 
 		case components.ModeWin:
-			err = m.service.AddWin(capturedCurrentJournal, inputText)
+			err = capturedService.AddWin(capturedCurrentJournal, inputText)
+			if err != nil {
+				return errMsg{err}
+			}
+			return journalUpdatedMsg{}
 
 		case components.ModeLog:
-			err = m.service.AppendLog(capturedCurrentJournal, inputText)
+			err = capturedService.AppendLog(capturedCurrentJournal, inputText)
+			if err != nil {
+				return errMsg{err}
+			}
+			return journalUpdatedMsg{}
 
 		case components.ModeNote:
 			// Add note to the selected task
@@ -286,7 +289,7 @@ func (m *Model) submitTextEntry() tea.Cmd {
 					return errMsg{err}
 				}
 				// Reload tasks
-				tasks, errGetTasks := m.taskService.GetAllTasks()
+				tasks, errGetTasks := capturedTaskService.GetAllTasks()
 				if errGetTasks != nil {
 					return errMsg{errGetTasks}
 				}
@@ -297,7 +300,7 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		case components.ModeLogNote:
 			// Add note to the selected log entry
 			if capturedLogEntryID != "" {
-				err = m.service.AddLogNote(capturedCurrentJournal, capturedLogEntryID, inputText)
+				err = capturedService.AddLogNote(capturedCurrentJournal, capturedLogEntryID, inputText)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -308,7 +311,7 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		case components.ModeEditTask:
 			// Edit task
 			if capturedTaskService != nil && capturedEditID != "" && capturedEditType == "task" {
-				err = capturedTaskService.UpdateTask(capturedEditID, inputText, []string{}) // TODO: preserve existing tags
+				err = capturedTaskService.UpdateTask(capturedEditID, inputText, capturedEditTags)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -324,29 +327,39 @@ func (m *Model) submitTextEntry() tea.Cmd {
 		case components.ModeEditIntention:
 			// Edit intention
 			if capturedEditID != "" && capturedEditType == "intention" {
-				err = m.service.UpdateIntention(capturedCurrentJournal, capturedEditID, inputText)
+				err = capturedService.UpdateIntention(capturedCurrentJournal, capturedEditID, inputText)
+				if err != nil {
+					return errMsg{err}
+				}
+				return journalUpdatedMsg{}
 			}
+			return errMsg{fmt.Errorf("no intention selected for editing")}
 
 		case components.ModeEditWin:
 			// Edit win
 			if capturedEditID != "" && capturedEditType == "win" {
-				err = m.service.UpdateWin(capturedCurrentJournal, capturedEditID, inputText)
+				err = capturedService.UpdateWin(capturedCurrentJournal, capturedEditID, inputText)
+				if err != nil {
+					return errMsg{err}
+				}
+				return journalUpdatedMsg{}
 			}
+			return errMsg{fmt.Errorf("no win selected for editing")}
 
 		case components.ModeEditLog:
 			// Edit log entry
 			if capturedEditID != "" && capturedEditType == "log" {
-				err = m.service.UpdateLogEntry(capturedCurrentJournal, capturedEditID, inputText)
+				err = capturedService.UpdateLogEntry(capturedCurrentJournal, capturedEditID, inputText)
+				if err != nil {
+					return errMsg{err}
+				}
+				return journalUpdatedMsg{}
 			}
+			return errMsg{fmt.Errorf("no log entry selected for editing")}
 
 		default:
 			return errMsg{fmt.Errorf("unknown entry mode")}
 		}
-
-		if err != nil {
-			return errMsg{err}
-		}
-		return journalUpdatedMsg{}
 	}
 }
 

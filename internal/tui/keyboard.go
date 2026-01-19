@@ -483,6 +483,7 @@ func (m *Model) handleEditTask() (tea.Model, tea.Cmd) {
 			// Edit task (only main tasks, not notes)
 			m.editItemID = selectedTask.ID
 			m.editItemType = "task"
+			m.editItemTags = selectedTask.Tags // Preserve tags
 			m.textEntryBar.SetMode(components.ModeEditTask)
 			m.textEntryBar.SetValue(selectedTask.Text)
 

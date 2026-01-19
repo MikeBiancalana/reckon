@@ -127,10 +127,11 @@ type Model struct {
 	confirmItemType   string // "intention", "win", "log", "log_note"
 	confirmItemID     string
 	confirmLogEntryID string // For log_note deletion, stores the log entry ID
-	editItemID        string // ID of item being edited
-	editItemType      string // "task", "intention", "win", "log"
-	noteTaskID        string // ID of task being noted
-	noteLogEntryID    string // ID of log entry being noted
+	editItemID        string   // ID of item being edited
+	editItemType      string   // "task", "intention", "win", "log"
+	editItemTags      []string // Original tags of task being edited (for preservation)
+	noteTaskID        string   // ID of task being noted
+	noteLogEntryID    string   // ID of log entry being noted
 	lastError         error
 
 	// Terminal size validation

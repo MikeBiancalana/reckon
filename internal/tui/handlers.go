@@ -104,6 +104,12 @@ func (m *Model) handleJournalLoaded(msg journalLoadedMsg) (tea.Model, tea.Cmd) {
 
 // handleJournalUpdated handles journal update notifications
 func (m *Model) handleJournalUpdated(msg journalUpdatedMsg) (tea.Model, tea.Cmd) {
+	// Reset confirmation state
+	m.confirmMode = false
+	m.confirmItemType = ""
+	m.confirmItemID = ""
+	m.confirmLogEntryID = ""
+
 	// Reload journal after update
 	return m, m.loadJournal()
 }
@@ -208,12 +214,24 @@ func (m *Model) handleLogNoteAdded(msg logNoteAddedMsg) (tea.Model, tea.Cmd) {
 
 // handleLogNoteDeleted handles log note deleted confirmation
 func (m *Model) handleLogNoteDeleted(msg logNoteDeletedMsg) (tea.Model, tea.Cmd) {
+	// Reset confirmation state
+	m.confirmMode = false
+	m.confirmItemType = ""
+	m.confirmItemID = ""
+	m.confirmLogEntryID = ""
+
 	// Log note deleted successfully, reload journal
 	return m, m.loadJournal()
 }
 
 // handleTaskNoteDeleted handles task note deleted confirmation
 func (m *Model) handleTaskNoteDeleted(msg taskNoteDeletedMsg) (tea.Model, tea.Cmd) {
+	// Reset confirmation state
+	m.confirmMode = false
+	m.confirmItemType = ""
+	m.confirmItemID = ""
+	m.confirmLogEntryID = ""
+
 	// Task note deleted successfully, reload tasks
 	return m, m.loadTasks()
 }
