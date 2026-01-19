@@ -92,3 +92,19 @@ func DatabasePath() (string, error) {
 
 	return filepath.Join(dataDir, DbName), nil
 }
+
+// LogDir returns the path to the log directory (~/.reckon/logs/)
+// Creates the directory if it doesn't exist
+func LogDir() (string, error) {
+	dataDir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+
+	logDir := filepath.Join(dataDir, "logs")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return "", err
+	}
+
+	return logDir, nil
+}
