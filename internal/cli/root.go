@@ -142,8 +142,8 @@ func initService() {
 	fileStore := storage.NewFileStore()
 	service = journal.NewService(repo, fileStore, log)
 
-	journalTaskRepo := journal.NewTaskRepository(db, log)
-	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore, log)
+	journalTaskRepo := journal.NewTaskRepository(db)
+	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
 }
 
 // getEffectiveDate returns the date to operate on, either from --date flag or today
