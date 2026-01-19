@@ -57,10 +57,12 @@ var scheduleAddCmd = &cobra.Command{
 			return fmt.Errorf("failed to add schedule item: %w", err)
 		}
 
-		if timeStr != "" {
-			fmt.Printf("✓ Scheduled: %s at %s\n", content, timeStr)
-		} else {
-			fmt.Printf("✓ Scheduled: %s\n", content)
+		if !quietFlag {
+			if timeStr != "" {
+				fmt.Printf("✓ Scheduled: %s at %s\n", content, timeStr)
+			} else {
+				fmt.Printf("✓ Scheduled: %s\n", content)
+			}
 		}
 
 		return nil
@@ -95,11 +97,15 @@ var scheduleListCmd = &cobra.Command{
 		}
 
 		if len(j.ScheduleItems) == 0 {
-			fmt.Printf("No schedule items for %s\n", effectiveDate)
+			if !quietFlag {
+				fmt.Printf("No schedule items for %s\n", effectiveDate)
+			}
 			return nil
 		}
 
-		fmt.Printf("Schedule for %s:\n\n", effectiveDate)
+		if !quietFlag {
+			fmt.Printf("Schedule for %s:\n\n", effectiveDate)
+		}
 		for i, item := range j.ScheduleItems {
 			if !item.Time.IsZero() {
 				fmt.Printf("[%d] %s: %s\n", i+1, item.Time.Format("15:04"), item.Content)
@@ -152,7 +158,9 @@ var scheduleDeleteCmd = &cobra.Command{
 			return fmt.Errorf("failed to delete schedule item: %w", err)
 		}
 
-		fmt.Printf("✓ Deleted schedule item: %s\n", item.Content)
+		if !quietFlag {
+			fmt.Printf("✓ Deleted schedule item: %s\n", item.Content)
+		}
 		return nil
 	},
 }
