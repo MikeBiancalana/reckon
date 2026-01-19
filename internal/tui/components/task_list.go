@@ -397,3 +397,8 @@ func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
 		tl.lastSelectedTaskID = ""
 	}
 }
+
+// GetTasks returns the current tasks
+func (tl *TaskList) GetTasks() []journal.Task {
+	return tl.tasks
+}

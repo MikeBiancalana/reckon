@@ -119,9 +119,6 @@ type Model struct {
 	summaryView  *components.SummaryView
 	notesPane    *components.NotesPane
 
-	// Cached data
-	tasks []journal.Task
-
 	// Notes pane state
 	selectedTaskID   string
 	notesPaneVisible bool
@@ -298,11 +295,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scheduleView.UpdateSchedule(msg.journal.ScheduleItems)
 		}
 
-		// Initialize taskList with cached tasks (if available) or empty
+		// Initialize taskList if needed (tasks will be loaded separately via tasksLoadedMsg)
 		if m.taskList == nil {
-			m.taskList = components.NewTaskList(m.tasks)
-		} else {
-			m.taskList.UpdateTasks(m.tasks)
+			m.taskList = components.NewTaskList(nil)
 		}
 
 		// Calculate time summary
@@ -320,7 +315,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tasksLoadedMsg:
 		// New journal tasks loaded, update task list
 		logger.Debug("tui: handling tasksLoadedMsg", "taskCount", len(msg.tasks))
-		m.tasks = msg.tasks
 		if m.taskList != nil {
 			m.taskList.UpdateTasks(msg.tasks)
 		} else {
