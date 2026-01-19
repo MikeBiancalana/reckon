@@ -305,7 +305,7 @@ func unixToTime(unix int64) time.Time {
 
 // FindStaleTasks finds tasks that haven't had any log entry activity in the specified number of days
 // Uses a single query with LEFT JOIN to avoid N+1 queries
-// Excludes done tasks and tasks with no tags (someday/unwanted tasks)
+// Excludes done tasks
 func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 	timer := perf.NewTimer("TaskRepository.FindStaleTasks", r.logger, 50)
 	defer timer.Stop()
@@ -329,7 +329,7 @@ func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 	}
 	defer rows.Close()
 
-	tasks := make([]Task, 0)
+	tasksMap := make(map[string]*Task)
 	for rows.Next() {
 		var taskID, taskText, tagsJSON, lastActivity string
 		var taskStatus TaskStatus
@@ -344,12 +344,16 @@ func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
 		}
 
+		if _, exists := tasksMap[taskID]; exists {
+			continue
+		}
+
 		var tags []string
 		if tagsJSON != "" {
 			json.Unmarshal([]byte(tagsJSON), &tags)
 		}
 
-		task := Task{
+		tasksMap[taskID] = &Task{
 			ID:        taskID,
 			Text:      taskText,
 			Status:    taskStatus,
@@ -358,11 +362,15 @@ func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 			Tags:      tags,
 			Notes:     make([]TaskNote, 0),
 		}
-		tasks = append(tasks, task)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating stale tasks: %w", err)
+	}
+
+	tasks := make([]Task, 0, len(tasksMap))
+	for _, task := range tasksMap {
+		tasks = append(tasks, *task)
 	}
 
 	r.logger.Debug("FindStaleTasks", "operation", "complete", "stale_count", len(tasks))
