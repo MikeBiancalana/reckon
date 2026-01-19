@@ -3,9 +3,11 @@ package components
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -170,18 +172,31 @@ func NewTaskList(tasks []journal.Task) *TaskList {
 
 // buildTaskItems converts tasks into list items, respecting collapsed state
 func buildTaskItems(tasks []journal.Task, collapsedMap map[string]bool) []list.Item {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("task_list: panic in buildTaskItems", "error", r, slog.String("stack", fmt.Sprintf("%v", r)))
+		}
+	}()
+
 	items := make([]list.Item, 0)
 
 	for _, task := range tasks {
-		// Add the task itself
+		if task.ID == "" {
+			logger.Warn("task_list: skipping task with empty ID")
+			continue
+		}
+
 		items = append(items, TaskItem{
 			task:   task,
 			isNote: false,
 		})
 
-		// Add notes if task is not collapsed
 		if !collapsedMap[task.ID] && len(task.Notes) > 0 {
 			for _, note := range task.Notes {
+				if note.ID == "" {
+					logger.Warn("task_list: skipping note with empty ID", "taskID", task.ID)
+					continue
+				}
 				items = append(items, TaskItem{
 					task:   task,
 					isNote: true,
@@ -199,7 +214,6 @@ func buildTaskItems(tasks []journal.Task, collapsedMap map[string]bool) []list.I
 func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Only handle keyboard input when focused
 		if !tl.focused {
 			var cmd tea.Cmd
 			tl.list, cmd = tl.list.Update(msg)
@@ -207,48 +221,59 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 		}
 		switch msg.String() {
 		case " ":
-			// Toggle task status
 			selectedItem := tl.list.SelectedItem()
-			if selectedItem != nil {
-				taskItem, ok := selectedItem.(TaskItem)
-				if ok && !taskItem.isNote {
-					// Return a message to toggle the task status
-					return tl, func() tea.Msg {
-						return TaskToggleMsg{TaskID: taskItem.task.ID}
-					}
-				}
+			if selectedItem == nil {
+				logger.Warn("task_list: cannot toggle - no item selected")
+				return tl, nil
 			}
-			return tl, nil
+			taskItem, ok := selectedItem.(TaskItem)
+			if !ok {
+				logger.Error("task_list: failed to cast selected item to TaskItem")
+				return tl, nil
+			}
+			if taskItem.isNote {
+				logger.Warn("task_list: cannot toggle note completion", "noteID", taskItem.noteID)
+				return tl, nil
+			}
+			return tl, func() tea.Msg {
+				return TaskToggleMsg{TaskID: taskItem.task.ID}
+			}
 
 		case "enter":
-			// Toggle expand/collapse
 			selectedItem := tl.list.SelectedItem()
-			if selectedItem != nil {
-				taskItem, ok := selectedItem.(TaskItem)
-				if ok && !taskItem.isNote && len(taskItem.task.Notes) > 0 {
-					// Toggle collapsed state
-					tl.collapsedMap[taskItem.task.ID] = !tl.collapsedMap[taskItem.task.ID]
+			if selectedItem == nil {
+				logger.Warn("task_list: cannot expand/collapse - no item selected")
+				return tl, nil
+			}
+			taskItem, ok := selectedItem.(TaskItem)
+			if !ok {
+				logger.Error("task_list: failed to cast selected item to TaskItem")
+				return tl, nil
+			}
+			if taskItem.isNote {
+				logger.Warn("task_list: cannot expand/collapse note", "noteID", taskItem.noteID)
+				return tl, nil
+			}
+			if len(taskItem.task.Notes) == 0 {
+				logger.Debug("task_list: no notes to expand/collapse", "taskID", taskItem.task.ID)
+				return tl, nil
+			}
 
-					// Rebuild items with new collapsed state
-					items := buildTaskItems(tl.tasks, tl.collapsedMap)
-					tl.list.SetItems(items)
+			tl.collapsedMap[taskItem.task.ID] = !tl.collapsedMap[taskItem.task.ID]
+			items := buildTaskItems(tl.tasks, tl.collapsedMap)
+			tl.list.SetItems(items)
 
-					// Update delegate with new collapsed map
-					delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
-					tl.list.SetDelegate(delegate)
+			delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
+			tl.list.SetDelegate(delegate)
 
-					// If collapsing and cursor was on a note, move back to task
-					currentIndex := tl.list.Index()
-					if currentIndex < len(items) {
-						currentItem, ok := items[currentIndex].(TaskItem)
-						if ok && currentItem.isNote && tl.collapsedMap[taskItem.task.ID] {
-							// Find the task item index
-							for i, item := range items {
-								if ti, ok := item.(TaskItem); ok && !ti.isNote && ti.task.ID == taskItem.task.ID {
-									tl.list.Select(i)
-									break
-								}
-							}
+			currentIndex := tl.list.Index()
+			if currentIndex < len(items) {
+				currentItem, ok := items[currentIndex].(TaskItem)
+				if ok && currentItem.isNote && tl.collapsedMap[taskItem.task.ID] {
+					for i, item := range items {
+						if ti, ok := item.(TaskItem); ok && !ti.isNote && ti.task.ID == taskItem.task.ID {
+							tl.list.Select(i)
+							break
 						}
 					}
 				}
@@ -256,22 +281,19 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 			return tl, nil
 
 		case "d":
-			// Delete selected note or task
 			selectedItem := tl.list.SelectedItem()
-			if selectedItem != nil {
-				taskItem, ok := selectedItem.(TaskItem)
-				if ok {
-					if taskItem.isNote {
-						// Return a message to delete this note
-						return tl, func() tea.Msg {
-							return TaskNoteDeleteMsg{
-								TaskID: taskItem.taskID,
-								NoteID: taskItem.noteID,
-							}
+			if selectedItem == nil {
+				return tl, nil
+			}
+			taskItem, ok := selectedItem.(TaskItem)
+			if ok {
+				if taskItem.isNote {
+					return tl, func() tea.Msg {
+						return TaskNoteDeleteMsg{
+							TaskID: taskItem.taskID,
+							NoteID: taskItem.noteID,
 						}
 					}
-					// If it's a task (not a note), don't handle it here
-					// Let it bubble up to model.go
 				}
 			}
 			return tl, nil

@@ -3,8 +3,10 @@ package components
 import (
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -104,19 +106,32 @@ func (d LogDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 
 // buildLogItems converts log entries into list items, respecting collapsed state
 func buildLogItems(logEntries []journal.LogEntry, collapsedMap map[string]bool) []list.Item {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("log_view: panic in buildLogItems", "error", r, slog.String("stack", fmt.Sprintf("%v", r)))
+		}
+	}()
+
 	items := make([]list.Item, 0)
 
 	for _, entry := range logEntries {
-		// Add the log entry itself
+		if entry.ID == "" {
+			logger.Warn("log_view: skipping log entry with empty ID")
+			continue
+		}
+
 		items = append(items, LogEntryItem{
 			entry:      entry,
 			isNote:     false,
 			logEntryID: entry.ID,
 		})
 
-		// Add notes if entry is not collapsed
 		if !collapsedMap[entry.ID] && len(entry.Notes) > 0 {
 			for _, note := range entry.Notes {
+				if note.ID == "" {
+					logger.Warn("log_view: skipping log note with empty ID", "entryID", entry.ID)
+					continue
+				}
 				items = append(items, LogEntryItem{
 					entry:      entry,
 					isNote:     true,
@@ -171,7 +186,6 @@ type LogNoteDeleteMsg struct {
 func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Only handle keyboard input when focused
 		if !lv.focused {
 			var cmd tea.Cmd
 			lv.list, cmd = lv.list.Update(msg)
@@ -179,72 +193,75 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "n":
-			// Add note to selected log entry or parent entry if a note is selected
 			selectedItem := lv.list.SelectedItem()
-			if selectedItem != nil {
-				logItem, ok := selectedItem.(LogEntryItem)
-				if ok {
-					// Use parent entry ID if a note is selected, otherwise use entry ID
-					entryID := logItem.entry.ID
-					if logItem.isNote {
-						entryID = logItem.logEntryID
-					}
-					// Return a message to add a note to this log entry
-					return lv, func() tea.Msg {
-						return LogNoteAddMsg{LogEntryID: entryID}
-					}
-				}
+			if selectedItem == nil {
+				logger.Warn("log_view: cannot add note - no item selected")
+				return lv, nil
 			}
-			return lv, nil
+			logItem, ok := selectedItem.(LogEntryItem)
+			if !ok {
+				logger.Error("log_view: failed to cast selected item to LogEntryItem")
+				return lv, nil
+			}
+			entryID := logItem.entry.ID
+			if logItem.isNote {
+				entryID = logItem.logEntryID
+			}
+			return lv, func() tea.Msg {
+				return LogNoteAddMsg{LogEntryID: entryID}
+			}
 		case "d":
-			// Delete selected note or log entry
 			selectedItem := lv.list.SelectedItem()
-			if selectedItem != nil {
-				logItem, ok := selectedItem.(LogEntryItem)
-				if ok {
-					if logItem.isNote {
-						// Return a message to delete this note
-						return lv, func() tea.Msg {
-							return LogNoteDeleteMsg{
-								LogEntryID: logItem.logEntryID,
-								NoteID:     logItem.noteID,
-							}
+			if selectedItem == nil {
+				return lv, nil
+			}
+			logItem, ok := selectedItem.(LogEntryItem)
+			if ok {
+				if logItem.isNote {
+					return lv, func() tea.Msg {
+						return LogNoteDeleteMsg{
+							LogEntryID: logItem.logEntryID,
+							NoteID:     logItem.noteID,
 						}
 					}
-					// If it's a log entry (not a note), don't handle it here
-					// Let it bubble up to model.go
 				}
 			}
 			return lv, nil
 		case "enter", " ":
-			// Toggle expand/collapse
 			selectedItem := lv.list.SelectedItem()
-			if selectedItem != nil {
-				logItem, ok := selectedItem.(LogEntryItem)
-				if ok && !logItem.isNote && len(logItem.entry.Notes) > 0 {
-					// Save selection state BEFORE modifying collapsed map
-					selectedLogEntryID := logItem.entry.ID
-					isCollapsing := !lv.collapsedMap[logItem.entry.ID]
+			if selectedItem == nil {
+				logger.Warn("log_view: cannot expand/collapse - no item selected")
+				return lv, nil
+			}
+			logItem, ok := selectedItem.(LogEntryItem)
+			if !ok {
+				logger.Error("log_view: failed to cast selected item to LogEntryItem")
+				return lv, nil
+			}
+			if logItem.isNote {
+				logger.Warn("log_view: cannot expand/collapse note", "noteID", logItem.noteID)
+				return lv, nil
+			}
+			if len(logItem.entry.Notes) == 0 {
+				logger.Debug("log_view: no notes to expand/collapse", "entryID", logItem.entry.ID)
+				return lv, nil
+			}
 
-					// Toggle collapsed state
-					lv.collapsedMap[logItem.entry.ID] = isCollapsing
+			selectedLogEntryID := logItem.entry.ID
+			isCollapsing := !lv.collapsedMap[logItem.entry.ID]
+			lv.collapsedMap[logItem.entry.ID] = isCollapsing
 
-					// Rebuild items with new collapsed state
-					items := buildLogItems(lv.logEntries, lv.collapsedMap)
-					lv.list.SetItems(items)
+			items := buildLogItems(lv.logEntries, lv.collapsedMap)
+			lv.list.SetItems(items)
 
-					// Update delegate with new collapsed map
-					delegate := LogDelegate{collapsedMap: lv.collapsedMap}
-					lv.list.SetDelegate(delegate)
+			delegate := LogDelegate{collapsedMap: lv.collapsedMap}
+			lv.list.SetDelegate(delegate)
 
-					// If collapsing, reposition cursor to the log entry
-					if isCollapsing {
-						for i, item := range items {
-							if li, ok := item.(LogEntryItem); ok && !li.isNote && li.entry.ID == selectedLogEntryID {
-								lv.list.Select(i)
-								break
-							}
-						}
+			if isCollapsing {
+				for i, item := range items {
+					if li, ok := item.(LogEntryItem); ok && !li.isNote && li.entry.ID == selectedLogEntryID {
+						lv.list.Select(i)
+						break
 					}
 				}
 			}
