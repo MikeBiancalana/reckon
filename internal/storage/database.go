@@ -86,6 +86,30 @@ CREATE TABLE IF NOT EXISTS schedule_items (
     FOREIGN KEY (journal_date) REFERENCES journals(date) ON DELETE CASCADE
 );
 
+-- Zettelkasten Notes table
+CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    file_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    tags TEXT
+);
+
+-- Note links table for zettelkasten bidirectional links
+CREATE TABLE IF NOT EXISTS note_links (
+    id TEXT PRIMARY KEY,
+    source_note_id TEXT NOT NULL,
+    target_slug TEXT NOT NULL,
+    target_note_id TEXT,
+    link_type TEXT NOT NULL DEFAULT 'reference',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (source_note_id) REFERENCES notes(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_note_id) REFERENCES notes(id) ON DELETE SET NULL,
+    UNIQUE(source_note_id, target_slug, link_type)
+);
+
 
 
 -- Indices for faster queries
@@ -101,6 +125,12 @@ CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes(task_id);
 CREATE INDEX IF NOT EXISTS idx_log_notes_entry ON log_notes(log_entry_id);
 CREATE INDEX IF NOT EXISTS idx_schedule_items_date ON schedule_items(journal_date);
 CREATE INDEX IF NOT EXISTS idx_schedule_items_time ON schedule_items(time);
+CREATE INDEX IF NOT EXISTS idx_notes_slug ON notes(slug);
+CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at);
+CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
+CREATE INDEX IF NOT EXISTS idx_note_links_source ON note_links(source_note_id);
+CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_note_id);
+CREATE INDEX IF NOT EXISTS idx_note_links_target_slug ON note_links(target_slug);
 
 
 `
@@ -170,6 +200,11 @@ func runMigrations(db *sql.DB) error {
 
 	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline_date)"); err != nil {
 		return fmt.Errorf("failed to create deadline_date index: %w", err)
+	}
+
+	// Migration: Create notes and note_links tables if missing
+	if err := createNotesTablesIfMissing(db); err != nil {
+		return err
 	}
 
 	return nil
@@ -287,6 +322,67 @@ func addColumnIfMissing(db *sql.DB, table, column, colType string) error {
 		_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colType))
 		if err != nil {
 			return fmt.Errorf("failed to add column %s to %s: %w", column, table, err)
+		}
+	}
+
+	return nil
+}
+
+// createNotesTablesIfMissing creates the notes and note_links tables if they don't exist
+func createNotesTablesIfMissing(db *sql.DB) error {
+	// Check if notes table exists
+	var tableName string
+	err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='notes'").Scan(&tableName)
+	if err == nil && tableName == "notes" {
+		return nil
+	}
+
+	// Create notes table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS notes (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			slug TEXT NOT NULL UNIQUE,
+			file_path TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			tags TEXT
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create notes table: %w", err)
+	}
+
+	// Create note_links table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS note_links (
+			id TEXT PRIMARY KEY,
+			source_note_id TEXT NOT NULL,
+			target_slug TEXT NOT NULL,
+			target_note_id TEXT,
+			link_type TEXT NOT NULL DEFAULT 'reference',
+			created_at INTEGER NOT NULL,
+			FOREIGN KEY (source_note_id) REFERENCES notes(id) ON DELETE CASCADE,
+			FOREIGN KEY (target_note_id) REFERENCES notes(id) ON DELETE SET NULL,
+			UNIQUE(source_note_id, target_slug, link_type)
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create note_links table: %w", err)
+	}
+
+	// Create indices
+	indices := []string{
+		"CREATE INDEX IF NOT EXISTS idx_notes_slug ON notes(slug)",
+		"CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at)",
+		"CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at)",
+		"CREATE INDEX IF NOT EXISTS idx_note_links_source ON note_links(source_note_id)",
+		"CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_note_id)",
+		"CREATE INDEX IF NOT EXISTS idx_note_links_target_slug ON note_links(target_slug)",
+	}
+	for _, idx := range indices {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
 
