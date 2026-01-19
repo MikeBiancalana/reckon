@@ -57,15 +57,21 @@ func (m logInputModel) View() string {
 }
 
 var logCmd = &cobra.Command{
-	Use:   "log [message]",
-	Short: "Append a log entry to today's journal",
-	Long:  `Appends a timestamped log entry to today's journal.`,
-	Args:  cobra.ArbitraryArgs, // Accepts 0 or more arguments
+	Use:   "log",
+	Short: "Manage journal log entries",
+	Long:  `Manage journal log entries - add, list, note, and delete log entries.`,
+}
+
+var logAddCmd = &cobra.Command{
+	Use:   "add [message]",
+	Short: "Append a log entry to the journal",
+	Long: `Appends a timestamped log entry to the journal.
+Supports interactive mode when no message is provided.`,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var message string
 
 		if len(args) == 0 {
-			// Interactive mode
 			p := tea.NewProgram(initialLogModel())
 			model, err := p.Run()
 			if err != nil {
@@ -101,4 +107,71 @@ var logCmd = &cobra.Command{
 		fmt.Printf("✓ Logged: %s\n", message)
 		return nil
 	},
+}
+
+var logNoteCmd = &cobra.Command{
+	Use:   "note <log-id> <text>",
+	Short: "Add a note to a log entry",
+	Long: `Adds a note to an existing log entry.
+The log-id can be found using 'rk log list'.`,
+	Args: cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		logID := args[0]
+		noteText := strings.TrimSpace(strings.Join(args[1:], " "))
+
+		effectiveDate, err := getEffectiveDate()
+		if err != nil {
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
+		}
+
+		if err := service.AddLogNote(j, logID, noteText); err != nil {
+			return fmt.Errorf("failed to add note: %w", err)
+		}
+
+		fmt.Printf("✓ Note added to log entry %s\n", logID)
+		return nil
+	},
+}
+
+var logDeleteCmd = &cobra.Command{
+	Use:   "delete <log-id>",
+	Short: "Delete a log entry",
+	Long: `Deletes a log entry from the journal.
+The log-id can be found using 'rk log list'.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		logID := args[0]
+
+		effectiveDate, err := getEffectiveDate()
+		if err != nil {
+			return err
+		}
+
+		j, err := service.GetByDate(effectiveDate)
+		if err != nil {
+			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
+		}
+
+		if err := service.DeleteLogEntry(j, logID); err != nil {
+			return fmt.Errorf("failed to delete log entry: %w", err)
+		}
+
+		fmt.Printf("✓ Deleted log entry %s\n", logID)
+		return nil
+	},
+}
+
+func init() {
+	logCmd.AddCommand(logAddCmd)
+	logCmd.AddCommand(logNoteCmd)
+	logCmd.AddCommand(logDeleteCmd)
+}
+
+func GetLogCommand() *cobra.Command {
+	return logCmd
 }
