@@ -1,15 +1,13 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/spf13/cobra"
 )
 
-var jsonFlag bool
+var weekFormatFlag string
 
 var weekCmd = &cobra.Command{
 	Use:   "week",
@@ -25,7 +23,11 @@ var weekCmd = &cobra.Command{
 			return err
 		}
 
-		if jsonFlag {
+		if weekFormatFlag != "" {
+			format, err := parseFormat(weekFormatFlag)
+			if err != nil {
+				return err
+			}
 			var journals []*journal.Journal
 			if dateFlag != "" {
 				journals, err = service.GetWeekJournalsFromDate(effectiveDate)
@@ -35,8 +37,13 @@ var weekCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get week's journals: %w", err)
 			}
-			if err := json.NewEncoder(os.Stdout).Encode(journals); err != nil {
-				return fmt.Errorf("failed to encode journals as JSON: %w", err)
+			switch format {
+			case FormatJSON:
+				return formatJournalsJSON(journals)
+			case FormatTSV:
+				return formatJournalsTSV(journals)
+			case FormatCSV:
+				return formatJournalsCSV(journals)
 			}
 			return nil
 		}
@@ -57,5 +64,5 @@ var weekCmd = &cobra.Command{
 }
 
 func init() {
-	weekCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+	weekCmd.Flags().StringVar(&weekFormatFlag, "format", "", "Output format (json, tsv, csv)")
 }

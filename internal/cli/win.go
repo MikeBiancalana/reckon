@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -10,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var winJsonFlag bool
+var winFormatFlag string
 
 var winCmd = &cobra.Command{
 	Use:   "win",
@@ -68,9 +67,18 @@ Use --json to output as JSON array.`,
 
 		wins := j.Wins
 
-		if winJsonFlag {
-			if err := json.NewEncoder(os.Stdout).Encode(wins); err != nil {
-				return fmt.Errorf("failed to encode wins as JSON: %w", err)
+		if winFormatFlag != "" {
+			format, err := parseFormat(winFormatFlag)
+			if err != nil {
+				return err
+			}
+			switch format {
+			case FormatJSON:
+				return formatWinsJSON(wins)
+			case FormatTSV:
+				return formatWinsTSV(wins)
+			case FormatCSV:
+				return formatWinsCSV(wins)
 			}
 			return nil
 		}
@@ -129,7 +137,7 @@ func init() {
 	winCmd.AddCommand(winListCmd)
 	winCmd.AddCommand(winDeleteCmd)
 
-	winListCmd.Flags().BoolVar(&winJsonFlag, "json", false, "Output as JSON")
+	winListCmd.Flags().StringVar(&winFormatFlag, "format", "", "Output format (json, tsv, csv)")
 }
 
 func GetWinCommand() *cobra.Command {
