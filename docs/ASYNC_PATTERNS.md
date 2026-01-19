@@ -5,12 +5,15 @@ This guide documents common async pitfalls, `tea.Cmd` best practices, and messag
 ## Table of Contents
 
 1. [The tea.Cmd Pattern](#the-teacmd-pattern)
-2. [Closure Capture by Reference](#closure-capture-by-reference)
-3. [Component Update Patterns](#component-update-patterns)
-4. [Message Passing](#message-passing)
-5. [File Watching](#file-watching)
-6. [Common Pitfalls](#common-pitfalls)
-7. [Testing Async Code](#testing-async-code)
+2. [Sequential and Timer Commands](#sequential-and-timer-commands)
+3. [Closure Capture by Reference](#closure-capture-by-reference)
+4. [Component Update Patterns](#component-update-patterns)
+5. [Message Passing](#message-passing)
+6. [Loading States](#loading-states)
+7. [Cancellation Patterns](#cancellation-patterns)
+8. [File Watching](#file-watching)
+9. [Common Pitfalls](#common-pitfalls)
+10. [Testing Async Code](#testing-async-code)
 
 ---
 
@@ -65,8 +68,13 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
     case tea.KeyMsg:
         switch msg.String() {
         case "enter":
-            return tl, func() tea.Msg {
-                return TaskToggleMsg{TaskID: tl.selectedTask.ID}
+            selectedItem := tl.list.SelectedItem()
+            if selectedItem != nil {
+                if taskItem, ok := selectedItem.(TaskItem); ok {
+                    return tl, func() tea.Msg {
+                        return TaskToggleMsg{TaskID: taskItem.task.ID}
+                    }
+                }
             }
         }
     }
@@ -229,6 +237,69 @@ func (tl *TaskList) SetFocused(focused bool) {
 
 ---
 
+## Sequential and Timer Commands
+
+### tea.Sequence - Running Commands in Order
+
+Use `tea.Sequence` to run commands sequentially (e.g., load data, then process it):
+
+```go
+func (m *Model) Init() tea.Cmd {
+    return tea.Sequence(
+        m.loadJournal(),
+        m.processLoadedData(),
+    )
+}
+```
+
+### Timer Patterns - tea.Tick
+
+Use `tea.Tick` for periodic operations like auto-save or refresh intervals:
+
+```go
+func (m *Model) Init() tea.Cmd {
+    return tea.Batch(
+        m.loadJournal(),
+        tea.Tick(30*time.Second, func(t time.Time) tea.Msg {
+            return autoSaveMsg{t}
+        }),
+    )
+}
+
+// Handle auto-save in Update
+case autoSaveMsg:
+    if m.hasUnsavedChanges {
+        if err := m.service.Save(m.currentJournal); err != nil {
+            m.err = err
+            return m, nil
+        }
+        m.hasUnsavedChanges = false
+        if m.statusBar != nil {
+            m.statusBar.SetStatus("Auto-saved")
+        }
+    }
+    // Restart the timer
+    return m, tea.Tick(30*time.Second, func(t time.Time) tea.Msg {
+        return autoSaveMsg{t}
+    })
+```
+
+### One-Time Delays with time.After
+
+Use `time.After` for one-time delays:
+
+```go
+case "esc":
+    // Clear selection after a short delay
+    m.ClearSelection()
+    return m, func() tea.Msg {
+        time.Sleep(100 * time.Millisecond)
+        return selectionClearedMsg{}
+    }
+```
+
+---
+
 ## Message Passing
 
 ### Custom Message Types
@@ -303,6 +374,116 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     var cmd tea.Cmd
     m, cmd = m.updateComponents(msg)
     return m, cmd
+}
+```
+
+---
+
+## Loading States
+
+### Showing Loading Indicators
+
+Provide user feedback during async operations:
+
+```go
+type Model struct {
+    isLoading bool
+    loadingMessage string
+    // ... other fields
+}
+
+// Handle loading start
+case loadingStartedMsg:
+    m.isLoading = true
+    m.loadingMessage = msg.Message
+    return m, nil
+
+// Handle loading completion
+case loadingCompletedMsg:
+    m.isLoading = false
+    return m, nil
+
+// In View(), show loading indicator
+func (m *Model) View() string {
+    if m.isLoading {
+        return fmt.Sprintf("%s\n%s", m.loadingMessage, spinner.View())
+    }
+    // ... normal view
+}
+```
+
+### Spinner Pattern
+
+Use a spinner during loading:
+
+```go
+func (m *Model) Init() tea.Cmd {
+    return tea.Batch(
+        m.loadJournal(),
+        spinner.Tick,
+    )
+}
+
+type spinnerMsg struct{}
+
+func (m *Model) View() string {
+    if m.isLoading {
+        s := spinner.New(spinner.WithSpinner(spinner.Dot))
+        return fmt.Sprintf("%s %s", s.View(), m.loadingMessage)
+    }
+    // ... normal view
+}
+```
+
+---
+
+## Cancellation Patterns
+
+### Stopping Async Operations
+
+Handle cancellation of running operations:
+
+```go
+type stopWatcherMsg struct{}
+
+func (m *Model) stopWatching() tea.Cmd {
+    return func() tea.Msg {
+        if m.watcher != nil {
+            m.watcher.Stop()
+        }
+        return watcherStoppedMsg{}
+    }
+}
+
+case stopWatcherMsg:
+    m.watcher = nil
+    return m, nil
+```
+
+### Cleanup on Shutdown
+
+Clean up resources when the application closes:
+
+```go
+func (m *Model) Shutdown() []tea.Cmd {
+    var cmds []tea.Cmd
+
+    if m.watcher != nil {
+        m.watcher.Stop()
+    }
+
+    if m.autoSaveTimer != nil {
+        m.autoSaveTimer.Stop()
+    }
+
+    // Save any pending changes
+    if m.hasUnsavedChanges {
+        if err := m.service.Save(m.currentJournal); err != nil {
+            m.logger.Error("failed to save on shutdown", "error", err)
+        }
+    }
+
+    return cmds
 }
 ```
 
