@@ -7,6 +7,7 @@ import (
 
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -111,8 +112,7 @@ func (w *Watcher) watch() {
 			if !ok {
 				return
 			}
-			// Log error but continue watching
-			fmt.Printf("watcher error: %v\n", err)
+			logger.Error("watcher error", "error", err)
 		}
 	}
 }
@@ -120,9 +120,8 @@ func (w *Watcher) watch() {
 // processPendingEvents handles all pending file changes after debounce
 func (w *Watcher) processPendingEvents() {
 	for date := range w.pendingEvents {
-		// Re-index the changed file
 		if err := w.reindexJournal(date); err != nil {
-			fmt.Printf("failed to reindex journal %s: %v\n", date, err)
+			logger.Error("failed to reindex journal", "date", date, "error", err)
 			continue
 		}
 
