@@ -34,7 +34,6 @@ var (
 	taskEditDescriptionFlag string
 	taskEditTagsFlag        []string
 	taskMatchFlag           string
-	taskStdinFlag           bool
 )
 
 // taskCmd represents the task command
@@ -376,6 +375,8 @@ Examples:
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
+		stdinFlag, _ := cmd.Flags().GetBool("stdin")
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
@@ -385,18 +386,18 @@ Examples:
 		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if tmpMatch == "" && len(args) == 0 && !taskStdinFlag {
+		if tmpMatch != "" && len(args) == 0 && !stdinFlag {
+			return fmt.Errorf("missing task identifier; use task index, ID, --match <pattern>, or --stdin")
+		}
+		if tmpMatch == "" && len(args) == 0 && !stdinFlag {
 			return fmt.Errorf("missing task identifier; use task index, ID, --match <pattern>, or --stdin")
 		}
 
 		// Handle stdin input
-		if taskStdinFlag {
+		if stdinFlag {
 			ids, err := readStdinIDs()
 			if err != nil {
 				return err
-			}
-			if len(ids) == 0 {
-				return fmt.Errorf("no task IDs provided via stdin")
 			}
 			// Process each ID
 			for _, taskID := range ids {
@@ -445,6 +446,8 @@ Examples:
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
+		stdinFlag, _ := cmd.Flags().GetBool("stdin")
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
@@ -454,23 +457,15 @@ Examples:
 		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if tmpMatch == "" && len(args) == 0 && !taskStdinFlag {
+		if tmpMatch == "" && len(args) == 0 && !stdinFlag {
 			return fmt.Errorf("missing task identifier; use task index, ID, --match <pattern>, or --stdin")
 		}
 
-		// Check if any flags were provided
-		if taskEditTitleFlag == "" && len(taskEditTagsFlag) == 0 {
-			return fmt.Errorf("no changes specified. Use --title to update the task title")
-		}
-
 		// Handle stdin input
-		if taskStdinFlag {
+		if stdinFlag {
 			ids, err := readStdinIDs()
 			if err != nil {
 				return err
-			}
-			if len(ids) == 0 {
-				return fmt.Errorf("no task IDs provided via stdin")
 			}
 			// Process each ID
 			for _, taskID := range ids {
@@ -480,6 +475,11 @@ Examples:
 				fmt.Printf("✓ Updated task %s\n", taskID)
 			}
 			return nil
+		}
+
+		// Check if any flags were provided
+		if taskEditTitleFlag == "" && len(taskEditTagsFlag) == 0 {
+			return fmt.Errorf("no changes specified. Use --title to update the task title")
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -574,6 +574,8 @@ Examples:
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
+		stdinFlag, _ := cmd.Flags().GetBool("stdin")
+
 		// Use global journalTaskService
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
@@ -583,18 +585,15 @@ Examples:
 		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if tmpMatch == "" && len(args) == 0 && !taskStdinFlag {
+		if tmpMatch == "" && len(args) == 0 && !stdinFlag {
 			return fmt.Errorf("missing task identifier; use task index, ID, --match <pattern>, or --stdin")
 		}
 
 		// Handle stdin input (skip confirmation for batch deletes)
-		if taskStdinFlag {
+		if stdinFlag {
 			ids, err := readStdinIDs()
 			if err != nil {
 				return err
-			}
-			if len(ids) == 0 {
-				return fmt.Errorf("no task IDs provided via stdin")
 			}
 			// Process each ID
 			for _, taskID := range ids {
@@ -682,9 +681,9 @@ func init() {
 	taskDeleteCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 
 	// Commands that support --stdin flag for batch operations
-	taskDoneCmd.Flags().BoolVar(&taskStdinFlag, "stdin", false, "Read task IDs from stdin (one per line)")
-	taskEditCmd.Flags().BoolVar(&taskStdinFlag, "stdin", false, "Read task IDs from stdin (one per line)")
-	taskDeleteCmd.Flags().BoolVar(&taskStdinFlag, "stdin", false, "Read task IDs from stdin (one per line)")
+	taskDoneCmd.Flags().Bool("stdin", false, "Read task IDs from stdin (one per line)")
+	taskEditCmd.Flags().Bool("stdin", false, "Read task IDs from stdin (one per line)")
+	taskDeleteCmd.Flags().Bool("stdin", false, "Read task IDs from stdin (one per line)")
 }
 
 // resolveJournalTaskID resolves a task identifier (numeric index, exact ID, or fuzzy-matched title) to a task ID
@@ -751,11 +750,20 @@ func GetTaskCommand() *cobra.Command {
 	return taskCmd
 }
 
-// readStdinIDs reads task IDs from stdin, one per line
+const maxStdinSize = 64 * 1024
+
+// readStdinIDs reads task IDs from stdin, one per line.
+// Empty lines and whitespace-only lines are ignored.
+// Returns an error if reading fails or if no valid IDs are found.
+// Uses a size limit to prevent DoS via memory exhaustion.
 func readStdinIDs() ([]string, error) {
-	data, err := io.ReadAll(os.Stdin)
+	lr := &io.LimitedReader{R: os.Stdin, N: maxStdinSize}
+	data, err := io.ReadAll(lr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from stdin: %w", err)
+	}
+	if lr.N == 0 {
+		return nil, fmt.Errorf("input too large (max %d bytes)", maxStdinSize)
 	}
 
 	var ids []string
@@ -764,6 +772,10 @@ func readStdinIDs() ([]string, error) {
 		if line != "" {
 			ids = append(ids, line)
 		}
+	}
+
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no task IDs provided via stdin")
 	}
 
 	return ids, nil
