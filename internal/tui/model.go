@@ -295,7 +295,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scheduleView.UpdateSchedule(msg.journal.ScheduleItems)
 		}
 
-		// Initialize taskList if needed (tasks will be loaded separately via tasksLoadedMsg)
+		// Initialize taskList. Tasks are loaded via the separate tasksLoadedMsg handler.
 		if m.taskList == nil {
 			m.taskList = components.NewTaskList(nil)
 		}
@@ -314,6 +314,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tasksLoadedMsg:
 		// New journal tasks loaded, update task list
+		// If taskList doesn't exist yet (journalLoadedMsg may not have arrived),
+		// create it with the loaded tasks
 		logger.Debug("tui: handling tasksLoadedMsg", "taskCount", len(msg.tasks))
 		if m.taskList != nil {
 			m.taskList.UpdateTasks(msg.tasks)
