@@ -245,6 +245,7 @@ func TestTaskList_SpaceToggle(t *testing.T) {
 	tl := NewTaskList(tasks)
 
 	t.Run("space on task emits toggle message", func(t *testing.T) {
+		tl.focused = true
 		msg := tea.KeyMsg{Type: tea.KeySpace}
 		_, cmd := tl.Update(msg)
 
@@ -311,6 +312,7 @@ func TestTaskList_EnterToggle(t *testing.T) {
 		}
 
 		tl := NewTaskList(tasks)
+		tl.focused = true
 		initialItems := len(tl.list.Items())
 
 		msg := tea.KeyMsg{Type: tea.KeyEnter}
@@ -337,6 +339,7 @@ func TestTaskList_EnterToggle(t *testing.T) {
 		}
 
 		tl := NewTaskList(tasks)
+		tl.focused = true
 
 		// Initially expanded (task + 2 notes = 3 items)
 		if len(tl.list.Items()) != 3 {
