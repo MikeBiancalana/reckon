@@ -13,6 +13,7 @@ import (
 
 type PreMigrationCheckResult struct {
 	TaskFilesNeedingMigration  int
+	TaskFilesSkipped           int
 	LogEntriesNeedingMigration int
 	OrphanedTaskFiles          []string
 	MissingTaskFiles           []string
@@ -44,8 +45,9 @@ func PreMigrationCheck(tasksDir, logDir string, db *storage.Database, logger *sl
 	for _, f := range tasksFiles {
 		if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") {
 			if isNewTaskFormat(f.Name()) {
-				result.TaskFilesNeedingMigration++
+				result.TaskFilesSkipped++
 			} else {
+				result.TaskFilesNeedingMigration++
 				result.OrphanedTaskFiles = append(result.OrphanedTaskFiles, f.Name())
 			}
 		}
@@ -61,14 +63,51 @@ func PreMigrationCheck(tasksDir, logDir string, db *storage.Database, logger *sl
 		}
 	}
 
-	logEntriesCount, err := countLogEntriesWithoutFilePath(db)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count log entries: %w", err)
+	if err := addColumnIfMissingForCheck(db, "log_entries", "file_path", "TEXT"); err != nil {
+		logger.Warn("Could not add file_path column for check", "error", err)
+		result.LogEntriesNeedingMigration = -1
+	} else {
+		logEntriesCount, err := countLogEntriesWithoutFilePath(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to count log entries: %w", err)
+		}
+		result.LogEntriesNeedingMigration = logEntriesCount
 	}
-	result.LogEntriesNeedingMigration = logEntriesCount
 
 	logger.Info("Pre-migration check completed", "result", result)
 	return result, nil
+}
+
+func addColumnIfMissingForCheck(db *storage.Database, table, column, colType string) error {
+	rows, err := db.DB().Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return fmt.Errorf("failed to get table info for %s: %w", table, err)
+	}
+	defer rows.Close()
+
+	columnExists := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return fmt.Errorf("failed to scan column info: %w", err)
+		}
+		if name == column {
+			columnExists = true
+			break
+		}
+	}
+
+	if !columnExists {
+		_, err := db.DB().Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colType))
+		if err != nil {
+			return fmt.Errorf("failed to add column %s to %s: %w", column, table, err)
+		}
+	}
+
+	return nil
 }
 
 func PostMigrationCheck(tasksDir, logDir string, db *storage.Database, logger *slog.Logger) (*PostMigrationCheckResult, error) {
