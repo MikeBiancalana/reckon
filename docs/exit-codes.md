@@ -13,6 +13,8 @@ Reckon uses standard UNIX exit codes for predictable behavior in scripts and pip
 | 2 | Usage Error | Invalid flags, missing arguments, or validation failures |
 | 3 | Not Found | Requested resource (task, journal, etc.) was not found |
 
+**Note**: Exit codes 2 and 3 are documented conventions. Currently, Cobra-based commands return exit code 1 for all errors. The exit code constants in `internal/cli/root.go` provide a reference for future implementation.
+
 ### Exit Code Details
 
 #### Exit Code 0 - Success
@@ -174,6 +176,6 @@ Error messages follow the format: `Error: <context>: <detailed message>`
 
 ## See Also
 
-- [Bubbletea TUI](./tui-guide.md) - Error handling in the TUI
-- [API Reference](./api.md) - Service layer error handling
-- [Configuration](./configuration.md) - Configuration-related errors
+- [CLI Commands](./README.md) - Command reference and examples
+- [Configuration](./README.md#configuration) - Configuration-related errors
+- [Source Code: internal/cli/root.go](https://github.com/MikeBiancalana/reckon/blob/main/internal/cli/root.go) - Exit code constants
