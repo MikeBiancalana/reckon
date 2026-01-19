@@ -1,14 +1,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 )
 
-var todayJsonFlag bool
+var todayFormatFlag string
 
 var todayCmd = &cobra.Command{
 	Use:   "today",
@@ -24,13 +22,28 @@ var todayCmd = &cobra.Command{
 			return err
 		}
 
-		if todayJsonFlag {
+		if todayFormatFlag != "" {
+			format, err := parseFormat(todayFormatFlag)
+			if err != nil {
+				return err
+			}
 			j, err := service.GetByDate(today)
 			if err != nil {
 				return fmt.Errorf("failed to get journal for %s: %w", today, err)
 			}
-			if err := json.NewEncoder(os.Stdout).Encode(j); err != nil {
-				return fmt.Errorf("failed to encode journal as JSON: %w", err)
+			switch format {
+			case FormatJSON:
+				if err := formatJournalJSON(j); err != nil {
+					return fmt.Errorf("failed to format journal as JSON: %w", err)
+				}
+			case FormatTSV:
+				if err := formatJournalTSV(j); err != nil {
+					return fmt.Errorf("failed to format journal as TSV: %w", err)
+				}
+			case FormatCSV:
+				if err := formatJournalCSV(j); err != nil {
+					return fmt.Errorf("failed to format journal as CSV: %w", err)
+				}
 			}
 			return nil
 		}
@@ -46,5 +59,5 @@ var todayCmd = &cobra.Command{
 }
 
 func init() {
-	todayCmd.Flags().BoolVar(&todayJsonFlag, "json", false, "Output as JSON")
+	todayCmd.Flags().StringVar(&todayFormatFlag, "format", "", "Output format (json, tsv, csv)")
 }

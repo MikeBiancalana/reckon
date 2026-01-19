@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var reviewFormatFlag string
+
 var reviewCmd = &cobra.Command{
 	Use:   "review",
 	Short: "Review stale tasks",
@@ -46,6 +48,9 @@ func init() {
 	// Add subcommands
 	reviewCmd.AddCommand(reviewListCmd)
 	reviewCmd.AddCommand(reviewInteractiveCmd)
+
+	// Flags
+	reviewListCmd.Flags().StringVar(&reviewFormatFlag, "format", "", "Output format (json, tsv, csv)")
 }
 
 // GetReviewCommand returns the review command

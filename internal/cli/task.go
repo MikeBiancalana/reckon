@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -28,7 +27,7 @@ var (
 	taskTagsFlag            []string
 	taskCompactFlag         bool
 	taskVerboseFlag         bool
-	taskJsonFlag            bool
+	taskFormatFlag          string
 	taskEditTitleFlag       string
 	taskEditDescriptionFlag string
 	taskEditTagsFlag        []string
@@ -148,10 +147,24 @@ var taskListCmd = &cobra.Command{
 			tasks = filtered
 		}
 
-		if taskJsonFlag {
-			// JSON output
-			if err := json.NewEncoder(os.Stdout).Encode(tasks); err != nil {
-				return fmt.Errorf("failed to encode tasks as JSON: %w", err)
+		if taskFormatFlag != "" {
+			format, err := parseFormat(taskFormatFlag)
+			if err != nil {
+				return err
+			}
+			switch format {
+			case FormatJSON:
+				if err := formatTasksJSON(tasks); err != nil {
+					return fmt.Errorf("failed to format tasks as JSON: %w", err)
+				}
+			case FormatTSV:
+				if err := formatTasksTSV(tasks); err != nil {
+					return fmt.Errorf("failed to format tasks as TSV: %w", err)
+				}
+			case FormatCSV:
+				if err := formatTasksCSV(tasks); err != nil {
+					return fmt.Errorf("failed to format tasks as CSV: %w", err)
+				}
 			}
 			return nil
 		}
@@ -603,7 +616,7 @@ func init() {
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
 	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact single-line output")
 	taskListCmd.Flags().BoolVarP(&taskVerboseFlag, "verbose", "v", false, "Show verbose multi-line output")
-	taskListCmd.Flags().BoolVar(&taskJsonFlag, "json", false, "Output as JSON")
+	taskListCmd.Flags().StringVar(&taskFormatFlag, "format", "", "Output format (json, tsv, csv)")
 	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
 	taskEditCmd.Flags().StringVarP(&taskEditDescriptionFlag, "description", "d", "", "New task description")
 	taskEditCmd.Flags().StringSliceVar(&taskEditTagsFlag, "tags", []string{}, "New task tags (comma-separated)")

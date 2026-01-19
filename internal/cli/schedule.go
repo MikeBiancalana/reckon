@@ -1,16 +1,14 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-var scheduleJsonFlag bool
+var scheduleFormatFlag string
 
 var scheduleCmd = &cobra.Command{
 	Use:   "schedule",
@@ -87,9 +85,24 @@ var scheduleListCmd = &cobra.Command{
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
-		if scheduleJsonFlag {
-			if err := json.NewEncoder(os.Stdout).Encode(j.ScheduleItems); err != nil {
-				return fmt.Errorf("failed to encode schedule items as JSON: %w", err)
+		if scheduleFormatFlag != "" {
+			format, err := parseFormat(scheduleFormatFlag)
+			if err != nil {
+				return err
+			}
+			switch format {
+			case FormatJSON:
+				if err := formatScheduleItemsJSON(j.ScheduleItems); err != nil {
+					return fmt.Errorf("failed to format schedule items as JSON: %w", err)
+				}
+			case FormatTSV:
+				if err := formatScheduleItemsTSV(j.ScheduleItems); err != nil {
+					return fmt.Errorf("failed to format schedule items as TSV: %w", err)
+				}
+			case FormatCSV:
+				if err := formatScheduleItemsCSV(j.ScheduleItems); err != nil {
+					return fmt.Errorf("failed to format schedule items as CSV: %w", err)
+				}
 			}
 			return nil
 		}
@@ -164,7 +177,7 @@ func init() {
 	scheduleCmd.AddCommand(scheduleDeleteCmd)
 
 	// Flags
-	scheduleListCmd.Flags().BoolVar(&scheduleJsonFlag, "json", false, "Output as JSON")
+	scheduleListCmd.Flags().StringVar(&scheduleFormatFlag, "format", "", "Output format (json, tsv, csv)")
 }
 
 // GetScheduleCommand returns the schedule command

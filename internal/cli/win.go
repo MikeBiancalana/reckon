@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -10,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var winJsonFlag bool
+var winFormatFlag string
 
 var winCmd = &cobra.Command{
 	Use:   "win",
@@ -54,7 +53,7 @@ var winListCmd = &cobra.Command{
 	Short: "List wins",
 	Long: `List all wins for today (or the date specified with --date).
 
-Use --json to output as JSON array.`,
+Use --format to output as JSON, TSV, or CSV.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		effectiveDate, err := getEffectiveDate()
 		if err != nil {
@@ -68,9 +67,24 @@ Use --json to output as JSON array.`,
 
 		wins := j.Wins
 
-		if winJsonFlag {
-			if err := json.NewEncoder(os.Stdout).Encode(wins); err != nil {
-				return fmt.Errorf("failed to encode wins as JSON: %w", err)
+		if winFormatFlag != "" {
+			format, err := parseFormat(winFormatFlag)
+			if err != nil {
+				return err
+			}
+			switch format {
+			case FormatJSON:
+				if err := formatWinsJSON(wins); err != nil {
+					return fmt.Errorf("failed to format wins as JSON: %w", err)
+				}
+			case FormatTSV:
+				if err := formatWinsTSV(wins); err != nil {
+					return fmt.Errorf("failed to format wins as TSV: %w", err)
+				}
+			case FormatCSV:
+				if err := formatWinsCSV(wins); err != nil {
+					return fmt.Errorf("failed to format wins as CSV: %w", err)
+				}
 			}
 			return nil
 		}
@@ -129,7 +143,7 @@ func init() {
 	winCmd.AddCommand(winListCmd)
 	winCmd.AddCommand(winDeleteCmd)
 
-	winListCmd.Flags().BoolVar(&winJsonFlag, "json", false, "Output as JSON")
+	winListCmd.Flags().StringVar(&winFormatFlag, "format", "", "Output format (json, tsv, csv)")
 }
 
 func GetWinCommand() *cobra.Command {
