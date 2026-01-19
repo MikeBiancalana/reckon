@@ -45,7 +45,7 @@ func init() {
 	RootCmd.Flags().StringVar(&dateFlag, "date", "", "Date to operate on in YYYY-MM-DD format")
 
 	// Add subcommands
-	RootCmd.AddCommand(logCmd)
+	RootCmd.AddCommand(GetLogCommand())
 	RootCmd.AddCommand(todayCmd)
 	RootCmd.AddCommand(weekCmd)
 	RootCmd.AddCommand(rebuildCmd)

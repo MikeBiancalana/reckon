@@ -171,3 +171,7 @@ func init() {
 	logCmd.AddCommand(logNoteCmd)
 	logCmd.AddCommand(logDeleteCmd)
 }
+
+func GetLogCommand() *cobra.Command {
+	return logCmd
+}
