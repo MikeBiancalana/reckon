@@ -510,6 +510,82 @@ Examples:
 	},
 }
 
+// taskDeleteCmd deletes a task
+var taskDeleteCmd = &cobra.Command{
+	Use:   "delete [task-id|--match <pattern>]",
+	Short: "Delete a task",
+	Long: `Delete a task.
+
+Use task index (1, 2, 3...) or exact task ID.
+Or use --match to fuzzy-match by task title.
+
+Examples:
+  rk task delete 1
+  rk task delete abc123
+  rk task delete --match auth`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
+		taskMatchFlag = ""
+
+		// Use global journalTaskService
+		if journalTaskService == nil {
+			return fmt.Errorf("task service not initialized")
+		}
+
+		// Validate mutually exclusive options
+		if tmpMatch != "" && len(args) > 0 {
+			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+		}
+		if tmpMatch == "" && len(args) == 0 {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
+		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
+		if err != nil {
+			return err
+		}
+
+		// Get task details for confirmation
+		tasks, err := journalTaskService.GetAllTasks()
+		if err != nil {
+			return fmt.Errorf("failed to get tasks: %w", err)
+		}
+
+		var taskToDelete *journal.Task
+		for _, t := range tasks {
+			if t.ID == taskID {
+				taskToDelete = &t
+				break
+			}
+		}
+
+		if taskToDelete == nil {
+			return fmt.Errorf("task not found: %s", taskID)
+		}
+
+		// Confirmation prompt
+		fmt.Printf("Delete task '%s'? (y/n): ", taskToDelete.Text)
+		var response string
+		fmt.Scanln(&response)
+		response = strings.ToLower(strings.TrimSpace(response))
+		if response != "y" && response != "yes" {
+			fmt.Println("Deletion cancelled.")
+			return nil
+		}
+
+		// Delete task
+		if err := journalTaskService.DeleteTask(taskID); err != nil {
+			return fmt.Errorf("failed to delete task: %w", err)
+		}
+
+		fmt.Printf("✓ Deleted task %s\n", taskID)
+
+		return nil
+	},
+}
+
 func init() {
 	// Add subcommands
 	taskCmd.AddCommand(taskNewCmd)
@@ -519,6 +595,7 @@ func init() {
 	taskCmd.AddCommand(taskDoneCmd)
 	taskCmd.AddCommand(taskEditCmd)
 	taskCmd.AddCommand(taskNoteCmd)
+	taskCmd.AddCommand(taskDeleteCmd)
 
 	// Flags
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
@@ -537,6 +614,7 @@ func init() {
 	taskDoneCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 	taskEditCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 	taskNoteCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+	taskDeleteCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 }
 
 // resolveJournalTaskID resolves a task identifier (numeric index, exact ID, or fuzzy-matched title) to a task ID
