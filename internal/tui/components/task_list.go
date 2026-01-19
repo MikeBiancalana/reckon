@@ -41,6 +41,12 @@ type TaskSelectionChangedMsg struct {
 	TaskID string
 }
 
+// TaskNoteDeleteMsg is sent when a task note should be deleted
+type TaskNoteDeleteMsg struct {
+	TaskID string
+	NoteID string
+}
+
 // TaskItem represents an item in the task list (either a task or a note)
 type TaskItem struct {
 	task   journal.Task
@@ -193,8 +199,14 @@ func buildTaskItems(tasks []journal.Task, collapsedMap map[string]bool) []list.I
 func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeySpace:
+		// Only handle keyboard input when focused
+		if !tl.focused {
+			var cmd tea.Cmd
+			tl.list, cmd = tl.list.Update(msg)
+			return tl, cmd
+		}
+		switch msg.String() {
+		case " ":
 			// Toggle task status
 			selectedItem := tl.list.SelectedItem()
 			if selectedItem != nil {
@@ -208,7 +220,7 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 			}
 			return tl, nil
 
-		case tea.KeyEnter:
+		case "enter":
 			// Toggle expand/collapse
 			selectedItem := tl.list.SelectedItem()
 			if selectedItem != nil {
@@ -239,6 +251,27 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 							}
 						}
 					}
+				}
+			}
+			return tl, nil
+
+		case "d":
+			// Delete selected note or task
+			selectedItem := tl.list.SelectedItem()
+			if selectedItem != nil {
+				taskItem, ok := selectedItem.(TaskItem)
+				if ok {
+					if taskItem.isNote {
+						// Return a message to delete this note
+						return tl, func() tea.Msg {
+							return TaskNoteDeleteMsg{
+								TaskID: taskItem.taskID,
+								NoteID: taskItem.noteID,
+							}
+						}
+					}
+					// If it's a task (not a note), don't handle it here
+					// Let it bubble up to model.go
 				}
 			}
 			return tl, nil

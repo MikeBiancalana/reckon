@@ -492,6 +492,56 @@ func (s *TaskService) DeleteTaskNote(taskID, noteID string) error {
 	return nil
 }
 
+// DeleteTask deletes a task and its associated file
+func (s *TaskService) DeleteTask(taskID string) error {
+	s.logger.Debug("DeleteTask", "task_id", taskID)
+
+	// Load all tasks
+	tasks, err := s.GetAllTasks()
+	if err != nil {
+		s.logger.Error("DeleteTask", "error", err, "operation", "load_tasks")
+		return fmt.Errorf("failed to load tasks: %w", err)
+	}
+
+	// Find and remove the task
+	found := false
+	var deletedTask Task
+	for i, t := range tasks {
+		if t.ID == taskID {
+			deletedTask = t
+			// Remove from slice
+			tasks = append(tasks[:i], tasks[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		err := fmt.Errorf("task not found: %s", taskID)
+		s.logger.Error("DeleteTask", "error", err, "task_id", taskID)
+		return err
+	}
+
+	// Delete the task file
+	filePath, err := taskFilePath(deletedTask)
+	if err != nil {
+		s.logger.Error("DeleteTask", "error", err, "task_id", taskID)
+		return fmt.Errorf("failed to get task file path: %w", err)
+	}
+	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+		s.logger.Error("DeleteTask", "error", err, "task_id", taskID, "file_path", filePath)
+		return fmt.Errorf("failed to delete task file: %w", err)
+	}
+
+	// Save changes (updates DB and doesn't write the deleted task)
+	if err := s.save(tasks); err != nil {
+		s.logger.Error("DeleteTask", "error", err, "task_id", taskID)
+		return fmt.Errorf("failed to save tasks after deletion: %w", err)
+	}
+
+	return nil
+}
+
 // save persists tasks to both individual files and database
 // Files are source of truth, DB is index/cache for querying
 func (s *TaskService) save(tasks []Task) error {

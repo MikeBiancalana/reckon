@@ -373,6 +373,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirmLogEntryID = msg.LogEntryID
 		return m, nil
 
+	case components.TaskNoteDeleteMsg:
+		// Confirm deletion of task note
+		logger.Debug("tui: entering confirm mode for task note deletion", "taskID", msg.TaskID, "noteID", msg.NoteID)
+		m.confirmMode = true
+		m.confirmItemType = "task_note"
+		m.confirmItemID = msg.NoteID
+		m.confirmLogEntryID = msg.TaskID // Reuse this field for task ID
+		return m, nil
+
 	case logNoteAddedMsg:
 		// Log note added successfully, reload journal
 		return m, m.loadJournal()
@@ -380,6 +389,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logNoteDeletedMsg:
 		// Log note deleted successfully, reload journal
 		return m, m.loadJournal()
+
+	case taskNoteDeletedMsg:
+		// Task note deleted successfully, reload tasks
+		return m, m.loadTasks()
 
 	case fileChangedMsg:
 		// Reload journal if the changed file is for the current date
@@ -650,6 +663,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.confirmItemID = entry.ID
 					}
 				}
+			case SectionTasks:
+				if m.taskList != nil {
+					// Check if a note is selected
+					if m.taskList.IsSelectedItemNote() {
+						// Delegate to task list to get the TaskNoteDeleteMsg
+						var cmd tea.Cmd
+						m.taskList, cmd = m.taskList.Update(msg)
+						return m, cmd
+					}
+					// Otherwise, it's a task
+					task := m.taskList.SelectedTask()
+					if task != nil {
+						logger.Debug("tui: entering confirm mode for task deletion", "taskID", task.ID)
+						m.confirmMode = true
+						m.confirmItemType = "task"
+						m.confirmItemID = task.ID
+					}
+				}
 			}
 			return m, nil
 		case "e":
@@ -778,6 +809,10 @@ func (m *Model) View() string {
 			itemType = "log entry"
 		case "log_note":
 			itemType = "log note"
+		case "task":
+			itemType = "task"
+		case "task_note":
+			itemType = "task note"
 		}
 		view := fmt.Sprintf("Delete this %s? (y/n)", itemType)
 		if m.lastError != nil {
@@ -1157,6 +1192,12 @@ func (m *Model) deleteItem() tea.Cmd {
 			err = m.service.DeleteWin(m.currentJournal, m.confirmItemID)
 		case "log":
 			err = m.service.DeleteLogEntry(m.currentJournal, m.confirmItemID)
+		case "task":
+			if m.taskService != nil {
+				err = m.taskService.DeleteTask(m.confirmItemID)
+			} else {
+				err = fmt.Errorf("task service not available")
+			}
 		case "log_note":
 			// Delete log note using both log entry ID and note ID
 			err = m.service.DeleteLogNote(m.currentJournal, m.confirmLogEntryID, m.confirmItemID)
@@ -1174,6 +1215,26 @@ func (m *Model) deleteItem() tea.Cmd {
 			m.confirmItemID = ""
 			m.confirmLogEntryID = ""
 			return logNoteDeletedMsg{}
+		case "task_note":
+			// Delete task note using both task ID and note ID
+			if m.taskService != nil {
+				err = m.taskService.DeleteTaskNote(m.confirmLogEntryID, m.confirmItemID)
+				if err != nil {
+					// Reset confirmation state
+					m.confirmMode = false
+					m.confirmItemType = ""
+					m.confirmItemID = ""
+					m.confirmLogEntryID = ""
+					return errMsg{err}
+				}
+				// Reset confirmation state
+				m.confirmMode = false
+				m.confirmItemType = ""
+				m.confirmItemID = ""
+				m.confirmLogEntryID = ""
+				return taskNoteDeletedMsg{}
+			}
+			return errMsg{fmt.Errorf("task service not available")}
 		}
 
 		// Reset confirmation state
@@ -1219,6 +1280,13 @@ type noteAddedMsg struct{}
 type logNoteAddedMsg struct{}
 
 type logNoteDeletedMsg struct{}
+
+type TaskNoteDeleteMsg struct {
+	TaskID string
+	NoteID string
+}
+
+type taskNoteDeletedMsg struct{}
 
 // loadTasks loads all tasks from the task service
 func (m *Model) loadTasks() tea.Cmd {
