@@ -31,7 +31,37 @@ var (
 	journalTaskService *journal.TaskService
 	dateFlag           string
 	quietFlag          bool
+	logFileFlag        string
+	logLevelFlag       string
 )
+
+// buildLoggerConfig creates a logger configuration from flags and environment variables
+func buildLoggerConfig(isTUIMode bool) logger.Config {
+	cfg := logger.Config{
+		Level:   logLevelFlag,
+		Format:  os.Getenv("LOG_FORMAT"),
+		File:    logFileFlag,
+		TUIMode: isTUIMode,
+	}
+
+	if cfg.Level == "" {
+		cfg.Level = os.Getenv("LOG_LEVEL")
+		if cfg.Level == "" {
+			debugVal := os.Getenv("RECKON_DEBUG")
+			if debugVal == "1" || debugVal == "true" {
+				cfg.Level = "DEBUG"
+			} else {
+				cfg.Level = "INFO"
+			}
+		}
+	}
+
+	if cfg.Format == "" {
+		cfg.Format = "text"
+	}
+
+	return cfg
+}
 
 // RootCmd is the root command for the CLI
 var RootCmd = &cobra.Command{
@@ -39,6 +69,13 @@ var RootCmd = &cobra.Command{
 	Short: "Reckon - CLI Productivity System",
 	Long:  `A terminal-based productivity tool combining daily journaling, task management, and knowledge base.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Reconfigure logger for TUI mode
+		cfg := buildLoggerConfig(true)
+
+		if err := logger.InitializeWithConfig(cfg); err != nil {
+			return fmt.Errorf("failed to initialize logger for TUI mode: %w", err)
+		}
+
 		// Default behavior: launch TUI
 		model := tui.NewModel(service)
 		if journalTaskService != nil {
@@ -51,12 +88,14 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
-	// Initialize service
-	cobra.OnInitialize(initService)
+	// Initialize logger and service
+	cobra.OnInitialize(initLogger, initService)
 
 	// Add global flags
-	RootCmd.Flags().StringVar(&dateFlag, "date", "", "Date to operate on in YYYY-MM-DD format")
-	RootCmd.Flags().BoolVarP(&quietFlag, "quiet", "q", false, "Suppress non-essential output")
+	RootCmd.PersistentFlags().StringVar(&dateFlag, "date", "", "Date to operate on in YYYY-MM-DD format")
+	RootCmd.PersistentFlags().BoolVarP(&quietFlag, "quiet", "q", false, "Suppress non-essential output")
+	RootCmd.PersistentFlags().StringVar(&logFileFlag, "log-file", "", "Path to log file (default: ~/.reckon/logs/reckon.log in TUI mode, stderr otherwise)")
+	RootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "", "Log level: DEBUG, INFO, WARN, ERROR (default: INFO)")
 
 	// Add subcommands
 	RootCmd.AddCommand(GetLogCommand())
@@ -67,6 +106,20 @@ func init() {
 	RootCmd.AddCommand(GetScheduleCommand())
 	RootCmd.AddCommand(GetTaskCommand())
 	RootCmd.AddCommand(GetWinCommand())
+}
+
+// initLogger initializes the logger with command-line flags
+// This is called via cobra.OnInitialize for non-TUI commands
+func initLogger() {
+	cfg := buildLoggerConfig(false)
+
+	if err := logger.InitializeWithConfig(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing logger: %v\n", err)
+		os.Exit(ExitCodeGeneralErr)
+	}
+
+	// Log initialization for debugging
+	logger.Info("reckon initialized", "version", "dev", "log_file", logger.GetLogFile(), "log_level", cfg.Level)
 }
 
 // initService initializes the journal service
@@ -105,5 +158,6 @@ func getEffectiveDate() (string, error) {
 
 // Execute runs the root command
 func Execute() error {
+	defer logger.Close()
 	return RootCmd.Execute()
 }

@@ -72,6 +72,9 @@ Supports interactive mode when no message is provided.`,
 		var message string
 
 		if len(args) == 0 {
+			// Interactive mode - uses TUI, so reconfigure logger
+			// Note: The logger has already been initialized in PersistentPreRunE,
+			// but this is a lightweight TUI that doesn't need full redirection
 			p := tea.NewProgram(initialLogModel())
 			model, err := p.Run()
 			if err != nil {
