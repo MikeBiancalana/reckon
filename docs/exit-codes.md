@@ -29,14 +29,14 @@ Returned when an unexpected error occurs. Examples:
 - File I/O errors (permissions, disk full)
 - Internal errors in the application
 
-#### Exit Code 2 - Usage Error
+#### Exit Code 2 - Usage Error (Convention - not yet implemented)
 Returned when command-line arguments are invalid. Examples:
 - Missing required arguments
 - Invalid flag values
 - Invalid date formats
 - Validation failures (e.g., empty task title)
 
-#### Exit Code 3 - Not Found
+#### Exit Code 3 - Not Found (Convention - not yet implemented)
 Returned when a requested resource does not exist. Examples:
 - `rk task show 999` when task 999 doesn't exist
 - `rk task delete non-existent-task` when the task isn't found
@@ -181,6 +181,8 @@ Errors are written to stderr. Example:
 $ rk task show 999
 Error: task not found: task 999 does not exist
 ```
+
+**Note**: Despite the "not found" message, this currently returns exit code 1 (not 3) because exit codes 2 and 3 are conventions for future implementation.
 
 Error messages follow the format: `Error: <context>: <detailed message>`
 
