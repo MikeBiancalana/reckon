@@ -188,5 +188,3 @@ func TestJumpToToday(t *testing.T) {
 		t.Errorf("Expected current date to be %s, got %s", today, m.currentDate)
 	}
 }
-
-

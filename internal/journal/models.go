@@ -105,13 +105,15 @@ func NewWin(text string, position int) *Win {
 
 // Task represents a global task
 type Task struct {
-	ID        string     `json:"id"`
-	Text      string     `json:"text"`
-	Status    TaskStatus `json:"status"`
-	Tags      []string   `json:"tags"`
-	Notes     []TaskNote `json:"notes"`
-	Position  int        `json:"position"`
-	CreatedAt time.Time  `json:"created_at"`
+	ID            string     `json:"id"`
+	Text          string     `json:"text"`
+	Status        TaskStatus `json:"status"`
+	Tags          []string   `json:"tags"`
+	Notes         []TaskNote `json:"notes"`
+	Position      int        `json:"position"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ScheduledDate *string    `json:"scheduled_date,omitempty"` // YYYY-MM-DD format, nil if unscheduled
+	DeadlineDate  *string    `json:"deadline_date,omitempty"`  // YYYY-MM-DD format, nil if no deadline
 }
 
 // NewTask creates a new task with a generated ID

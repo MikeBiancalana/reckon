@@ -126,7 +126,7 @@ type Model struct {
 	confirmMode       bool
 	confirmItemType   string // "intention", "win", "log", "log_note"
 	confirmItemID     string
-	confirmLogEntryID string // For log_note deletion, stores the log entry ID
+	confirmLogEntryID string   // For log_note deletion, stores the log entry ID
 	editItemID        string   // ID of item being edited
 	editItemType      string   // "task", "intention", "win", "log"
 	editItemTags      []string // Original tags of task being edited (for preservation)
@@ -207,7 +207,6 @@ func (m *Model) Init() tea.Cmd {
 
 	return tea.Batch(cmds...)
 }
-
 
 // Update handles messages and updates the model
 // This function is now a simple dispatcher that routes messages to
