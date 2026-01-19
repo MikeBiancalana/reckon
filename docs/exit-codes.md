@@ -92,6 +92,8 @@ This preserves the underlying error while adding context for debugging.
 
 ## Common Error Messages
 
+**Note**: Exit codes 2 and 3 are documented conventions. Currently, all command errors return exit code 1. The tables below show the target exit codes for future implementation.
+
 ### Task Commands
 
 | Error | Exit Code | Cause |
@@ -140,17 +142,25 @@ echo "Task completed"
 
 ### Handling Specific Errors
 
+**Note**: Exit codes 2 and 3 are target conventions. Currently, all errors return exit code 1.
+
 ```bash
-# Check for not-found errors
+# Check for not-found errors (target convention)
 rk task show 999
 if [ $? -eq 3 ]; then
     echo "Task 999 does not exist"
 fi
 
-# Check for usage errors
+# Check for usage errors (target convention)
 rk task new ""
 if [ $? -eq 2 ]; then
     echo "Invalid command usage"
+fi
+
+# Current behavior: all errors return 1
+rk task show 999
+if [ $? -ne 0 ]; then
+    echo "Error occurred (currently always returns 1 for all errors)"
 fi
 ```
 
