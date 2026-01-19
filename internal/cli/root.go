@@ -30,6 +30,7 @@ var (
 	service            *journal.Service
 	journalTaskService *journal.TaskService
 	dateFlag           string
+	quietFlag          bool
 )
 
 // RootCmd is the root command for the CLI
@@ -55,6 +56,7 @@ func init() {
 
 	// Add global flags
 	RootCmd.Flags().StringVar(&dateFlag, "date", "", "Date to operate on in YYYY-MM-DD format")
+	RootCmd.Flags().BoolVarP(&quietFlag, "quiet", "q", false, "Suppress non-essential output")
 
 	// Add subcommands
 	RootCmd.AddCommand(GetLogCommand())

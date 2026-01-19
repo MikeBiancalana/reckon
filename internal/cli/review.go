@@ -19,8 +19,10 @@ var reviewListCmd = &cobra.Command{
 	Short: "List stale tasks (not yet supported in unified system)",
 	Long:  "List tasks that haven't been updated in 7+ days.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Note: Task review functionality is not yet implemented in the unified task system.")
-		fmt.Println("This feature will be added in a future update.")
+		if !quietFlag {
+			fmt.Println("Note: Task review functionality is not yet implemented in the unified task system.")
+			fmt.Println("This feature will be added in a future update.")
+		}
 		return nil
 	},
 }
@@ -36,8 +38,10 @@ var reviewInteractiveCmd = &cobra.Command{
 			return fmt.Errorf("interactive mode requires a terminal. Use 'rk review list' for non-interactive output")
 		}
 
-		fmt.Println("Note: Interactive task review is not yet implemented in the unified task system.")
-		fmt.Println("This feature will be added in a future update.")
+		if !quietFlag {
+			fmt.Println("Note: Interactive task review is not yet implemented in the unified task system.")
+			fmt.Println("This feature will be added in a future update.")
+		}
 		return nil
 	},
 }

@@ -11,13 +11,17 @@ var rebuildCmd = &cobra.Command{
 	Short: "Rebuild the SQLite database from markdown files",
 	Long:  `Deletes and regenerates the SQLite database by scanning all markdown journal files.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Rebuilding database from markdown files...")
+		if !quietFlag {
+			fmt.Println("Rebuilding database from markdown files...")
+		}
 
 		if err := service.Rebuild(); err != nil {
 			return fmt.Errorf("failed to rebuild database: %w", err)
 		}
 
-		fmt.Println("✓ Database rebuilt successfully")
+		if !quietFlag {
+			fmt.Println("✓ Database rebuilt successfully")
+		}
 		return nil
 	},
 }
