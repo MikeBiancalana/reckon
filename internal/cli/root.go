@@ -14,6 +14,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Exit codes follow standard UNIX conventions:
+//   - 0: Success
+//   - 1: General error (database failure, I/O error)
+//   - 2: Usage error (invalid flags, missing arguments)
+//   - 3: Not found (resource does not exist)
+const (
+	ExitCodeSuccess    = 0
+	ExitCodeGeneralErr = 1
+	ExitCodeUsageErr   = 2
+	ExitCodeNotFound   = 3
+)
+
 var (
 	service            *journal.Service
 	journalTaskService *journal.TaskService
@@ -60,13 +72,13 @@ func initService() {
 	dbPath, err := config.DatabasePath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting database path: %v\n", err)
-		os.Exit(1)
+		os.Exit(ExitCodeGeneralErr)
 	}
 
 	db, err := storage.NewDatabase(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
-		os.Exit(1)
+		os.Exit(ExitCodeGeneralErr)
 	}
 
 	log := logger.GetLogger()
