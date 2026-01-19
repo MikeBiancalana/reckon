@@ -330,14 +330,16 @@ func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 	defer rows.Close()
 
 	tasksMap := make(map[string]*Task)
+	taskOrder := make([]string, 0)
+
 	for rows.Next() {
-		var taskID, taskText, tagsJSON, lastActivity string
+		var taskID, taskText, tagsJSON string
 		var taskStatus TaskStatus
 		var taskPosition int
 		var taskCreatedAtUnix int64
 
 		err := rows.Scan(
-			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix, &tagsJSON, &lastActivity,
+			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix, &tagsJSON,
 		)
 		if err != nil {
 			r.logger.Error("FindStaleTasks", "error", err, "operation", "scan", "task_id", taskID)
@@ -362,15 +364,16 @@ func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 			Tags:      tags,
 			Notes:     make([]TaskNote, 0),
 		}
+		taskOrder = append(taskOrder, taskID)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating stale tasks: %w", err)
 	}
 
-	tasks := make([]Task, 0, len(tasksMap))
-	for _, task := range tasksMap {
-		tasks = append(tasks, *task)
+	tasks := make([]Task, 0, len(taskOrder))
+	for _, id := range taskOrder {
+		tasks = append(tasks, *tasksMap[id])
 	}
 
 	r.logger.Debug("FindStaleTasks", "operation", "complete", "stale_count", len(tasks))
