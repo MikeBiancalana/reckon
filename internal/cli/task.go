@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -362,15 +363,19 @@ var taskDoneCmd = &cobra.Command{
 
 Use task index (1, 2, 3...) or exact task ID.
 Or use --match to fuzzy-match by task title.
+Or use --stdin to read task IDs from stdin (one per line).
 
 Examples:
   rk task done 1
   rk task done abc123
-  rk task done --match auth`,
+  rk task done --match auth
+  echo -e "abc123\ndef456" | rk task done --stdin`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
+
+		stdinFlag, _ := cmd.Flags().GetBool("stdin")
 
 		// Use global journalTaskService
 		if journalTaskService == nil {
@@ -381,8 +386,27 @@ Examples:
 		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if tmpMatch == "" && len(args) == 0 {
-			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		if tmpMatch != "" && len(args) == 0 && !stdinFlag {
+			return fmt.Errorf("missing task identifier; use task index, ID, --match <pattern>, or --stdin")
+		}
+		if tmpMatch == "" && len(args) == 0 && !stdinFlag {
+			return fmt.Errorf("missing task identifier; use task index, ID, --match <pattern>, or --stdin")
+		}
+
+		// Handle stdin input
+		if stdinFlag {
+			ids, err := readStdinIDs()
+			if err != nil {
+				return err
+			}
+			// Process each ID
+			for _, taskID := range ids {
+				if err := journalTaskService.ToggleTask(taskID); err != nil {
+					return fmt.Errorf("failed to toggle task %s: %w", taskID, err)
+				}
+				fmt.Printf("✓ Toggled task %s status\n", taskID)
+			}
+			return nil
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -410,15 +434,19 @@ var taskEditCmd = &cobra.Command{
 
 Use task index (1, 2, 3...) or exact task ID.
 Or use --match to fuzzy-match by task title.
+Or use --stdin to read task IDs from stdin (one per line).
 
 Examples:
   rk task edit 1 --title "New Title"
   rk task edit abc123 --title "New Title"
-  rk task edit --match auth --title "Authentication Feature"`,
+  rk task edit --match auth --title "Authentication Feature"
+  echo -e "abc123\ndef456" | rk task edit --stdin --title "New Title"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
+
+		stdinFlag, _ := cmd.Flags().GetBool("stdin")
 
 		// Use global journalTaskService
 		if journalTaskService == nil {
@@ -429,19 +457,35 @@ Examples:
 		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if tmpMatch == "" && len(args) == 0 {
-			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		if tmpMatch == "" && len(args) == 0 && !stdinFlag {
+			return fmt.Errorf("missing task identifier; use task index, ID, --match <pattern>, or --stdin")
+		}
+
+		// Handle stdin input
+		if stdinFlag {
+			ids, err := readStdinIDs()
+			if err != nil {
+				return err
+			}
+			// Process each ID
+			for _, taskID := range ids {
+				if err := journalTaskService.UpdateTask(taskID, taskEditTitleFlag, taskEditTagsFlag); err != nil {
+					return fmt.Errorf("failed to update task %s: %w", taskID, err)
+				}
+				fmt.Printf("✓ Updated task %s\n", taskID)
+			}
+			return nil
+		}
+
+		// Check if any flags were provided
+		if taskEditTitleFlag == "" && len(taskEditTagsFlag) == 0 {
+			return fmt.Errorf("no changes specified. Use --title to update the task title")
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
 		taskID, err := resolveJournalTaskID(args[0], tmpMatch, journalTaskService)
 		if err != nil {
 			return err
-		}
-
-		// Check if any flags were provided
-		if taskEditTitleFlag == "" && len(taskEditTagsFlag) == 0 {
-			return fmt.Errorf("no changes specified. Use --title to update the task title")
 		}
 
 		// Update task
@@ -518,15 +562,19 @@ var taskDeleteCmd = &cobra.Command{
 
 Use task index (1, 2, 3...) or exact task ID.
 Or use --match to fuzzy-match by task title.
+Or use --stdin to read task IDs from stdin (one per line).
 
 Examples:
   rk task delete 1
   rk task delete abc123
-  rk task delete --match auth`,
+  rk task delete --match auth
+  echo -e "abc123\ndef456" | rk task delete --stdin`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
+
+		stdinFlag, _ := cmd.Flags().GetBool("stdin")
 
 		// Use global journalTaskService
 		if journalTaskService == nil {
@@ -537,8 +585,24 @@ Examples:
 		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
-		if tmpMatch == "" && len(args) == 0 {
-			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		if tmpMatch == "" && len(args) == 0 && !stdinFlag {
+			return fmt.Errorf("missing task identifier; use task index, ID, --match <pattern>, or --stdin")
+		}
+
+		// Handle stdin input (skip confirmation for batch deletes)
+		if stdinFlag {
+			ids, err := readStdinIDs()
+			if err != nil {
+				return err
+			}
+			// Process each ID
+			for _, taskID := range ids {
+				if err := journalTaskService.DeleteTask(taskID); err != nil {
+					return fmt.Errorf("failed to delete task %s: %w", taskID, err)
+				}
+				fmt.Printf("✓ Deleted task %s\n", taskID)
+			}
+			return nil
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -615,6 +679,11 @@ func init() {
 	taskEditCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 	taskNoteCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 	taskDeleteCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+
+	// Commands that support --stdin flag for batch operations
+	taskDoneCmd.Flags().Bool("stdin", false, "Read task IDs from stdin (one per line)")
+	taskEditCmd.Flags().Bool("stdin", false, "Read task IDs from stdin (one per line)")
+	taskDeleteCmd.Flags().Bool("stdin", false, "Read task IDs from stdin (one per line)")
 }
 
 // resolveJournalTaskID resolves a task identifier (numeric index, exact ID, or fuzzy-matched title) to a task ID
@@ -679,4 +748,35 @@ func resolveJournalTaskIDByMatch(pattern string, svc *journal.TaskService) (stri
 // GetTaskCommand returns the task command
 func GetTaskCommand() *cobra.Command {
 	return taskCmd
+}
+
+const maxStdinSize = 64 * 1024
+
+// readStdinIDs reads task IDs from stdin, one per line.
+// Empty lines and whitespace-only lines are ignored.
+// Returns an error if reading fails or if no valid IDs are found.
+// Uses a size limit to prevent DoS via memory exhaustion.
+func readStdinIDs() ([]string, error) {
+	lr := &io.LimitedReader{R: os.Stdin, N: maxStdinSize}
+	data, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read from stdin: %w", err)
+	}
+	if lr.N == 0 {
+		return nil, fmt.Errorf("input too large (max %d bytes)", maxStdinSize)
+	}
+
+	var ids []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			ids = append(ids, line)
+		}
+	}
+
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no task IDs provided via stdin")
+	}
+
+	return ids, nil
 }
