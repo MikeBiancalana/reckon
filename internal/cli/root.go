@@ -99,6 +99,7 @@ func init() {
 
 	// Add subcommands
 	RootCmd.AddCommand(GetLogCommand())
+	RootCmd.AddCommand(GetNoteCommand())
 	RootCmd.AddCommand(todayCmd)
 	RootCmd.AddCommand(weekCmd)
 	RootCmd.AddCommand(rebuildCmd)
