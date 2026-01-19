@@ -39,9 +39,9 @@ func (r *TaskRepository) SaveTask(task *Task) error {
 
 	// Insert or replace task
 	_, err = tx.Exec(`
-		INSERT OR REPLACE INTO tasks (id, text, status, tags, position, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, task.ID, task.Text, task.Status, string(tagsJSON), task.Position, task.CreatedAt.Unix())
+		INSERT OR REPLACE INTO tasks (id, text, status, tags, position, created_at, scheduled_date, deadline_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, task.ID, task.Text, task.Status, string(tagsJSON), task.Position, task.CreatedAt.Unix(), task.ScheduledDate, task.DeadlineDate)
 	if err != nil {
 		r.logger.Error("SaveTask", "error", err, "task_id", task.ID, "operation", "insert_task")
 		return fmt.Errorf("failed to save task: %w", err)
@@ -92,9 +92,9 @@ func (r *TaskRepository) SaveTasks(tasks []Task) error {
 
 		// Insert or replace task
 		_, err = tx.Exec(`
-			INSERT OR REPLACE INTO tasks (id, text, status, tags, position, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, task.ID, task.Text, task.Status, string(tagsJSON), task.Position, task.CreatedAt.Unix())
+			INSERT OR REPLACE INTO tasks (id, text, status, tags, position, created_at, scheduled_date, deadline_date)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, task.ID, task.Text, task.Status, string(tagsJSON), task.Position, task.CreatedAt.Unix(), task.ScheduledDate, task.DeadlineDate)
 		if err != nil {
 			r.logger.Error("SaveTasks", "error", err, "task_id", task.ID)
 			return fmt.Errorf("failed to save task %s: %w", task.ID, err)
@@ -138,7 +138,7 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 	// Use LEFT JOIN to get tasks, notes, and tags in a single query
 	rows, err := r.db.DB().Query(`
 		SELECT
-			t.id, t.text, t.status, t.position, t.created_at, t.tags,
+			t.id, t.text, t.status, t.position, t.created_at, t.tags, t.scheduled_date, t.deadline_date,
 			n.id, n.text, n.position
 		FROM tasks t
 		LEFT JOIN task_notes n ON t.id = n.task_id
@@ -158,11 +158,12 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 		var taskStatus TaskStatus
 		var taskPosition int
 		var taskCreatedAtUnix int64
+		var scheduledDate, deadlineDate sql.NullString
 		var noteID, noteText sql.NullString
 		var notePosition sql.NullInt64
 
 		err := rows.Scan(
-			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix, &tagsJSON,
+			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix, &tagsJSON, &scheduledDate, &deadlineDate,
 			&noteID, &noteText, &notePosition,
 		)
 		if err != nil {
@@ -178,13 +179,21 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 				json.Unmarshal([]byte(tagsJSON), &tags)
 			}
 			task = &Task{
-				ID:        taskID,
-				Text:      taskText,
-				Status:    taskStatus,
-				Position:  taskPosition,
-				CreatedAt: unixToTime(taskCreatedAtUnix),
-				Tags:      tags,
-				Notes:     make([]TaskNote, 0),
+				ID:            taskID,
+				Text:          taskText,
+				Status:        taskStatus,
+				Position:      taskPosition,
+				CreatedAt:     unixToTime(taskCreatedAtUnix),
+				Tags:          tags,
+				Notes:         make([]TaskNote, 0),
+				ScheduledDate: nil,
+				DeadlineDate:  nil,
+			}
+			if scheduledDate.Valid {
+				task.ScheduledDate = &scheduledDate.String
+			}
+			if deadlineDate.Valid {
+				task.DeadlineDate = &deadlineDate.String
 			}
 			tasksMap[taskID] = task
 			taskOrder = append(taskOrder, taskID)
@@ -219,12 +228,13 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 func (r *TaskRepository) GetTaskByID(id string) (*Task, error) {
 	var task Task
 	var createdAtUnix int64
+	var scheduledDate, deadlineDate sql.NullString
 
 	err := r.db.DB().QueryRow(`
-		SELECT id, text, status, position, created_at
+		SELECT id, text, status, position, created_at, scheduled_date, deadline_date
 		FROM tasks
 		WHERE id = ?
-	`, id).Scan(&task.ID, &task.Text, &task.Status, &task.Position, &createdAtUnix)
+	`, id).Scan(&task.ID, &task.Text, &task.Status, &task.Position, &createdAtUnix, &scheduledDate, &deadlineDate)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("task not found: %s", id)
@@ -234,6 +244,12 @@ func (r *TaskRepository) GetTaskByID(id string) (*Task, error) {
 	}
 
 	task.CreatedAt = unixToTime(createdAtUnix)
+	if scheduledDate.Valid {
+		task.ScheduledDate = &scheduledDate.String
+	}
+	if deadlineDate.Valid {
+		task.DeadlineDate = &deadlineDate.String
+	}
 
 	// Load notes for this task
 	notes, err := r.loadTaskNotes(id)
@@ -314,7 +330,7 @@ func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 
 	rows, err := r.db.DB().Query(`
 		SELECT
-			t.id, t.text, t.status, t.position, t.created_at, t.tags,
+			t.id, t.text, t.status, t.position, t.created_at, t.tags, t.scheduled_date, t.deadline_date,
 			COALESCE(MAX(le.timestamp), '') as last_activity
 		FROM tasks t
 		LEFT JOIN log_entries le ON t.id = le.task_id
@@ -337,9 +353,10 @@ func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 		var taskStatus TaskStatus
 		var taskPosition int
 		var taskCreatedAtUnix int64
+		var scheduledDate, deadlineDate sql.NullString
 
 		err := rows.Scan(
-			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix, &tagsJSON,
+			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix, &tagsJSON, &scheduledDate, &deadlineDate,
 		)
 		if err != nil {
 			r.logger.Error("FindStaleTasks", "error", err, "operation", "scan", "task_id", taskID)
@@ -355,15 +372,24 @@ func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
 			json.Unmarshal([]byte(tagsJSON), &tags)
 		}
 
-		tasksMap[taskID] = &Task{
-			ID:        taskID,
-			Text:      taskText,
-			Status:    taskStatus,
-			Position:  taskPosition,
-			CreatedAt: unixToTime(taskCreatedAtUnix),
-			Tags:      tags,
-			Notes:     make([]TaskNote, 0),
+		task := &Task{
+			ID:            taskID,
+			Text:          taskText,
+			Status:        taskStatus,
+			Position:      taskPosition,
+			CreatedAt:     unixToTime(taskCreatedAtUnix),
+			Tags:          tags,
+			Notes:         make([]TaskNote, 0),
+			ScheduledDate: nil,
+			DeadlineDate:  nil,
 		}
+		if scheduledDate.Valid {
+			task.ScheduledDate = &scheduledDate.String
+		}
+		if deadlineDate.Valid {
+			task.DeadlineDate = &deadlineDate.String
+		}
+		tasksMap[taskID] = task
 		taskOrder = append(taskOrder, taskID)
 	}
 

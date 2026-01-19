@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/stretchr/testify/assert"
@@ -84,6 +85,47 @@ status: %s
 func createTaskFileSimple(t *testing.T, tmpDir, taskID, title, status string) {
 	t.Helper()
 	createTaskFile(t, tmpDir, taskID, title, status, nil)
+}
+
+// createTaskFileWithDates creates a task file with optional scheduled_date and deadline_date
+func createTaskFileWithDates(t *testing.T, tmpDir, taskID, title, status string, notes []struct{ id, text string }, scheduledDate, deadlineDate *string) {
+	t.Helper()
+
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	err := os.MkdirAll(tasksDir, 0755)
+	require.NoError(t, err)
+
+	logSection := "## Log\n\n"
+	if len(notes) > 0 {
+		logSection += "### 2025-01-01\n"
+		for _, note := range notes {
+			logSection += fmt.Sprintf("  - %s %s\n", note.id, note.text)
+		}
+	}
+
+	scheduledDateLine := ""
+	if scheduledDate != nil {
+		scheduledDateLine = fmt.Sprintf("scheduled_date: %s\n", *scheduledDate)
+	}
+
+	deadlineDateLine := ""
+	if deadlineDate != nil {
+		deadlineDateLine = fmt.Sprintf("deadline_date: %s\n", *deadlineDate)
+	}
+
+	content := fmt.Sprintf(`---
+id: %s
+title: %s
+created: 2025-01-01
+status: %s
+%s%s---
+## Description
+
+%s`, taskID, title, status, scheduledDateLine, deadlineDateLine, logSection)
+
+	filePath := filepath.Join(tasksDir, taskID+".md")
+	err = os.WriteFile(filePath, []byte(content), 0644)
+	require.NoError(t, err)
 }
 
 func TestGetAllTasks_EmptyFile(t *testing.T) {
@@ -512,4 +554,163 @@ func TestService_Integration(t *testing.T) {
 	require.Len(t, tasks[0].Notes, 1)
 	assert.Equal(t, "Note 2", tasks[0].Notes[0].Text)
 	assert.Equal(t, 0, tasks[0].Notes[0].Position) // Position was updated
+}
+
+func TestScheduleTask(t *testing.T) {
+	service, _, _, tmpDir := setupTaskServiceTest(t)
+
+	createTaskFile(t, tmpDir, "task-1", "My task", "open", nil)
+
+	err := service.ScheduleTask("task-1", "2026-01-20")
+	require.NoError(t, err)
+
+	tasks, err := service.GetAllTasks()
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	require.NotNil(t, tasks[0].ScheduledDate)
+	assert.Equal(t, "2026-01-20", *tasks[0].ScheduledDate)
+}
+
+func TestScheduleTask_InvalidDate(t *testing.T) {
+	service, _, _, tmpDir := setupTaskServiceTest(t)
+
+	createTaskFile(t, tmpDir, "task-1", "My task", "open", nil)
+
+	err := service.ScheduleTask("task-1", "invalid-date")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid date format")
+}
+
+func TestScheduleTask_NotFound(t *testing.T) {
+	service, _, _, _ := setupTaskServiceTest(t)
+
+	err := service.ScheduleTask("nonexistent", "2026-01-20")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task not found")
+}
+
+func TestSetTaskDeadline(t *testing.T) {
+	service, _, _, tmpDir := setupTaskServiceTest(t)
+
+	createTaskFile(t, tmpDir, "task-1", "My task", "open", nil)
+
+	err := service.SetTaskDeadline("task-1", "2026-01-25")
+	require.NoError(t, err)
+
+	tasks, err := service.GetAllTasks()
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	require.NotNil(t, tasks[0].DeadlineDate)
+	assert.Equal(t, "2026-01-25", *tasks[0].DeadlineDate)
+}
+
+func TestSetTaskDeadline_InvalidDate(t *testing.T) {
+	service, _, _, tmpDir := setupTaskServiceTest(t)
+
+	createTaskFile(t, tmpDir, "task-1", "My task", "open", nil)
+
+	err := service.SetTaskDeadline("task-1", "01-25-2026")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid date format")
+}
+
+func TestSetTaskDeadline_NotFound(t *testing.T) {
+	service, _, _, _ := setupTaskServiceTest(t)
+
+	err := service.SetTaskDeadline("nonexistent", "2026-01-25")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task not found")
+}
+
+func TestClearTaskSchedule(t *testing.T) {
+	service, _, _, tmpDir := setupTaskServiceTest(t)
+
+	scheduledDate := "2026-01-20"
+	createTaskFileWithDates(t, tmpDir, "task-1", "My task", "open", nil, &scheduledDate, nil)
+
+	err := service.ClearTaskSchedule("task-1")
+	require.NoError(t, err)
+
+	tasks, err := service.GetAllTasks()
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Nil(t, tasks[0].ScheduledDate)
+}
+
+func TestClearTaskDeadline(t *testing.T) {
+	service, _, _, tmpDir := setupTaskServiceTest(t)
+
+	deadlineDate := "2026-01-25"
+	createTaskFileWithDates(t, tmpDir, "task-1", "My task", "open", nil, nil, &deadlineDate)
+
+	err := service.ClearTaskDeadline("task-1")
+	require.NoError(t, err)
+
+	tasks, err := service.GetAllTasks()
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Nil(t, tasks[0].DeadlineDate)
+}
+
+func TestGetTasksByTimeframe(t *testing.T) {
+	service, _, _, tmpDir := setupTaskServiceTest(t)
+
+	today := time.Now().Format("2006-01-02")
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+
+	// Get end of current week (Sunday)
+	now := time.Now()
+	weekday := now.Weekday()
+	daysToSunday := int(time.Sunday - weekday)
+	if daysToSunday <= 0 {
+		daysToSunday += 7
+	}
+	endOfWeek := now.AddDate(0, 0, daysToSunday).Format("2006-01-02")
+
+	// A date after end of week
+	afterWeek := now.AddDate(0, 0, daysToSunday+1).Format("2006-01-02")
+
+	// A date before today (should go to rest)
+	pastDate := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	createTaskFileWithDates(t, tmpDir, "task-today", "Today task", "open", nil, &today, nil)
+	createTaskFileWithDates(t, tmpDir, "task-tomorrow", "Tomorrow task", "open", nil, &tomorrow, nil)
+	createTaskFileWithDates(t, tmpDir, "task-end-of-week", "End of week task", "open", nil, &endOfWeek, nil)
+	createTaskFileWithDates(t, tmpDir, "task-after-week", "After week task", "open", nil, &afterWeek, nil)
+	createTaskFileWithDates(t, tmpDir, "task-past", "Past task", "open", nil, &pastDate, nil)
+	createTaskFileWithDates(t, tmpDir, "task-unscheduled", "Unscheduled task", "open", nil, nil, nil)
+
+	todayTasks, thisWeek, rest, err := service.GetTasksByTimeframe()
+	require.NoError(t, err)
+
+	assert.Len(t, todayTasks, 1)
+	assert.Equal(t, "task-today", todayTasks[0].ID)
+
+	assert.Len(t, thisWeek, 2)
+	var thisWeekIDs []string
+	for _, task := range thisWeek {
+		thisWeekIDs = append(thisWeekIDs, task.ID)
+	}
+	assert.Contains(t, thisWeekIDs, "task-tomorrow")
+	assert.Contains(t, thisWeekIDs, "task-end-of-week")
+
+	assert.Len(t, rest, 3)
+	var restIDs []string
+	for _, task := range rest {
+		restIDs = append(restIDs, task.ID)
+	}
+	assert.Contains(t, restIDs, "task-after-week")
+	assert.Contains(t, restIDs, "task-past")
+	assert.Contains(t, restIDs, "task-unscheduled")
+}
+
+func TestGetTasksByTimeframe_Empty(t *testing.T) {
+	service, _, _, _ := setupTaskServiceTest(t)
+
+	today, thisWeek, rest, err := service.GetTasksByTimeframe()
+	require.NoError(t, err)
+
+	assert.Empty(t, today)
+	assert.Empty(t, thisWeek)
+	assert.Empty(t, rest)
 }

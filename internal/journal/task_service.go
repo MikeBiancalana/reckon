@@ -18,11 +18,13 @@ import (
 
 // TaskFrontmatter represents the YAML frontmatter in task files
 type TaskFrontmatter struct {
-	ID      string   `yaml:"id"`
-	Title   string   `yaml:"title"`
-	Created string   `yaml:"created"`
-	Status  string   `yaml:"status"`
-	Tags    []string `yaml:"tags,omitempty"`
+	ID            string   `yaml:"id"`
+	Title         string   `yaml:"title"`
+	Created       string   `yaml:"created"`
+	Status        string   `yaml:"status"`
+	Tags          []string `yaml:"tags,omitempty"`
+	ScheduledDate *string  `yaml:"scheduled_date,omitempty"`
+	DeadlineDate  *string  `yaml:"deadline_date,omitempty"`
 }
 
 // TaskService handles business logic for task management
@@ -205,13 +207,15 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 		}
 
 		task := Task{
-			ID:        frontmatter.ID,
-			Text:      frontmatter.Title,
-			Status:    status,
-			Tags:      frontmatter.Tags,
-			Notes:     notes,
-			Position:  position,
-			CreatedAt: createdAt,
+			ID:            frontmatter.ID,
+			Text:          frontmatter.Title,
+			Status:        status,
+			Tags:          frontmatter.Tags,
+			Notes:         notes,
+			Position:      position,
+			CreatedAt:     createdAt,
+			ScheduledDate: frontmatter.ScheduledDate,
+			DeadlineDate:  frontmatter.DeadlineDate,
 		}
 
 		tasks = append(tasks, task)
@@ -614,11 +618,13 @@ func writeTaskFile(task Task) string {
 	}
 
 	frontmatter := TaskFrontmatter{
-		ID:      task.ID,
-		Title:   task.Text,
-		Created: task.CreatedAt.Format("2006-01-02"),
-		Status:  status,
-		Tags:    task.Tags,
+		ID:            task.ID,
+		Title:         task.Text,
+		Created:       task.CreatedAt.Format("2006-01-02"),
+		Status:        status,
+		Tags:          task.Tags,
+		ScheduledDate: task.ScheduledDate,
+		DeadlineDate:  task.DeadlineDate,
 	}
 
 	yamlData, _ := yaml.Marshal(frontmatter)
@@ -632,4 +638,145 @@ func writeTaskFile(task Task) string {
 	}
 
 	return fmt.Sprintf("---\n%s---\n\n## Description\n\n%s", string(yamlData), logSection)
+}
+
+// validateDate validates a date string in YYYY-MM-DD format
+func validateDate(date string) error {
+	if date == "" {
+		return nil // Empty is allowed for clearing
+	}
+	_, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return fmt.Errorf("invalid date format %q: expected YYYY-MM-DD", date)
+	}
+	return nil
+}
+
+// ScheduleTask sets the scheduled date for a task
+// The date should be in YYYY-MM-DD format. Use empty string to clear the schedule.
+func (s *TaskService) ScheduleTask(taskID string, date string) error {
+	s.logger.Debug("ScheduleTask", "task_id", taskID, "date", date)
+
+	if err := validateDate(date); err != nil {
+		return err
+	}
+
+	return s.updateTaskDateField(taskID, "scheduled_date", date)
+}
+
+// SetTaskDeadline sets the deadline date for a task
+// The date should be in YYYY-MM-DD format. Use empty string to clear the deadline.
+func (s *TaskService) SetTaskDeadline(taskID string, date string) error {
+	s.logger.Debug("SetTaskDeadline", "task_id", taskID, "date", date)
+
+	if err := validateDate(date); err != nil {
+		return err
+	}
+
+	return s.updateTaskDateField(taskID, "deadline_date", date)
+}
+
+// ClearTaskSchedule clears the scheduled date for a task, making it unscheduled.
+func (s *TaskService) ClearTaskSchedule(taskID string) error {
+	s.logger.Debug("ClearTaskSchedule", "task_id", taskID)
+	return s.updateTaskDateField(taskID, "scheduled_date", "")
+}
+
+// ClearTaskDeadline clears the deadline date for a task, removing the deadline.
+func (s *TaskService) ClearTaskDeadline(taskID string) error {
+	s.logger.Debug("ClearTaskDeadline", "task_id", taskID)
+	return s.updateTaskDateField(taskID, "deadline_date", "")
+}
+
+// updateTaskDateField is a helper to update a date field on a task
+func (s *TaskService) updateTaskDateField(taskID string, field string, value string) error {
+	// Load all tasks
+	tasks, err := s.GetAllTasks()
+	if err != nil {
+		s.logger.Error("updateTaskDateField", "error", err, "task_id", taskID, "operation", "load_tasks")
+		return fmt.Errorf("failed to load tasks: %w", err)
+	}
+
+	// Find and update the task
+	found := false
+	for i := range tasks {
+		if tasks[i].ID == taskID {
+			if field == "scheduled_date" {
+				if value == "" {
+					tasks[i].ScheduledDate = nil
+				} else {
+					tasks[i].ScheduledDate = &value
+				}
+			} else if field == "deadline_date" {
+				if value == "" {
+					tasks[i].DeadlineDate = nil
+				} else {
+					tasks[i].DeadlineDate = &value
+				}
+			}
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		err := fmt.Errorf("task not found: %s", taskID)
+		s.logger.Error("updateTaskDateField", "error", err, "task_id", taskID)
+		return err
+	}
+
+	// Save changes
+	if err := s.save(tasks); err != nil {
+		s.logger.Error("updateTaskDateField", "error", err, "task_id", taskID, "field", field)
+		return fmt.Errorf("failed to save task: %w", err)
+	}
+
+	return nil
+}
+
+// GetTasksByTimeframe returns tasks grouped by timeframe: today, this week, and rest
+// - today: tasks scheduled for today
+// - this week: tasks scheduled for tomorrow through Sunday of current week
+// - rest: unscheduled tasks, past-dated tasks, and tasks scheduled beyond this week
+func (s *TaskService) GetTasksByTimeframe() (today, thisWeek, rest []Task, err error) {
+	s.logger.Debug("GetTasksByTimeframe", "operation", "start")
+
+	tasks, err := s.GetAllTasks()
+	if err != nil {
+		s.logger.Error("GetTasksByTimeframe", "error", err, "operation", "load_tasks")
+		return nil, nil, nil, fmt.Errorf("failed to load tasks: %w", err)
+	}
+
+	todayDate := time.Now().Format("2006-01-02")
+	endOfWeek := getEndOfWeek()
+
+	for _, task := range tasks {
+		if task.ScheduledDate == nil {
+			rest = append(rest, task)
+			continue
+		}
+
+		scheduledDate := *task.ScheduledDate
+		if scheduledDate == todayDate {
+			today = append(today, task)
+		} else if scheduledDate > todayDate && scheduledDate <= endOfWeek {
+			thisWeek = append(thisWeek, task)
+		} else {
+			rest = append(rest, task)
+		}
+	}
+
+	s.logger.Debug("GetTasksByTimeframe", "operation", "complete", "today", len(today), "this_week", len(thisWeek), "rest", len(rest))
+	return today, thisWeek, rest, nil
+}
+
+// getEndOfWeek returns the date string for the end of the current week (Sunday)
+func getEndOfWeek() string {
+	now := time.Now()
+	weekday := now.Weekday()
+	daysToSunday := int(time.Sunday - weekday)
+	if daysToSunday <= 0 {
+		daysToSunday += 7
+	}
+	return now.AddDate(0, 0, daysToSunday).Format("2006-01-02")
 }
