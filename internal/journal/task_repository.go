@@ -135,10 +135,10 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 
 	r.logger.Debug("GetAllTasks", "operation", "start")
 
-	// Use LEFT JOIN to get tasks and notes in a single query
+	// Use LEFT JOIN to get tasks, notes, and tags in a single query
 	rows, err := r.db.DB().Query(`
 		SELECT
-			t.id, t.text, t.status, t.position, t.created_at,
+			t.id, t.text, t.status, t.position, t.created_at, t.tags,
 			n.id, n.text, n.position
 		FROM tasks t
 		LEFT JOIN task_notes n ON t.id = n.task_id
@@ -154,7 +154,7 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 	taskOrder := make([]string, 0)
 
 	for rows.Next() {
-		var taskID, taskText string
+		var taskID, taskText, tagsJSON string
 		var taskStatus TaskStatus
 		var taskPosition int
 		var taskCreatedAtUnix int64
@@ -162,7 +162,7 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 		var notePosition sql.NullInt64
 
 		err := rows.Scan(
-			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix,
+			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix, &tagsJSON,
 			&noteID, &noteText, &notePosition,
 		)
 		if err != nil {
@@ -173,12 +173,17 @@ func (r *TaskRepository) GetAllTasks() ([]Task, error) {
 		// Get or create task
 		task, exists := tasksMap[taskID]
 		if !exists {
+			var tags []string
+			if tagsJSON != "" {
+				json.Unmarshal([]byte(tagsJSON), &tags)
+			}
 			task = &Task{
 				ID:        taskID,
 				Text:      taskText,
 				Status:    taskStatus,
 				Position:  taskPosition,
 				CreatedAt: unixToTime(taskCreatedAtUnix),
+				Tags:      tags,
 				Notes:     make([]TaskNote, 0),
 			}
 			tasksMap[taskID] = task
@@ -296,4 +301,81 @@ func (r *TaskRepository) loadTaskNotes(taskID string) ([]TaskNote, error) {
 // unixToTime converts a Unix timestamp to time.Time
 func unixToTime(unix int64) time.Time {
 	return time.Unix(unix, 0)
+}
+
+// FindStaleTasks finds tasks that haven't had any log entry activity in the specified number of days
+// Uses a single query with LEFT JOIN to avoid N+1 queries
+// Excludes done tasks
+func (r *TaskRepository) FindStaleTasks(days int) ([]Task, error) {
+	timer := perf.NewTimer("TaskRepository.FindStaleTasks", r.logger, 50)
+	defer timer.Stop()
+
+	r.logger.Debug("FindStaleTasks", "operation", "start", "days", days)
+
+	rows, err := r.db.DB().Query(`
+		SELECT
+			t.id, t.text, t.status, t.position, t.created_at, t.tags,
+			COALESCE(MAX(le.timestamp), '') as last_activity
+		FROM tasks t
+		LEFT JOIN log_entries le ON t.id = le.task_id
+		WHERE t.status = 'open'
+		GROUP BY t.id
+		HAVING MAX(le.timestamp) IS NULL OR MAX(le.timestamp) < datetime('now', '-' || ? || ' days')
+		ORDER BY t.position
+	`, days)
+	if err != nil {
+		r.logger.Error("FindStaleTasks", "error", err, "operation", "query")
+		return nil, fmt.Errorf("failed to query stale tasks: %w", err)
+	}
+	defer rows.Close()
+
+	tasksMap := make(map[string]*Task)
+	taskOrder := make([]string, 0)
+
+	for rows.Next() {
+		var taskID, taskText, tagsJSON string
+		var taskStatus TaskStatus
+		var taskPosition int
+		var taskCreatedAtUnix int64
+
+		err := rows.Scan(
+			&taskID, &taskText, &taskStatus, &taskPosition, &taskCreatedAtUnix, &tagsJSON,
+		)
+		if err != nil {
+			r.logger.Error("FindStaleTasks", "error", err, "operation", "scan", "task_id", taskID)
+			return nil, fmt.Errorf("failed to scan task: %w", err)
+		}
+
+		if _, exists := tasksMap[taskID]; exists {
+			continue
+		}
+
+		var tags []string
+		if tagsJSON != "" {
+			json.Unmarshal([]byte(tagsJSON), &tags)
+		}
+
+		tasksMap[taskID] = &Task{
+			ID:        taskID,
+			Text:      taskText,
+			Status:    taskStatus,
+			Position:  taskPosition,
+			CreatedAt: unixToTime(taskCreatedAtUnix),
+			Tags:      tags,
+			Notes:     make([]TaskNote, 0),
+		}
+		taskOrder = append(taskOrder, taskID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating stale tasks: %w", err)
+	}
+
+	tasks := make([]Task, 0, len(taskOrder))
+	for _, id := range taskOrder {
+		tasks = append(tasks, *tasksMap[id])
+	}
+
+	r.logger.Debug("FindStaleTasks", "operation", "complete", "stale_count", len(tasks))
+	return tasks, nil
 }
