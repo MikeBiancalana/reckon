@@ -98,7 +98,9 @@ var logCmd = &cobra.Command{
 			return fmt.Errorf("failed to append log: %w", err)
 		}
 
-		fmt.Printf("✓ Logged: %s\n", message)
+		if !quietFlag {
+			fmt.Printf("✓ Logged: %s\n", message)
+		}
 		return nil
 	},
 }

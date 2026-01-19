@@ -43,7 +43,9 @@ Examples:
 			return fmt.Errorf("failed to add win: %w", err)
 		}
 
-		fmt.Printf("✓ Added win: %s\n", text)
+		if !quietFlag {
+			fmt.Printf("✓ Added win: %s\n", text)
+		}
 		return nil
 	},
 }
@@ -90,11 +92,15 @@ Use --format to output as JSON, TSV, or CSV.`,
 		}
 
 		if len(wins) == 0 {
-			fmt.Println("No wins found")
+			if !quietFlag {
+				fmt.Println("No wins found")
+			}
 			return nil
 		}
 
-		fmt.Printf("Wins for %s:\n\n", effectiveDate)
+		if !quietFlag {
+			fmt.Printf("Wins for %s:\n\n", effectiveDate)
+		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.TabIndent)
 		fmt.Fprintln(tw, "ID\tTEXT")
@@ -133,7 +139,9 @@ Examples:
 			return fmt.Errorf("failed to delete win: %w", err)
 		}
 
-		fmt.Printf("✓ Deleted win %s\n", winID)
+		if !quietFlag {
+			fmt.Printf("✓ Deleted win %s\n", winID)
+		}
 		return nil
 	},
 }

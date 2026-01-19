@@ -63,9 +63,11 @@ var taskNewCmd = &cobra.Command{
 			return fmt.Errorf("failed to create task: %w", err)
 		}
 
-		fmt.Printf("✓ Created task: %s\n", title)
-		if len(taskTagsFlag) > 0 {
-			fmt.Printf("  Tags: %s\n", strings.Join(taskTagsFlag, ", "))
+		if !quietFlag {
+			fmt.Printf("✓ Created task: %s\n", title)
+			if len(taskTagsFlag) > 0 {
+				fmt.Printf("  Tags: %s\n", strings.Join(taskTagsFlag, ", "))
+			}
 		}
 
 		return nil
@@ -170,13 +172,17 @@ var taskListCmd = &cobra.Command{
 		}
 
 		if len(tasks) == 0 {
-			fmt.Println("No tasks found")
+			if !quietFlag {
+				fmt.Println("No tasks found")
+			}
 			return nil
 		}
 
 		if taskVerboseFlag {
 			// Verbose output with sequential numbers
-			fmt.Printf("Found %d task(s):\n\n", len(tasks))
+			if !quietFlag {
+				fmt.Printf("Found %d task(s):\n\n", len(tasks))
+			}
 			for i, t := range tasks {
 				fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
 				fmt.Printf("  ID: %s\n", t.ID)
@@ -199,7 +205,9 @@ var taskListCmd = &cobra.Command{
 
 		if taskVerboseFlag {
 			// Verbose output with sequential numbers
-			fmt.Printf("Found %d task(s):\n\n", len(tasks))
+			if !quietFlag {
+				fmt.Printf("Found %d task(s):\n\n", len(tasks))
+			}
 			for i, t := range tasks {
 				fmt.Printf("[%d] [%s] %s\n", i+1, t.Status, t.Text)
 				fmt.Printf("  ID: %s\n", t.ID)
@@ -361,7 +369,9 @@ Examples:
 			return fmt.Errorf("failed to add note: %w", err)
 		}
 
-		fmt.Printf("✓ Added note to task %s\n", taskID)
+		if !quietFlag {
+			fmt.Printf("✓ Added note to task %s\n", taskID)
+		}
 
 		return nil
 	},
@@ -409,7 +419,9 @@ Examples:
 			return fmt.Errorf("failed to toggle task: %w", err)
 		}
 
-		fmt.Printf("✓ Toggled task %s status\n", taskID)
+		if !quietFlag {
+			fmt.Printf("✓ Toggled task %s status\n", taskID)
+		}
 
 		return nil
 	},
@@ -462,12 +474,14 @@ Examples:
 			return fmt.Errorf("failed to update task: %w", err)
 		}
 
-		fmt.Printf("✓ Updated task %s\n", taskID)
-		if taskEditTitleFlag != "" {
-			fmt.Printf("  New title: %s\n", taskEditTitleFlag)
-		}
-		if len(taskEditTagsFlag) > 0 {
-			fmt.Printf("  Note: Tags are not yet fully supported in the unified task system\n")
+		if !quietFlag {
+			fmt.Printf("✓ Updated task %s\n", taskID)
+			if taskEditTitleFlag != "" {
+				fmt.Printf("  New title: %s\n", taskEditTitleFlag)
+			}
+			if len(taskEditTagsFlag) > 0 {
+				fmt.Printf("  Note: Tags are not yet fully supported in the unified task system\n")
+			}
 		}
 
 		return nil
@@ -518,7 +532,9 @@ Examples:
 			return fmt.Errorf("failed to add note: %w", err)
 		}
 
-		fmt.Printf("✓ Added note to task %s\n", taskID)
+		if !quietFlag {
+			fmt.Printf("✓ Added note to task %s\n", taskID)
+		}
 		return nil
 	},
 }
@@ -579,12 +595,21 @@ Examples:
 		}
 
 		// Confirmation prompt
-		fmt.Printf("Delete task '%s'? (y/n): ", taskToDelete.Text)
+		if !quietFlag {
+			fmt.Printf("Delete task '%s'? (y/n): ", taskToDelete.Text)
+		}
 		var response string
-		fmt.Scanln(&response)
+		if !quietFlag {
+			fmt.Scanln(&response)
+		} else {
+			// In quiet mode, auto-confirm for scripting
+			response = "y"
+		}
 		response = strings.ToLower(strings.TrimSpace(response))
 		if response != "y" && response != "yes" {
-			fmt.Println("Deletion cancelled.")
+			if !quietFlag {
+				fmt.Println("Deletion cancelled.")
+			}
 			return nil
 		}
 
@@ -593,7 +618,9 @@ Examples:
 			return fmt.Errorf("failed to delete task: %w", err)
 		}
 
-		fmt.Printf("✓ Deleted task %s\n", taskID)
+		if !quietFlag {
+			fmt.Printf("✓ Deleted task %s\n", taskID)
+		}
 
 		return nil
 	},
