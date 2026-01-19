@@ -140,7 +140,7 @@ func initService() {
 	log := logger.GetLogger()
 	repo := journal.NewRepository(db, log)
 	fileStore := storage.NewFileStore()
-	service = journal.NewService(repo, fileStore, log)
+	service = journal.NewService(repo, fileStore)
 
 	journalTaskRepo := journal.NewTaskRepository(db)
 	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
