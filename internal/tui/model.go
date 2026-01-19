@@ -6,10 +6,7 @@ import (
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
-	"github.com/MikeBiancalana/reckon/internal/logger"
-	"github.com/MikeBiancalana/reckon/internal/perf"
 	"github.com/MikeBiancalana/reckon/internal/sync"
-	"github.com/MikeBiancalana/reckon/internal/time"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -130,10 +127,11 @@ type Model struct {
 	confirmItemType   string // "intention", "win", "log", "log_note"
 	confirmItemID     string
 	confirmLogEntryID string // For log_note deletion, stores the log entry ID
-	editItemID        string // ID of item being edited
-	editItemType      string // "task", "intention", "win", "log"
-	noteTaskID        string // ID of task being noted
-	noteLogEntryID    string // ID of log entry being noted
+	editItemID        string   // ID of item being edited
+	editItemType      string   // "task", "intention", "win", "log"
+	editItemTags      []string // Original tags of task being edited (for preservation)
+	noteTaskID        string   // ID of task being noted
+	noteLogEntryID    string   // ID of log entry being noted
 	lastError         error
 
 	// Terminal size validation
@@ -210,577 +208,69 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// loadJournal loads the journal for the current date
-// Note: m.currentDate is accessed safely because its value is captured at
-// the time of closure creation. For strings and other immutable types,
-// this pattern is safe because the closure executes before any state change.
-func (m *Model) loadJournal() tea.Cmd {
-	return func() tea.Msg {
-		timer := perf.NewTimer("tui.loadJournal", nil, 100)
-		defer timer.Stop()
-
-		logger.Debug("tui: loading journal", "date", m.currentDate)
-		j, err := m.service.GetByDate(m.currentDate)
-		if err != nil {
-			logger.Debug("tui: failed to load journal", "date", m.currentDate, "error", err)
-			return errMsg{err}
-		}
-		logger.Debug("tui: journal loaded successfully", "date", m.currentDate)
-		return journalLoadedMsg{*j}
-	}
-}
 
 // Update handles messages and updates the model
+// This function is now a simple dispatcher that routes messages to
+// dedicated handler methods organized in handlers.go and keyboard.go
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-
-		// Check if terminal meets minimum dimensions
-		m.terminalTooSmall = msg.Width < MinTerminalWidth || msg.Height < MinTerminalHeight
-
-		if m.statusBar != nil {
-			m.statusBar.SetWidth(msg.Width)
-		}
-
-		// Only calculate pane dimensions if terminal is large enough
-		if !m.terminalTooSmall {
-			// Calculate pane dimensions
-			paneWidthIntentions := int(float64(msg.Width) * 0.25)
-			paneWidthWins := paneWidthIntentions
-			paneWidthLogs := msg.Width - 2*paneWidthIntentions
-			paneHeight := msg.Height - 2
-			if m.intentionList != nil {
-				m.intentionList.SetSize(paneWidthIntentions, paneHeight)
-			}
-			if m.winsView != nil {
-				m.winsView.SetSize(paneWidthWins, paneHeight)
-			}
-			if m.logView != nil {
-				m.logView.SetSize(paneWidthLogs, paneHeight)
-			}
-		}
-		return m, nil
+		return m.handleWindowSize(msg)
 
 	case journalLoadedMsg:
-		logger.Debug("tui: handling journalLoadedMsg", "date", msg.journal.Date, "intentions", len(msg.journal.Intentions), "wins", len(msg.journal.Wins), "logs", len(msg.journal.LogEntries))
-		m.currentJournal = &msg.journal
-
-		// Update or create IntentionList
-		if m.intentionList == nil {
-			m.intentionList = components.NewIntentionList(msg.journal.Intentions)
-		} else {
-			m.intentionList.UpdateIntentions(msg.journal.Intentions)
-		}
-
-		// Update or create WinsView
-		if m.winsView == nil {
-			m.winsView = components.NewWinsView(msg.journal.Wins)
-		} else {
-			m.winsView.UpdateWins(msg.journal.Wins)
-		}
-
-		// Update or create LogView
-		if m.logView == nil {
-			m.logView = components.NewLogView(msg.journal.LogEntries)
-		} else {
-			m.logView.UpdateLogEntries(msg.journal.LogEntries)
-		}
-
-		// Update or create ScheduleView
-		if m.scheduleView == nil {
-			m.scheduleView = components.NewScheduleView(msg.journal.ScheduleItems)
-		} else {
-			m.scheduleView.UpdateSchedule(msg.journal.ScheduleItems)
-		}
-
-		// Initialize taskList. Tasks are loaded via the separate tasksLoadedMsg handler.
-		if m.taskList == nil {
-			m.taskList = components.NewTaskList(nil)
-		}
-
-		// Calculate time summary
-		daySummary := time.CalculateDaySummary(&msg.journal)
-		if m.summaryView != nil {
-			m.summaryView.SetSummary(&daySummary)
-		}
-
-		return m, nil
+		return m.handleJournalLoaded(msg)
 
 	case journalUpdatedMsg:
-		// Reload journal after update
-		return m, m.loadJournal()
+		return m.handleJournalUpdated(msg)
 
 	case tasksLoadedMsg:
-		// New journal tasks loaded, update task list
-		// If taskList doesn't exist yet (journalLoadedMsg may not have arrived),
-		// create it with the loaded tasks
-		logger.Debug("tui: handling tasksLoadedMsg", "taskCount", len(msg.tasks))
-		if m.taskList != nil {
-			m.taskList.UpdateTasks(msg.tasks)
-		} else {
-			m.taskList = components.NewTaskList(msg.tasks)
-		}
-		m.updateNotesForSelectedTask()
-		return m, nil
+		return m.handleTasksLoaded(msg)
 
 	case components.TaskToggleMsg:
-		// Task toggled, update in service
-		logger.Debug("tui: handling TaskToggleMsg", "taskID", msg.TaskID)
-		if m.taskService != nil {
-			return m, m.toggleTask(msg.TaskID)
-		}
-		return m, nil
+		return m.handleTaskToggle(msg)
 
 	case components.TaskSelectionChangedMsg:
-		// Update notes pane when task selection changes
-		m.updateNotesForSelectedTask()
-		return m, nil
+		return m.handleTaskSelectionChanged(msg)
 
 	case taskToggledMsg:
-		// Task toggled successfully, reload tasks
-		return m, m.loadTasks()
+		return m.handleTaskToggled(msg)
 
 	case taskAddedMsg:
-		// Task added successfully, reload tasks
-		return m, m.loadTasks()
+		return m.handleTaskAdded(msg)
 
 	case noteAddedMsg:
-		// Note added successfully, reload tasks
-		return m, m.loadTasks()
+		return m.handleNoteAdded(msg)
 
 	case components.LogNoteAddMsg:
-		// Start adding a log note
-		m.noteLogEntryID = msg.LogEntryID
-		m.textEntryBar.SetMode(components.ModeLogNote)
-		m.textEntryBar.Clear()
-		if m.statusBar != nil {
-			m.statusBar.SetInputMode(true)
-		}
-		return m, m.textEntryBar.Focus()
+		return m.handleLogNoteAdd(msg)
 
 	case components.LogNoteDeleteMsg:
-		// Confirm deletion of log note
-		logger.Debug("tui: entering confirm mode for log note deletion", "logEntryID", msg.LogEntryID, "noteID", msg.NoteID)
-		m.confirmMode = true
-		m.confirmItemType = "log_note"
-		m.confirmItemID = msg.NoteID
-		m.confirmLogEntryID = msg.LogEntryID
-		return m, nil
+		return m.handleLogNoteDelete(msg)
 
 	case components.TaskNoteDeleteMsg:
-		// Confirm deletion of task note
-		logger.Debug("tui: entering confirm mode for task note deletion", "taskID", msg.TaskID, "noteID", msg.NoteID)
-		m.confirmMode = true
-		m.confirmItemType = "task_note"
-		m.confirmItemID = msg.NoteID
-		m.confirmLogEntryID = msg.TaskID // Reuse this field for task ID
-		return m, nil
+		return m.handleTaskNoteDelete(msg)
 
 	case logNoteAddedMsg:
-		// Log note added successfully, reload journal
-		return m, m.loadJournal()
+		return m.handleLogNoteAdded(msg)
 
 	case logNoteDeletedMsg:
-		// Log note deleted successfully, reload journal
-		return m, m.loadJournal()
+		return m.handleLogNoteDeleted(msg)
 
 	case taskNoteDeletedMsg:
-		// Task note deleted successfully, reload tasks
-		return m, m.loadTasks()
+		return m.handleTaskNoteDeleted(msg)
 
 	case fileChangedMsg:
-		// Reload journal if the changed file is for the current date
-		var cmd tea.Cmd
-		if msg.date == m.currentDate {
-			cmd = tea.Batch(m.loadJournal(), m.waitForFileChange())
-		} else {
-			cmd = m.waitForFileChange()
-		}
-		return m, cmd
+		return m.handleFileChanged(msg)
 
 	case errMsg:
-		// Store error for display
-		m.lastError = msg.err
-		return m, nil
+		return m.handleError(msg)
 
 	case tea.KeyMsg:
+		return m.handleKeyPress(msg)
 
-		// Handle text entry bar mode
-		if m.textEntryBar != nil && m.textEntryBar.IsFocused() {
-			switch msg.String() {
-			case "enter":
-				// Submit text entry
-				cmd := m.submitTextEntry()
-				// Reset text entry bar
-				m.textEntryBar.Clear()
-				m.textEntryBar.Blur()
-				m.textEntryBar.SetMode(components.ModeInactive)
-				m.noteTaskID = ""     // Reset note task ID
-				m.noteLogEntryID = "" // Reset note log entry ID
-				m.editItemID = ""     // Reset edit item ID
-				m.editItemType = ""   // Reset edit item type
-				if m.statusBar != nil {
-					m.statusBar.SetInputMode(false)
-				}
-				return m, cmd
-			case "esc":
-				// Cancel text entry
-				m.textEntryBar.Clear()
-				m.textEntryBar.Blur()
-				m.textEntryBar.SetMode(components.ModeInactive)
-				m.noteTaskID = ""     // Reset note task ID
-				m.noteLogEntryID = "" // Reset note log entry ID
-				m.editItemID = ""     // Reset edit item ID
-				m.editItemType = ""   // Reset edit item type
-				if m.statusBar != nil {
-					m.statusBar.SetInputMode(false)
-				}
-				return m, nil
-			default:
-				// Delegate to text entry bar
-				var cmd tea.Cmd
-				m.textEntryBar, cmd = m.textEntryBar.Update(msg)
-				return m, cmd
-			}
-		}
-
-		// Handle confirmation mode
-		if m.confirmMode {
-			switch msg.String() {
-			case "y", "Y":
-				// Confirm deletion
-				return m, m.deleteItem()
-			case "n", "N", "esc":
-				// Cancel deletion
-				logger.Debug("tui: cancelled deletion in confirm mode", "itemType", m.confirmItemType)
-				m.confirmMode = false
-				m.confirmItemType = ""
-				m.confirmItemID = ""
-				m.confirmLogEntryID = ""
-				return m, nil
-			}
-			// Ignore other keys in confirm mode
-			return m, nil
-		}
-
-		// Normal mode
-		switch msg.Type {
-		case tea.KeyCtrlC:
-			// Stop watcher on quit
-			if m.watcher != nil {
-				m.watcher.Stop()
-			}
-			return m, tea.Quit
-		case tea.KeySpace:
-			// Handle space key for tasks (toggle completion)
-			if m.focusedSection == SectionTasks && m.taskList != nil {
-				var cmd tea.Cmd
-				m.taskList, cmd = m.taskList.Update(msg)
-				return m, cmd
-			}
-		case tea.KeyEnter:
-			// Handle enter key for toggling intentions
-			if m.focusedSection == SectionIntentions && m.intentionList != nil {
-				intention := m.intentionList.SelectedIntention()
-				if intention != nil {
-					return m, m.toggleIntention(intention.ID)
-				}
-			}
-			// Handle enter key for tasks (expand/collapse)
-			if m.focusedSection == SectionTasks && m.taskList != nil {
-				var cmd tea.Cmd
-				m.taskList, cmd = m.taskList.Update(msg)
-				return m, cmd
-			}
-			// Handle enter key for logs (expand/collapse)
-			if m.focusedSection == SectionLogs && m.logView != nil {
-				var cmd tea.Cmd
-				m.logView, cmd = m.logView.Update(msg)
-				return m, cmd
-			}
-		}
-
-		// Handle key runes for single characters
-		switch msg.String() {
-		case "q":
-			// Stop watcher on quit
-			if m.watcher != nil {
-				m.watcher.Stop()
-			}
-			return m, tea.Quit
-		case "N":
-			// Toggle notes pane visibility
-			m.notesPaneVisible = !m.notesPaneVisible
-			logger.Debug("tui: toggled notes pane visibility", "visible", m.notesPaneVisible)
-			return m, nil
-		case "tab":
-			// Cycle sections
-			oldSection := m.focusedSection
-			m.focusedSection = (m.focusedSection + 1) % SectionCount
-			logger.Debug("tui: section changed", "oldSection", sectionName(oldSection), "newSection", sectionName(m.focusedSection))
-			if m.statusBar != nil {
-				m.statusBar.SetSection(sectionName(m.focusedSection))
-			}
-			return m, nil
-		case "shift+tab":
-			m.focusedSection = (m.focusedSection + SectionCount - 1) % SectionCount
-			if m.statusBar != nil {
-				m.statusBar.SetSection(sectionName(m.focusedSection))
-			}
-			return m, nil
-
-		case "h", "left":
-			return m, m.prevDay()
-		case "l", "right":
-			return m, m.nextDay()
-		case "T":
-			// Jump to today (uppercase T)
-			return m, m.jumpToToday()
-		case "t":
-			// Add task
-			if m.textEntryBar != nil {
-				m.textEntryBar.SetMode(components.ModeTask)
-				m.textEntryBar.Clear()
-				if m.statusBar != nil {
-					m.statusBar.SetInputMode(true)
-				}
-				return m, m.textEntryBar.Focus()
-			}
-			return m, nil
-		case "n":
-			// Add note to selected task in Tasks section
-			if m.focusedSection == SectionTasks && m.taskList != nil {
-				selectedTask := m.taskList.SelectedTask()
-				if selectedTask != nil {
-					m.noteTaskID = selectedTask.ID
-					m.textEntryBar.SetMode(components.ModeNote)
-					m.textEntryBar.Clear()
-					if m.statusBar != nil {
-						m.statusBar.SetInputMode(true)
-					}
-					return m, m.textEntryBar.Focus()
-				}
-			}
-			// Add note to selected log entry in Logs section
-			if m.focusedSection == SectionLogs && m.logView != nil {
-				// Delegate to log view which will return LogNoteAddMsg if appropriate
-				var cmd tea.Cmd
-				m.logView, cmd = m.logView.Update(msg)
-				return m, cmd
-			}
-			return m, nil
-		case "?":
-			m.helpMode = !m.helpMode
-			logger.Debug("tui: toggled help mode", "helpMode", m.helpMode)
-			return m, nil
-		case "s":
-			// Toggle time summary view
-			if m.summaryView != nil {
-				m.summaryView.Toggle()
-			}
-			return m, nil
-		case "i":
-			// Add intention
-			if m.textEntryBar != nil {
-				m.textEntryBar.SetMode(components.ModeIntention)
-				m.textEntryBar.Clear()
-				if m.statusBar != nil {
-					m.statusBar.SetInputMode(true)
-				}
-				return m, m.textEntryBar.Focus()
-			}
-			return m, nil
-		case "w":
-			// Add win
-			if m.textEntryBar != nil {
-				m.textEntryBar.SetMode(components.ModeWin)
-				m.textEntryBar.Clear()
-				if m.statusBar != nil {
-					m.statusBar.SetInputMode(true)
-				}
-				return m, m.textEntryBar.Focus()
-			}
-			return m, nil
-		case "L":
-			// Add log
-			if m.textEntryBar != nil {
-				m.textEntryBar.SetMode(components.ModeLog)
-				m.textEntryBar.Clear()
-				if m.statusBar != nil {
-					m.statusBar.SetInputMode(true)
-				}
-				return m, m.textEntryBar.Focus()
-			}
-			return m, nil
-		case "d":
-			// Delete selected item with confirmation
-			if m.confirmMode {
-				// Already in confirm mode, ignore
-				return m, nil
-			}
-			switch m.focusedSection {
-			case SectionIntentions:
-				if m.intentionList != nil {
-					intention := m.intentionList.SelectedIntention()
-					if intention != nil {
-						logger.Debug("tui: entering confirm mode for intention deletion", "intentionID", intention.ID)
-						m.confirmMode = true
-						m.confirmItemType = "intention"
-						m.confirmItemID = intention.ID
-					}
-				}
-			case SectionWins:
-				if m.winsView != nil {
-					win := m.winsView.SelectedWin()
-					if win != nil {
-						logger.Debug("tui: entering confirm mode for win deletion", "winID", win.ID)
-						m.confirmMode = true
-						m.confirmItemType = "win"
-						m.confirmItemID = win.ID
-					}
-				}
-			case SectionLogs:
-				if m.logView != nil {
-					// Check if a note is selected
-					if m.logView.IsSelectedItemNote() {
-						// Delegate to log view to get the LogNoteDeleteMsg
-						var cmd tea.Cmd
-						m.logView, cmd = m.logView.Update(msg)
-						return m, cmd
-					}
-					// Otherwise, it's a log entry
-					entry := m.logView.SelectedLogEntry()
-					if entry != nil {
-						logger.Debug("tui: entering confirm mode for log entry deletion", "logEntryID", entry.ID)
-						m.confirmMode = true
-						m.confirmItemType = "log"
-						m.confirmItemID = entry.ID
-					}
-				}
-			case SectionTasks:
-				if m.taskList != nil {
-					// Check if a note is selected
-					if m.taskList.IsSelectedItemNote() {
-						// Delegate to task list to get the TaskNoteDeleteMsg
-						var cmd tea.Cmd
-						m.taskList, cmd = m.taskList.Update(msg)
-						return m, cmd
-					}
-					// Otherwise, it's a task
-					task := m.taskList.SelectedTask()
-					if task != nil {
-						logger.Debug("tui: entering confirm mode for task deletion", "taskID", task.ID)
-						m.confirmMode = true
-						m.confirmItemType = "task"
-						m.confirmItemID = task.ID
-					}
-				}
-			}
-			return m, nil
-		case "e":
-			// Edit selected item
-			if m.confirmMode {
-				// Already in confirm mode, ignore
-				return m, nil
-			}
-			switch m.focusedSection {
-			case SectionTasks:
-				if m.taskList != nil {
-					selectedTask := m.taskList.SelectedTask()
-					if selectedTask != nil && !m.taskList.IsSelectedItemNote() {
-						// Edit task (only main tasks, not notes)
-						m.editItemID = selectedTask.ID
-						m.editItemType = "task"
-						m.textEntryBar.SetMode(components.ModeEditTask)
-						m.textEntryBar.SetValue(selectedTask.Text)
-						if m.statusBar != nil {
-							m.statusBar.SetInputMode(true)
-						}
-						return m, m.textEntryBar.Focus()
-					}
-				}
-			case SectionIntentions:
-				if m.intentionList != nil {
-					selectedIntention := m.intentionList.SelectedIntention()
-					if selectedIntention != nil {
-						m.editItemID = selectedIntention.ID
-						m.editItemType = "intention"
-						m.textEntryBar.SetMode(components.ModeEditIntention)
-						m.textEntryBar.SetValue(selectedIntention.Text)
-						if m.statusBar != nil {
-							m.statusBar.SetInputMode(true)
-						}
-						return m, m.textEntryBar.Focus()
-					}
-				}
-			case SectionWins:
-				if m.winsView != nil {
-					selectedWin := m.winsView.SelectedWin()
-					if selectedWin != nil {
-						m.editItemID = selectedWin.ID
-						m.editItemType = "win"
-						m.textEntryBar.SetMode(components.ModeEditWin)
-						m.textEntryBar.SetValue(selectedWin.Text)
-						if m.statusBar != nil {
-							m.statusBar.SetInputMode(true)
-						}
-						return m, m.textEntryBar.Focus()
-					}
-				}
-			case SectionLogs:
-				if m.logView != nil {
-					selectedLogEntry := m.logView.SelectedLogEntry()
-					if selectedLogEntry != nil && !m.logView.IsSelectedItemNote() {
-						// Edit log entry (only main entries, not notes)
-						m.editItemID = selectedLogEntry.ID
-						m.editItemType = "log"
-						m.textEntryBar.SetMode(components.ModeEditLog)
-						m.textEntryBar.SetValue(selectedLogEntry.Content)
-						if m.statusBar != nil {
-							m.statusBar.SetInputMode(true)
-						}
-						return m, m.textEntryBar.Focus()
-					}
-				}
-			}
-			return m, nil
-		default:
-			// Delegate to focused component
-			switch m.focusedSection {
-			case SectionIntentions:
-				if m.intentionList != nil {
-					var cmd tea.Cmd
-					m.intentionList, cmd = m.intentionList.Update(msg)
-					return m, cmd
-				}
-			case SectionWins:
-				if m.winsView != nil {
-					var cmd tea.Cmd
-					m.winsView, cmd = m.winsView.Update(msg)
-					return m, cmd
-				}
-			case SectionLogs:
-				if m.logView != nil {
-					var cmd tea.Cmd
-					m.logView, cmd = m.logView.Update(msg)
-					return m, cmd
-				}
-			case SectionTasks:
-				if m.taskList != nil {
-					var cmd tea.Cmd
-					m.taskList, cmd = m.taskList.Update(msg)
-					return m, cmd
-				}
-			case SectionSchedule:
-				// ScheduleView doesn't have interactive elements yet
-				// So we don't delegate to it
-			}
-		}
+	default:
+		return m, nil
 	}
-
-	return m, nil
 }
 
 // View renders the TUI
@@ -1112,141 +602,7 @@ func (m *Model) terminalTooSmallView() string {
 	return style.Render(content)
 }
 
-// Helper functions for navigation
-func (m *Model) prevDay() tea.Cmd {
-	date, err := stdtime.Parse("2006-01-02", m.currentDate)
-	if err != nil {
-		// If current date is corrupted, fall back to today
-		m.currentDate = stdtime.Now().Format("2006-01-02")
-		return m.loadJournal()
-	}
-	oldDate := m.currentDate
-	newDate := date.AddDate(0, 0, -1).Format("2006-01-02")
-	m.currentDate = newDate
-	logger.Debug("tui: navigating to previous day", "oldDate", oldDate, "newDate", newDate)
-	return m.loadJournal()
-}
-
-func (m *Model) nextDay() tea.Cmd {
-	date, err := stdtime.Parse("2006-01-02", m.currentDate)
-	if err != nil {
-		// If current date is corrupted, fall back to today
-		m.currentDate = stdtime.Now().Format("2006-01-02")
-		return m.loadJournal()
-	}
-	today := stdtime.Now().Format("2006-01-02")
-	newDate := date.AddDate(0, 0, 1).Format("2006-01-02")
-
-	// Don't go beyond today
-	if newDate > today {
-		return nil
-	}
-
-	oldDate := m.currentDate
-	m.currentDate = newDate
-	logger.Debug("tui: navigating to next day", "oldDate", oldDate, "newDate", newDate)
-	return m.loadJournal()
-}
-
-func (m *Model) jumpToToday() tea.Cmd {
-	m.currentDate = stdtime.Now().Format("2006-01-02")
-	return m.loadJournal()
-}
-
-func (m *Model) toggleIntention(intentionID string) tea.Cmd {
-	capturedJournal := m.currentJournal
-	return func() tea.Msg {
-		logger.Debug("tui: toggling intention", "intentionID", intentionID)
-		err := m.service.ToggleIntention(capturedJournal, intentionID)
-		if err != nil {
-			logger.Debug("tui: failed to toggle intention", "intentionID", intentionID, "error", err)
-			return errMsg{err}
-		}
-		logger.Debug("tui: intention toggled successfully", "intentionID", intentionID)
-		return journalUpdatedMsg{}
-	}
-}
-
-// submitInput is a legacy function for backward compatibility with old task mode
-// This should eventually be removed when legacy task functionality is fully deprecated
-func (m *Model) submitInput() tea.Cmd {
-	// This function is no longer used with the new text entry bar
-	// It's kept for backward compatibility with legacy task mode only
-	return func() tea.Msg {
-		return errMsg{fmt.Errorf("submitInput is deprecated - use submitTextEntry instead")}
-	}
-}
-
-// deleteItem deletes the item in confirmation mode
-func (m *Model) deleteItem() tea.Cmd {
-	return func() tea.Msg {
-		var err error
-		switch m.confirmItemType {
-		case "intention":
-			err = m.service.DeleteIntention(m.currentJournal, m.confirmItemID)
-		case "win":
-			err = m.service.DeleteWin(m.currentJournal, m.confirmItemID)
-		case "log":
-			err = m.service.DeleteLogEntry(m.currentJournal, m.confirmItemID)
-		case "task":
-			if m.taskService != nil {
-				err = m.taskService.DeleteTask(m.confirmItemID)
-			} else {
-				err = fmt.Errorf("task service not available")
-			}
-		case "log_note":
-			// Delete log note using both log entry ID and note ID
-			err = m.service.DeleteLogNote(m.currentJournal, m.confirmLogEntryID, m.confirmItemID)
-			if err != nil {
-				// Reset confirmation state
-				m.confirmMode = false
-				m.confirmItemType = ""
-				m.confirmItemID = ""
-				m.confirmLogEntryID = ""
-				return errMsg{err}
-			}
-			// Reset confirmation state
-			m.confirmMode = false
-			m.confirmItemType = ""
-			m.confirmItemID = ""
-			m.confirmLogEntryID = ""
-			return logNoteDeletedMsg{}
-		case "task_note":
-			// Delete task note using both task ID and note ID
-			if m.taskService != nil {
-				err = m.taskService.DeleteTaskNote(m.confirmLogEntryID, m.confirmItemID)
-				if err != nil {
-					// Reset confirmation state
-					m.confirmMode = false
-					m.confirmItemType = ""
-					m.confirmItemID = ""
-					m.confirmLogEntryID = ""
-					return errMsg{err}
-				}
-				// Reset confirmation state
-				m.confirmMode = false
-				m.confirmItemType = ""
-				m.confirmItemID = ""
-				m.confirmLogEntryID = ""
-				return taskNoteDeletedMsg{}
-			}
-			return errMsg{fmt.Errorf("task service not available")}
-		}
-
-		// Reset confirmation state
-		m.confirmMode = false
-		m.confirmItemType = ""
-		m.confirmItemID = ""
-		m.confirmLogEntryID = ""
-
-		if err != nil {
-			return errMsg{err}
-		}
-		return journalUpdatedMsg{}
-	}
-}
-
-// Messages
+// Message type definitions
 type journalLoadedMsg struct {
 	journal journal.Journal
 }
@@ -1283,211 +639,3 @@ type TaskNoteDeleteMsg struct {
 }
 
 type taskNoteDeletedMsg struct{}
-
-// loadTasks loads all tasks from the task service
-func (m *Model) loadTasks() tea.Cmd {
-	return func() tea.Msg {
-		timer := perf.NewTimer("tui.loadTasks", nil, 100)
-		defer timer.Stop()
-
-		if m.taskService == nil {
-			return errMsg{fmt.Errorf("task service not available")}
-		}
-
-		tasks, err := m.taskService.GetAllTasks()
-		if err != nil {
-			return errMsg{err}
-		}
-
-		return tasksLoadedMsg{tasks: tasks}
-	}
-}
-
-// toggleTask toggles a task's status
-func (m *Model) toggleTask(taskID string) tea.Cmd {
-	return func() tea.Msg {
-		if m.taskService == nil {
-			return errMsg{fmt.Errorf("task service not available")}
-		}
-
-		err := m.taskService.ToggleTask(taskID)
-		if err != nil {
-			return errMsg{err}
-		}
-
-		return taskToggledMsg{}
-	}
-}
-
-// submitTextEntry submits the text entry based on the current mode
-func (m *Model) submitTextEntry() tea.Cmd {
-	if m.textEntryBar == nil {
-		return nil
-	}
-
-	inputText := m.textEntryBar.GetValue()
-	if inputText == "" {
-		return nil
-	}
-
-	mode := m.textEntryBar.GetMode()
-
-	// CRITICAL: Capture ALL values we need BEFORE creating the async function.
-	// Go closures capture variables by REFERENCE, not by value.
-	// If we don't capture them here, the values may be reset by the key handler
-	// before the async function runs.
-	//
-	// Example of the bug this prevents:
-	//   // WRONG - captures m.noteLogEntryID by reference
-	//   return func() tea.Msg {
-	//       err := m.service.AddLogNote(m.currentJournal, m.noteLogEntryID, inputText)
-	//       // If key handler runs before this, m.noteLogEntryID could be reset!
-	//   }
-	//
-	//   // CORRECT - captures value at this point in time
-	//   capturedLogEntryID := m.noteLogEntryID
-	//   return func() tea.Msg {
-	//       err := m.service.AddLogNote(m.currentJournal, capturedLogEntryID, inputText)
-	//   }
-	capturedLogEntryID := m.noteLogEntryID
-	capturedTaskID := m.noteTaskID
-	capturedEditID := m.editItemID
-	capturedEditType := m.editItemType
-	capturedCurrentJournal := m.currentJournal
-	capturedMode := mode
-	capturedTaskService := m.taskService
-
-	return func() tea.Msg {
-		var err error
-
-		switch capturedMode {
-		case components.ModeTask:
-			// Add task
-			if capturedTaskService != nil {
-				taskText, tags := parseTaskTags(inputText)
-				err = capturedTaskService.AddTask(taskText, tags)
-				if err != nil {
-					return errMsg{err}
-				}
-				// Reload tasks
-				tasks, errGetTasks := capturedTaskService.GetAllTasks()
-				if errGetTasks != nil {
-					return errMsg{errGetTasks}
-				}
-				return tasksLoadedMsg{tasks: tasks}
-			}
-			return errMsg{fmt.Errorf("task service not available")}
-
-		case components.ModeIntention:
-			err = m.service.AddIntention(capturedCurrentJournal, inputText)
-
-		case components.ModeWin:
-			err = m.service.AddWin(capturedCurrentJournal, inputText)
-
-		case components.ModeLog:
-			err = m.service.AppendLog(capturedCurrentJournal, inputText)
-
-		case components.ModeNote:
-			// Add note to the selected task
-			if capturedTaskService != nil && capturedTaskID != "" {
-				err = capturedTaskService.AddTaskNote(capturedTaskID, inputText)
-				if err != nil {
-					return errMsg{err}
-				}
-				// Reload tasks
-				tasks, errGetTasks := m.taskService.GetAllTasks()
-				if errGetTasks != nil {
-					return errMsg{errGetTasks}
-				}
-				return tasksLoadedMsg{tasks: tasks}
-			}
-			return errMsg{fmt.Errorf("task service not available or no task selected")}
-
-		case components.ModeLogNote:
-			// Add note to the selected log entry
-			if capturedLogEntryID != "" {
-				err = m.service.AddLogNote(capturedCurrentJournal, capturedLogEntryID, inputText)
-				if err != nil {
-					return errMsg{err}
-				}
-				return logNoteAddedMsg{}
-			}
-			return errMsg{fmt.Errorf("no log entry selected")}
-
-		case components.ModeEditTask:
-			// Edit task
-			if capturedTaskService != nil && capturedEditID != "" && capturedEditType == "task" {
-				err = capturedTaskService.UpdateTask(capturedEditID, inputText, []string{}) // TODO: preserve existing tags
-				if err != nil {
-					return errMsg{err}
-				}
-				// Reload tasks
-				tasks, errGetTasks := capturedTaskService.GetAllTasks()
-				if errGetTasks != nil {
-					return errMsg{errGetTasks}
-				}
-				return tasksLoadedMsg{tasks: tasks}
-			}
-			return errMsg{fmt.Errorf("task service not available or no task selected for editing")}
-
-		case components.ModeEditIntention:
-			// Edit intention
-			if capturedEditID != "" && capturedEditType == "intention" {
-				err = m.service.UpdateIntention(capturedCurrentJournal, capturedEditID, inputText)
-			}
-
-		case components.ModeEditWin:
-			// Edit win
-			if capturedEditID != "" && capturedEditType == "win" {
-				err = m.service.UpdateWin(capturedCurrentJournal, capturedEditID, inputText)
-			}
-
-		case components.ModeEditLog:
-			// Edit log entry
-			if capturedEditID != "" && capturedEditType == "log" {
-				err = m.service.UpdateLogEntry(capturedCurrentJournal, capturedEditID, inputText)
-			}
-
-		default:
-			return errMsg{fmt.Errorf("unknown entry mode")}
-		}
-
-		if err != nil {
-			return errMsg{err}
-		}
-		return journalUpdatedMsg{}
-	}
-}
-
-func parseTaskTags(input string) (string, []string) {
-	var tags []string
-	words := strings.Fields(input)
-	var filteredWords []string
-
-	for _, word := range words {
-		if strings.HasPrefix(word, "#") && len(word) > 1 {
-			tag := strings.TrimLeft(strings.ToLower(word), "#")
-			if tag != "" {
-				tags = append(tags, tag)
-			}
-		} else {
-			filteredWords = append(filteredWords, word)
-		}
-	}
-
-	return strings.Join(filteredWords, " "), tags
-}
-
-// waitForFileChange waits for file change events from the watcher.
-// This is a non-blocking async command - it returns immediately and the
-// closure waits for the watcher channel to signal changes.
-func (m *Model) waitForFileChange() tea.Cmd {
-	if m.watcher == nil {
-		return nil
-	}
-
-	return func() tea.Msg {
-		event := <-m.watcher.Changes()
-		return fileChangedMsg{date: event.Date}
-	}
-}
