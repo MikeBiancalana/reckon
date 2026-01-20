@@ -44,7 +44,7 @@ func TestJournalCRUD(t *testing.T) {
 	defer db.Close()
 
 	// Create services
-	journalRepo := journal.NewRepository(db, nil)
+	journalRepo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
 	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
@@ -169,7 +169,7 @@ func TestBackwardCompatibility(t *testing.T) {
 	}
 	defer db.Close()
 
-	journalRepo := journal.NewRepository(db, nil)
+	journalRepo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
 	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
@@ -281,7 +281,7 @@ func TestScheduleAdditionToOldJournals(t *testing.T) {
 	}
 	defer db.Close()
 
-	journalRepo := journal.NewRepository(db, nil)
+	journalRepo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
 	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
@@ -607,7 +607,7 @@ func TestEdgeCases(t *testing.T) {
 	}
 	defer db.Close()
 
-	journalRepo := journal.NewRepository(db, nil)
+	journalRepo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
 	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 
@@ -742,7 +742,7 @@ func TestLogNotePersistence(t *testing.T) {
 	}
 	defer db.Close()
 
-	journalRepo := journal.NewRepository(db, nil)
+	journalRepo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
 	journalSvc := journal.NewService(journalRepo, fileStore, nil)
 

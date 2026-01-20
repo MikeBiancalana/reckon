@@ -22,7 +22,7 @@ func Example_scheduleItems() {
 	dbPath := filepath.Join(tmpDir, "example.db")
 	db, _ := storage.NewDatabase(dbPath)
 	fileStore := storage.NewFileStore()
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db)
 	service := NewService(repo, fileStore, nil)
 
 	// Create a journal for today

@@ -9,7 +9,7 @@ import (
 func TestSaveLogNotes_Success(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db)
 
 	// Create a journal with a log entry
 	journal := &Journal{
@@ -75,7 +75,7 @@ func TestSaveLogNotes_Success(t *testing.T) {
 func TestSaveLogNotes_EmptyNotes(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db)
 
 	journal := &Journal{
 		Date:         "2024-01-15",
@@ -112,7 +112,7 @@ func TestSaveLogNotes_EmptyNotes(t *testing.T) {
 func TestSaveLogNotes_Update(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db)
 
 	// Create initial journal with notes
 	journal := &Journal{
@@ -171,7 +171,7 @@ func TestSaveLogNotes_Update(t *testing.T) {
 func TestGetLogNotes_NonexistentEntry(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db)
 
 	notes, err := repo.GetLogNotes("nonexistent-entry")
 	if err != nil {
@@ -187,7 +187,7 @@ func TestGetLogNotes_NonexistentEntry(t *testing.T) {
 func TestGetJournalByDate_LoadsNotes(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db)
 
 	// Create a journal with multiple log entries, each with notes
 	journal := &Journal{
@@ -277,7 +277,7 @@ func TestGetJournalByDate_LoadsNotes(t *testing.T) {
 func TestDeleteJournal_CascadeDeletesNotes(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db)
 
 	// Create a journal with notes
 	journal := &Journal{
@@ -333,7 +333,7 @@ func TestDeleteJournal_CascadeDeletesNotes(t *testing.T) {
 func TestClearAllData_DeletesNotes(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db)
 
 	// Create journals with notes
 	journal1 := &Journal{

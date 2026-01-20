@@ -137,8 +137,8 @@ func initService() {
 		os.Exit(ExitCodeGeneralErr)
 	}
 
-	log := logger.GetLogger()
-	repo := journal.NewRepository(db, log)
+	// log := logger.GetLogger()
+	repo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
 	service = journal.NewService(repo, fileStore)
 
