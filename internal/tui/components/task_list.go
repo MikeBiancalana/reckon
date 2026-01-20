@@ -100,9 +100,9 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		indicator := ""
 		if len(item.task.Notes) > 0 {
 			if d.collapsedMap[item.task.ID] {
-				indicator = "▶ "
+				indicator = CollapseIndicatorCollapsed
 			} else {
-				indicator = "▼ "
+				indicator = CollapseIndicatorExpanded
 			}
 		}
 
@@ -116,7 +116,7 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Highlight selected item
 	if index == m.Index() {
-		text = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).Render("▶ " + text)
+		text = SelectedStyle.Render(text)
 	} else {
 		text = style.Render(text)
 	}

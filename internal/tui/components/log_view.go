@@ -84,9 +84,9 @@ func (d LogDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 		indicator := ""
 		if len(item.entry.Notes) > 0 {
 			if d.collapsedMap != nil && d.collapsedMap[item.entry.ID] {
-				indicator = "▶ "
+				indicator = CollapseIndicatorCollapsed
 			} else {
-				indicator = "▼ "
+				indicator = CollapseIndicatorExpanded
 			}
 		}
 
@@ -96,7 +96,7 @@ func (d LogDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 
 	// Highlight selected item
 	if index == m.Index() {
-		text = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).Render("▶ " + text)
+		text = SelectedStyle.Render(text)
 	} else {
 		text = style.Render(text)
 	}
