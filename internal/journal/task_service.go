@@ -2,7 +2,6 @@ package journal
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
+	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/MikeBiancalana/reckon/internal/perf"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/rs/xid"
@@ -29,17 +29,15 @@ type TaskFrontmatter struct {
 
 // TaskService handles business logic for task management
 type TaskService struct {
-	repo   *TaskRepository
-	store  *storage.FileStore
-	logger *slog.Logger
+	repo  *TaskRepository
+	store *storage.FileStore
 }
 
 // NewTaskService creates a new task service
-func NewTaskService(repo *TaskRepository, store *storage.FileStore, logger *slog.Logger) *TaskService {
+func NewTaskService(repo *TaskRepository, store *storage.FileStore) *TaskService {
 	return &TaskService{
-		repo:   repo,
-		store:  store,
-		logger: DefaultLogger(logger),
+		repo:  repo,
+		store: store,
 	}
 }
 
@@ -76,17 +74,17 @@ func taskFilePath(task Task) (string, error) {
 
 // MigrateTaskFilenames renames existing task files from {ID}.md to YYYY-MM-DD-slug.md format
 func (s *TaskService) MigrateTaskFilenames() error {
-	s.logger.Info("MigrateTaskFilenames", "operation", "start")
+	logger.Info("MigrateTaskFilenames", "operation", "start")
 
 	tasksDir, err := config.TasksDir()
 	if err != nil {
-		s.logger.Error("MigrateTaskFilenames", "error", err, "operation", "get_tasks_dir")
+		logger.Error("MigrateTaskFilenames", "error", err, "operation", "get_tasks_dir")
 		return fmt.Errorf("failed to get tasks directory: %w", err)
 	}
 
 	files, err := os.ReadDir(tasksDir)
 	if err != nil {
-		s.logger.Error("MigrateTaskFilenames", "error", err, "operation", "read_tasks_dir")
+		logger.Error("MigrateTaskFilenames", "error", err, "operation", "read_tasks_dir")
 		return fmt.Errorf("failed to read tasks directory: %w", err)
 	}
 
@@ -105,13 +103,13 @@ func (s *TaskService) MigrateTaskFilenames() error {
 		filePath := filepath.Join(tasksDir, file.Name())
 		content, err := os.ReadFile(filePath)
 		if err != nil {
-			s.logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
+			logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
 			continue
 		}
 
 		frontmatter, _, err := parseTaskFile(string(content))
 		if err != nil {
-			s.logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
+			logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
 			continue
 		}
 
@@ -134,30 +132,30 @@ func (s *TaskService) MigrateTaskFilenames() error {
 
 		if file.Name() != newFileName {
 			if err := os.Rename(filePath, newFilePath); err != nil {
-				s.logger.Error("MigrateTaskFilenames", "error", err, "old_path", filePath, "new_path", newFilePath)
+				logger.Error("MigrateTaskFilenames", "error", err, "old_path", filePath, "new_path", newFilePath)
 				continue
 			}
 			migrated++
-			s.logger.Info("MigrateTaskFilenames", "migrated", file.Name(), "to", newFileName)
+			logger.Info("MigrateTaskFilenames", "migrated", file.Name(), "to", newFileName)
 		}
 	}
 
-	s.logger.Info("MigrateTaskFilenames", "operation", "complete", "files_migrated", migrated)
+	logger.Info("MigrateTaskFilenames", "operation", "complete", "files_migrated", migrated)
 	return nil
 }
 
 // GetAllTasks loads tasks from individual task files (source of truth)
 // The files are the authoritative source; DB is just an index/cache
 func (s *TaskService) GetAllTasks() ([]Task, error) {
-	timer := perf.NewTimer("TaskService.GetAllTasks", s.logger, 100)
+	timer := perf.NewTimer("TaskService.GetAllTasks", nil, 100)
 	defer timer.Stop()
 
-	s.logger.Info("GetAllTasks", "operation", "start")
+	logger.Info("GetAllTasks", "operation", "start")
 
 	// Get tasks directory
 	tasksDir, err := config.TasksDir()
 	if err != nil {
-		s.logger.Error("GetAllTasks", "error", err, "operation", "get_tasks_dir")
+		logger.Error("GetAllTasks", "error", err, "operation", "get_tasks_dir")
 		return nil, fmt.Errorf("failed to get tasks directory: %w", err)
 	}
 
@@ -167,7 +165,7 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 		if os.IsNotExist(err) {
 			return []Task{}, nil
 		}
-		s.logger.Error("GetAllTasks", "error", err, "operation", "read_tasks_dir")
+		logger.Error("GetAllTasks", "error", err, "operation", "read_tasks_dir")
 		return nil, fmt.Errorf("failed to read tasks directory: %w", err)
 	}
 
@@ -182,14 +180,14 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 		filePath := filepath.Join(tasksDir, file.Name())
 		content, err := os.ReadFile(filePath)
 		if err != nil {
-			s.logger.Debug("GetAllTasks", "error", err, "file_path", filePath)
+			logger.Debug("GetAllTasks", "error", err, "file_path", filePath)
 			continue // Skip files that can't be read
 		}
 
 		// Parse file
 		frontmatter, notes, err := parseTaskFile(string(content))
 		if err != nil {
-			s.logger.Debug("GetAllTasks", "error", err, "file_path", filePath)
+			logger.Debug("GetAllTasks", "error", err, "file_path", filePath)
 			continue // Skip invalid files
 		}
 
@@ -222,7 +220,7 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 		position++
 	}
 
-	s.logger.Info("GetAllTasks", "operation", "complete", "total_tasks", len(tasks))
+	logger.Info("GetAllTasks", "operation", "complete", "total_tasks", len(tasks))
 	return tasks, nil
 }
 
@@ -295,7 +293,7 @@ func validateTags(tags []string) []string {
 
 // AddTask creates a new task and persists it
 func (s *TaskService) AddTask(text string, tags []string) error {
-	s.logger.Debug("AddTask", "task_text", text, "tags", tags)
+	logger.Debug("AddTask", "task_text", text, "tags", tags)
 
 	// Validate and sanitize tags
 	tags = validateTags(tags)
@@ -303,7 +301,7 @@ func (s *TaskService) AddTask(text string, tags []string) error {
 	// Load all existing tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
-		s.logger.Error("AddTask", "error", err, "operation", "load_tasks")
+		logger.Error("AddTask", "error", err, "operation", "load_tasks")
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
@@ -313,7 +311,7 @@ func (s *TaskService) AddTask(text string, tags []string) error {
 
 	// Save to both file and DB
 	if err := s.save(tasks); err != nil {
-		s.logger.Error("AddTask", "error", err, "task_id", newTask.ID)
+		logger.Error("AddTask", "error", err, "task_id", newTask.ID)
 		return fmt.Errorf("failed to save task: %w", err)
 	}
 
@@ -322,12 +320,12 @@ func (s *TaskService) AddTask(text string, tags []string) error {
 
 // ToggleTask toggles a task's status between open and done
 func (s *TaskService) ToggleTask(taskID string) error {
-	s.logger.Debug("ToggleTask", "task_id", taskID)
+	logger.Debug("ToggleTask", "task_id", taskID)
 
 	// Load all tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
-		s.logger.Error("ToggleTask", "error", err, "operation", "load_tasks")
+		logger.Error("ToggleTask", "error", err, "operation", "load_tasks")
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
@@ -347,13 +345,13 @@ func (s *TaskService) ToggleTask(taskID string) error {
 
 	if !found {
 		err := fmt.Errorf("task not found: %s", taskID)
-		s.logger.Error("ToggleTask", "error", err, "task_id", taskID)
+		logger.Error("ToggleTask", "error", err, "task_id", taskID)
 		return err
 	}
 
 	// Save changes
 	if err := s.save(tasks); err != nil {
-		s.logger.Error("ToggleTask", "error", err, "task_id", taskID)
+		logger.Error("ToggleTask", "error", err, "task_id", taskID)
 		return fmt.Errorf("failed to save task: %w", err)
 	}
 
@@ -362,12 +360,12 @@ func (s *TaskService) ToggleTask(taskID string) error {
 
 // AddTaskNote adds a note to a task
 func (s *TaskService) AddTaskNote(taskID, noteText string) error {
-	s.logger.Debug("AddTaskNote", "task_id", taskID)
+	logger.Debug("AddTaskNote", "task_id", taskID)
 
 	// Load all tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
-		s.logger.Error("AddTaskNote", "error", err, "operation", "load_tasks")
+		logger.Error("AddTaskNote", "error", err, "operation", "load_tasks")
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
@@ -387,13 +385,13 @@ func (s *TaskService) AddTaskNote(taskID, noteText string) error {
 
 	if !found {
 		err := fmt.Errorf("task not found: %s", taskID)
-		s.logger.Error("AddTaskNote", "error", err, "task_id", taskID)
+		logger.Error("AddTaskNote", "error", err, "task_id", taskID)
 		return err
 	}
 
 	// Save changes
 	if err := s.save(tasks); err != nil {
-		s.logger.Error("AddTaskNote", "error", err, "task_id", taskID, "note_id", noteID)
+		logger.Error("AddTaskNote", "error", err, "task_id", taskID, "note_id", noteID)
 		return fmt.Errorf("failed to save note: %w", err)
 	}
 
@@ -402,7 +400,7 @@ func (s *TaskService) AddTaskNote(taskID, noteText string) error {
 
 // UpdateTask updates a task's title and/or tags
 func (s *TaskService) UpdateTask(taskID string, title string, tags []string) error {
-	s.logger.Debug("UpdateTask", "task_id", taskID, "title", title, "tags", tags)
+	logger.Debug("UpdateTask", "task_id", taskID, "title", title, "tags", tags)
 
 	// Validate and sanitize tags
 	tags = validateTags(tags)
@@ -410,7 +408,7 @@ func (s *TaskService) UpdateTask(taskID string, title string, tags []string) err
 	// Load all tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
-		s.logger.Error("UpdateTask", "error", err, "operation", "load_tasks")
+		logger.Error("UpdateTask", "error", err, "operation", "load_tasks")
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
@@ -429,13 +427,13 @@ func (s *TaskService) UpdateTask(taskID string, title string, tags []string) err
 
 	if !found {
 		err := fmt.Errorf("task not found: %s", taskID)
-		s.logger.Error("UpdateTask", "error", err, "task_id", taskID)
+		logger.Error("UpdateTask", "error", err, "task_id", taskID)
 		return err
 	}
 
 	// Save changes
 	if err := s.save(tasks); err != nil {
-		s.logger.Error("UpdateTask", "error", err, "task_id", taskID)
+		logger.Error("UpdateTask", "error", err, "task_id", taskID)
 		return fmt.Errorf("failed to update task: %w", err)
 	}
 
@@ -444,12 +442,12 @@ func (s *TaskService) UpdateTask(taskID string, title string, tags []string) err
 
 // DeleteTaskNote removes a note from a task
 func (s *TaskService) DeleteTaskNote(taskID, noteID string) error {
-	s.logger.Debug("DeleteTaskNote", "task_id", taskID, "note_id", noteID)
+	logger.Debug("DeleteTaskNote", "task_id", taskID, "note_id", noteID)
 
 	// Load all tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
-		s.logger.Error("DeleteTaskNote", "error", err, "operation", "load_tasks")
+		logger.Error("DeleteTaskNote", "error", err, "operation", "load_tasks")
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
@@ -478,18 +476,18 @@ func (s *TaskService) DeleteTaskNote(taskID, noteID string) error {
 
 	if !taskFound {
 		err := fmt.Errorf("task not found: %s", taskID)
-		s.logger.Error("DeleteTaskNote", "error", err, "task_id", taskID, "note_id", noteID)
+		logger.Error("DeleteTaskNote", "error", err, "task_id", taskID, "note_id", noteID)
 		return err
 	}
 	if !noteFound {
 		err := fmt.Errorf("note not found: %s", noteID)
-		s.logger.Error("DeleteTaskNote", "error", err, "task_id", taskID, "note_id", noteID)
+		logger.Error("DeleteTaskNote", "error", err, "task_id", taskID, "note_id", noteID)
 		return err
 	}
 
 	// Save changes
 	if err := s.save(tasks); err != nil {
-		s.logger.Error("DeleteTaskNote", "error", err, "task_id", taskID, "note_id", noteID)
+		logger.Error("DeleteTaskNote", "error", err, "task_id", taskID, "note_id", noteID)
 		return fmt.Errorf("failed to delete note: %w", err)
 	}
 
@@ -498,12 +496,12 @@ func (s *TaskService) DeleteTaskNote(taskID, noteID string) error {
 
 // DeleteTask deletes a task and its associated file
 func (s *TaskService) DeleteTask(taskID string) error {
-	s.logger.Debug("DeleteTask", "task_id", taskID)
+	logger.Debug("DeleteTask", "task_id", taskID)
 
 	// Load all tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
-		s.logger.Error("DeleteTask", "error", err, "operation", "load_tasks")
+		logger.Error("DeleteTask", "error", err, "operation", "load_tasks")
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
@@ -522,24 +520,24 @@ func (s *TaskService) DeleteTask(taskID string) error {
 
 	if !found {
 		err := fmt.Errorf("task not found: %s", taskID)
-		s.logger.Error("DeleteTask", "error", err, "task_id", taskID)
+		logger.Error("DeleteTask", "error", err, "task_id", taskID)
 		return err
 	}
 
 	// Delete the task file
 	filePath, err := taskFilePath(deletedTask)
 	if err != nil {
-		s.logger.Error("DeleteTask", "error", err, "task_id", taskID)
+		logger.Error("DeleteTask", "error", err, "task_id", taskID)
 		return fmt.Errorf("failed to get task file path: %w", err)
 	}
 	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-		s.logger.Error("DeleteTask", "error", err, "task_id", taskID, "file_path", filePath)
+		logger.Error("DeleteTask", "error", err, "task_id", taskID, "file_path", filePath)
 		return fmt.Errorf("failed to delete task file: %w", err)
 	}
 
 	// Save changes (updates DB and doesn't write the deleted task)
 	if err := s.save(tasks); err != nil {
-		s.logger.Error("DeleteTask", "error", err, "task_id", taskID)
+		logger.Error("DeleteTask", "error", err, "task_id", taskID)
 		return fmt.Errorf("failed to save tasks after deletion: %w", err)
 	}
 
@@ -549,19 +547,19 @@ func (s *TaskService) DeleteTask(taskID string) error {
 // save persists tasks to both individual files and database
 // Files are source of truth, DB is index/cache for querying
 func (s *TaskService) save(tasks []Task) error {
-	s.logger.Info("save", "operation", "start", "task_count", len(tasks))
+	logger.Info("save", "operation", "start", "task_count", len(tasks))
 
 	// Get tasks directory
 	tasksDir, err := config.TasksDir()
 	if err != nil {
-		s.logger.Error("save", "error", err, "operation", "get_tasks_dir")
+		logger.Error("save", "error", err, "operation", "get_tasks_dir")
 		return fmt.Errorf("failed to get tasks directory: %w", err)
 	}
 
 	// Read existing files to detect renames
 	existingFiles, err := os.ReadDir(tasksDir)
 	if err != nil && !os.IsNotExist(err) {
-		s.logger.Error("save", "error", err, "operation", "read_tasks_dir")
+		logger.Error("save", "error", err, "operation", "read_tasks_dir")
 		return fmt.Errorf("failed to read tasks directory: %w", err)
 	}
 
@@ -578,7 +576,7 @@ func (s *TaskService) save(tasks []Task) error {
 		content := writeTaskFile(task)
 		newFilePath, err := taskFilePath(task)
 		if err != nil {
-			s.logger.Error("save", "error", err, "task_id", task.ID)
+			logger.Error("save", "error", err, "task_id", task.ID)
 			return fmt.Errorf("failed to get task file path: %w", err)
 		}
 
@@ -588,25 +586,25 @@ func (s *TaskService) save(tasks []Task) error {
 			delete(oldFiles, oldFileName)
 			if oldFileName != taskFilename(task) {
 				if err := os.Rename(oldPath, newFilePath); err != nil {
-					s.logger.Error("save", "error", err, "old_path", oldPath, "new_path", newFilePath)
+					logger.Error("save", "error", err, "old_path", oldPath, "new_path", newFilePath)
 					return fmt.Errorf("failed to rename task file: %w", err)
 				}
 			}
 		}
 
 		if err := os.WriteFile(newFilePath, []byte(content), 0644); err != nil {
-			s.logger.Error("save", "error", err, "task_id", task.ID, "file_path", newFilePath)
+			logger.Error("save", "error", err, "task_id", task.ID, "file_path", newFilePath)
 			return fmt.Errorf("failed to write task file %s: %w", newFilePath, err)
 		}
 	}
 
 	// Write to DB for indexing/querying
 	if err := s.repo.SaveTasks(tasks); err != nil {
-		s.logger.Error("save", "error", err, "operation", "save_to_db")
+		logger.Error("save", "error", err, "operation", "save_to_db")
 		return fmt.Errorf("failed to save tasks to database: %w", err)
 	}
 
-	s.logger.Info("save", "operation", "complete", "task_count", len(tasks))
+	logger.Info("save", "operation", "complete", "task_count", len(tasks))
 	return nil
 }
 
@@ -655,7 +653,7 @@ func validateDate(date string) error {
 // ScheduleTask sets the scheduled date for a task
 // The date should be in YYYY-MM-DD format. Use empty string to clear the schedule.
 func (s *TaskService) ScheduleTask(taskID string, date string) error {
-	s.logger.Debug("ScheduleTask", "task_id", taskID, "date", date)
+	logger.Debug("ScheduleTask", "task_id", taskID, "date", date)
 
 	if err := validateDate(date); err != nil {
 		return err
@@ -667,7 +665,7 @@ func (s *TaskService) ScheduleTask(taskID string, date string) error {
 // SetTaskDeadline sets the deadline date for a task
 // The date should be in YYYY-MM-DD format. Use empty string to clear the deadline.
 func (s *TaskService) SetTaskDeadline(taskID string, date string) error {
-	s.logger.Debug("SetTaskDeadline", "task_id", taskID, "date", date)
+	logger.Debug("SetTaskDeadline", "task_id", taskID, "date", date)
 
 	if err := validateDate(date); err != nil {
 		return err
@@ -678,13 +676,13 @@ func (s *TaskService) SetTaskDeadline(taskID string, date string) error {
 
 // ClearTaskSchedule clears the scheduled date for a task, making it unscheduled.
 func (s *TaskService) ClearTaskSchedule(taskID string) error {
-	s.logger.Debug("ClearTaskSchedule", "task_id", taskID)
+	logger.Debug("ClearTaskSchedule", "task_id", taskID)
 	return s.updateTaskDateField(taskID, "scheduled_date", "")
 }
 
 // ClearTaskDeadline clears the deadline date for a task, removing the deadline.
 func (s *TaskService) ClearTaskDeadline(taskID string) error {
-	s.logger.Debug("ClearTaskDeadline", "task_id", taskID)
+	logger.Debug("ClearTaskDeadline", "task_id", taskID)
 	return s.updateTaskDateField(taskID, "deadline_date", "")
 }
 
@@ -693,7 +691,7 @@ func (s *TaskService) updateTaskDateField(taskID string, field string, value str
 	// Load all tasks
 	tasks, err := s.GetAllTasks()
 	if err != nil {
-		s.logger.Error("updateTaskDateField", "error", err, "task_id", taskID, "operation", "load_tasks")
+		logger.Error("updateTaskDateField", "error", err, "task_id", taskID, "operation", "load_tasks")
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
@@ -721,13 +719,13 @@ func (s *TaskService) updateTaskDateField(taskID string, field string, value str
 
 	if !found {
 		err := fmt.Errorf("task not found: %s", taskID)
-		s.logger.Error("updateTaskDateField", "error", err, "task_id", taskID)
+		logger.Error("updateTaskDateField", "error", err, "task_id", taskID)
 		return err
 	}
 
 	// Save changes
 	if err := s.save(tasks); err != nil {
-		s.logger.Error("updateTaskDateField", "error", err, "task_id", taskID, "field", field)
+		logger.Error("updateTaskDateField", "error", err, "task_id", taskID, "field", field)
 		return fmt.Errorf("failed to save task: %w", err)
 	}
 
@@ -739,11 +737,11 @@ func (s *TaskService) updateTaskDateField(taskID string, field string, value str
 // - this week: tasks scheduled for tomorrow through Sunday of current week
 // - rest: unscheduled tasks, past-dated tasks, and tasks scheduled beyond this week
 func (s *TaskService) GetTasksByTimeframe() (today, thisWeek, rest []Task, err error) {
-	s.logger.Debug("GetTasksByTimeframe", "operation", "start")
+	logger.Debug("GetTasksByTimeframe", "operation", "start")
 
 	tasks, err := s.GetAllTasks()
 	if err != nil {
-		s.logger.Error("GetTasksByTimeframe", "error", err, "operation", "load_tasks")
+		logger.Error("GetTasksByTimeframe", "error", err, "operation", "load_tasks")
 		return nil, nil, nil, fmt.Errorf("failed to load tasks: %w", err)
 	}
 
@@ -766,7 +764,7 @@ func (s *TaskService) GetTasksByTimeframe() (today, thisWeek, rest []Task, err e
 		}
 	}
 
-	s.logger.Debug("GetTasksByTimeframe", "operation", "complete", "today", len(today), "this_week", len(thisWeek), "rest", len(rest))
+	logger.Debug("GetTasksByTimeframe", "operation", "complete", "today", len(today), "this_week", len(thisWeek), "rest", len(rest))
 	return today, thisWeek, rest, nil
 }
 
