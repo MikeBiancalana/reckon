@@ -587,264 +587,345 @@ func TestTaskItem_FilterValue(t *testing.T) {
 	})
 }
 
-func TestTimeGroupedTasks_IsEmpty(t *testing.T) {
-	t.Run("empty grouped tasks is empty", func(t *testing.T) {
-		grouped := TimeGroupedTasks{}
-		if !grouped.IsEmpty() {
-			t.Error("empty grouped tasks should be empty")
+func TestParseDate(t *testing.T) {
+	t.Run("parses valid date", func(t *testing.T) {
+		dateStr := "2026-01-20"
+		result, ok := parseDate(&dateStr)
+		if !ok {
+			t.Error("expected parse to succeed")
+		}
+		expected := time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC)
+		if !result.Equal(expected) {
+			t.Errorf("expected %v, got %v", expected, result)
 		}
 	})
 
-	t.Run("grouped tasks with tasks is not empty", func(t *testing.T) {
-		today := []journal.Task{
-			{ID: "t1", Text: "Task 1", Status: journal.TaskOpen},
-		}
-		grouped := TimeGroupedTasks{Today: today}
-		if grouped.IsEmpty() {
-			t.Error("grouped tasks with tasks should not be empty")
-		}
-	})
-}
-
-func TestTimeGroupedTasks_CountMethods(t *testing.T) {
-	t.Run("TodayCount counts only open tasks", func(t *testing.T) {
-		tasks := []journal.Task{
-			{ID: "t1", Text: "Open", Status: journal.TaskOpen},
-			{ID: "t2", Text: "Done", Status: journal.TaskDone},
-			{ID: "t3", Text: "Also Open", Status: journal.TaskOpen},
-		}
-		grouped := TimeGroupedTasks{Today: tasks}
-		if grouped.TodayCount() != 2 {
-			t.Errorf("expected 2 open tasks, got %d", grouped.TodayCount())
+	t.Run("returns false for nil", func(t *testing.T) {
+		_, ok := parseDate(nil)
+		if ok {
+			t.Error("expected parse to fail for nil")
 		}
 	})
 
-	t.Run("ThisWeekCount counts only open tasks", func(t *testing.T) {
-		tasks := []journal.Task{
-			{ID: "t1", Text: "Open", Status: journal.TaskOpen},
-			{ID: "t2", Text: "Done", Status: journal.TaskDone},
-		}
-		grouped := TimeGroupedTasks{ThisWeek: tasks}
-		if grouped.ThisWeekCount() != 1 {
-			t.Errorf("expected 1 open task, got %d", grouped.ThisWeekCount())
+	t.Run("returns false for empty string", func(t *testing.T) {
+		dateStr := ""
+		_, ok := parseDate(&dateStr)
+		if ok {
+			t.Error("expected parse to fail for empty string")
 		}
 	})
 
-	t.Run("AllTasksCount counts only open tasks", func(t *testing.T) {
-		tasks := []journal.Task{
-			{ID: "t1", Text: "Open", Status: journal.TaskOpen},
-			{ID: "t2", Text: "Done", Status: journal.TaskDone},
-			{ID: "t3", Text: "Also Open", Status: journal.TaskOpen},
-			{ID: "t4", Text: "Done Too", Status: journal.TaskDone},
-		}
-		grouped := TimeGroupedTasks{AllTasks: tasks}
-		if grouped.AllTasksCount() != 2 {
-			t.Errorf("expected 2 open tasks, got %d", grouped.AllTasksCount())
+	t.Run("returns false for invalid format", func(t *testing.T) {
+		dateStr := "01-20-2026"
+		_, ok := parseDate(&dateStr)
+		if ok {
+			t.Error("expected parse to fail for invalid format")
 		}
 	})
 }
 
 func TestGroupTasksByTime(t *testing.T) {
-	today := time.Now()
-	todayStr := today.Format("2006-01-02")
-	tomorrow := today.AddDate(0, 0, 1)
-	tomorrowStr := tomorrow.Format("2006-01-02")
-	yesterday := today.AddDate(0, 0, -1)
-	yesterdayStr := yesterday.Format("2006-01-02")
+	today := time.Now().Format("2006-01-02")
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	lastWeek := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
 
-	nextWeek := today.AddDate(0, 0, 7)
-	nextWeekStr := nextWeek.Format("2006-01-02")
-	nextMonth := today.AddDate(0, 1, 0)
-	nextMonthStr := nextMonth.Format("2006-01-02")
-
-	t.Run("scheduled for today goes to Today", func(t *testing.T) {
-		tasks := []journal.Task{
-			{ID: "t1", Text: "Today Task", Status: journal.TaskOpen, ScheduledDate: &todayStr},
-		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.Today) != 1 {
-			t.Errorf("expected 1 task in Today, got %d", len(grouped.Today))
-		}
-		if len(grouped.ThisWeek) != 0 {
-			t.Errorf("expected 0 tasks in ThisWeek, got %d", len(grouped.ThisWeek))
-		}
-		if len(grouped.AllTasks) != 0 {
-			t.Errorf("expected 0 tasks in AllTasks, got %d", len(grouped.AllTasks))
-		}
-	})
-
-	t.Run("deadline today goes to Today", func(t *testing.T) {
-		tasks := []journal.Task{
-			{ID: "t1", Text: "Due Today", Status: journal.TaskOpen, DeadlineDate: &todayStr},
-		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.Today) != 1 {
-			t.Errorf("expected 1 task in Today, got %d", len(grouped.Today))
-		}
-	})
-
-	t.Run("overdue deadline goes to Today", func(t *testing.T) {
-		tasks := []journal.Task{
-			{ID: "t1", Text: "Overdue", Status: journal.TaskOpen, DeadlineDate: &yesterdayStr},
-		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.Today) != 1 {
-			t.Errorf("expected 1 overdue task in Today, got %d", len(grouped.Today))
-		}
-	})
-
-	t.Run("scheduled for this week goes to ThisWeek", func(t *testing.T) {
-		futureThisWeek := today.AddDate(0, 0, 3)
-		futureThisWeekStr := futureThisWeek.Format("2006-01-02")
-		tasks := []journal.Task{
-			{ID: "t1", Text: "This Week Task", Status: journal.TaskOpen, ScheduledDate: &futureThisWeekStr},
-		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.Today) != 0 {
-			t.Errorf("expected 0 tasks in Today, got %d", len(grouped.Today))
-		}
-		if len(grouped.ThisWeek) != 1 {
-			t.Errorf("expected 1 task in ThisWeek, got %d", len(grouped.ThisWeek))
-		}
-		if len(grouped.AllTasks) != 0 {
-			t.Errorf("expected 0 tasks in AllTasks, got %d", len(grouped.AllTasks))
-		}
-	})
-
-	t.Run("deadline this week goes to ThisWeek", func(t *testing.T) {
-		futureThisWeek := today.AddDate(0, 0, 4)
-		futureThisWeekStr := futureThisWeek.Format("2006-01-02")
-		tasks := []journal.Task{
-			{ID: "t1", Text: "Due This Week", Status: journal.TaskOpen, DeadlineDate: &futureThisWeekStr},
-		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.ThisWeek) != 1 {
-			t.Errorf("expected 1 task in ThisWeek, got %d", len(grouped.ThisWeek))
-		}
-	})
-
-	t.Run("scheduled for next week goes to AllTasks", func(t *testing.T) {
-		tasks := []journal.Task{
-			{ID: "t1", Text: "Next Week", Status: journal.TaskOpen, ScheduledDate: &nextWeekStr},
-		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.AllTasks) != 1 {
-			t.Errorf("expected 1 task in AllTasks, got %d", len(grouped.AllTasks))
+	t.Run("empty task list", func(t *testing.T) {
+		result := GroupTasksByTime([]journal.Task{})
+		if len(result.Today) != 0 || len(result.ThisWeek) != 0 || len(result.AllTasks) != 0 {
+			t.Error("expected empty result")
 		}
 	})
 
 	t.Run("unscheduled tasks go to AllTasks", func(t *testing.T) {
 		tasks := []journal.Task{
-			{ID: "t1", Text: "Unscheduled", Status: journal.TaskOpen},
+			{ID: "task1", Text: "Unscheduled task", Status: journal.TaskOpen},
 		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.AllTasks) != 1 {
-			t.Errorf("expected 1 task in AllTasks, got %d", len(grouped.AllTasks))
+		result := GroupTasksByTime(tasks)
+		if len(result.AllTasks) != 1 {
+			t.Errorf("expected 1 task in AllTasks, got %d", len(result.AllTasks))
+		}
+		if len(result.Today) != 0 || len(result.ThisWeek) != 0 {
+			t.Error("expected no tasks in Today or ThisWeek")
 		}
 	})
 
-	t.Run("done tasks are excluded from all groups", func(t *testing.T) {
+	t.Run("scheduled for today goes to Today", func(t *testing.T) {
 		tasks := []journal.Task{
-			{ID: "t1", Text: "Done Today", Status: journal.TaskDone, ScheduledDate: &todayStr},
-			{ID: "t2", Text: "Done This Week", Status: journal.TaskDone, DeadlineDate: &tomorrowStr},
-			{ID: "t3", Text: "Done AllTasks", Status: journal.TaskDone, ScheduledDate: &nextMonthStr},
+			{ID: "task1", Text: "Today's task", Status: journal.TaskOpen, ScheduledDate: &today},
 		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.Today) != 0 {
-			t.Errorf("expected 0 tasks in Today, got %d", len(grouped.Today))
-		}
-		if len(grouped.ThisWeek) != 0 {
-			t.Errorf("expected 0 tasks in ThisWeek, got %d", len(grouped.ThisWeek))
-		}
-		if len(grouped.AllTasks) != 0 {
-			t.Errorf("expected 0 tasks in AllTasks, got %d", len(grouped.AllTasks))
+		result := GroupTasksByTime(tasks)
+		if len(result.Today) != 1 {
+			t.Errorf("expected 1 task in Today, got %d", len(result.Today))
 		}
 	})
 
-	t.Run("mixed tasks are grouped correctly", func(t *testing.T) {
-		futureThisWeek := today.AddDate(0, 0, 3)
-		futureThisWeekStr := futureThisWeek.Format("2006-01-02")
+	t.Run("deadline today goes to Today", func(t *testing.T) {
 		tasks := []journal.Task{
-			{ID: "t1", Text: "Today", Status: journal.TaskOpen, ScheduledDate: &todayStr},
-			{ID: "t2", Text: "This Week", Status: journal.TaskOpen, ScheduledDate: &futureThisWeekStr},
-			{ID: "t3", Text: "All Tasks", Status: journal.TaskOpen, ScheduledDate: &nextMonthStr},
-			{ID: "t4", Text: "Unscheduled", Status: journal.TaskOpen},
+			{ID: "task1", Text: "Due today", Status: journal.TaskOpen, DeadlineDate: &today},
 		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.Today) != 1 {
-			t.Errorf("expected 1 task in Today, got %d", len(grouped.Today))
-		}
-		if len(grouped.ThisWeek) != 1 {
-			t.Errorf("expected 1 task in ThisWeek, got %d", len(grouped.ThisWeek))
-		}
-		if len(grouped.AllTasks) != 2 {
-			t.Errorf("expected 2 tasks in AllTasks, got %d", len(grouped.AllTasks))
+		result := GroupTasksByTime(tasks)
+		if len(result.Today) != 1 {
+			t.Errorf("expected 1 task in Today, got %d", len(result.Today))
 		}
 	})
 
-	t.Run("both scheduled and deadline set uses whichever applies first", func(t *testing.T) {
-		futureThisWeek := today.AddDate(0, 0, 3)
-		futureThisWeekStr := futureThisWeek.Format("2006-01-02")
+	t.Run("overdue deadline goes to Today", func(t *testing.T) {
 		tasks := []journal.Task{
-			{ID: "t1", Text: "Both Today", Status: journal.TaskOpen, ScheduledDate: &todayStr, DeadlineDate: &tomorrowStr},
-			{ID: "t2", Text: "Both This Week", Status: journal.TaskOpen, ScheduledDate: &futureThisWeekStr, DeadlineDate: &nextMonthStr},
+			{ID: "task1", Text: "Overdue task", Status: journal.TaskOpen, DeadlineDate: &lastWeek},
 		}
-		grouped := GroupTasksByTime(tasks)
-
-		if len(grouped.Today) != 1 {
-			t.Errorf("expected 1 task in Today, got %d", len(grouped.Today))
-		}
-		if len(grouped.ThisWeek) != 1 {
-			t.Errorf("expected 1 task in ThisWeek, got %d", len(grouped.ThisWeek))
+		result := GroupTasksByTime(tasks)
+		if len(result.Today) != 1 {
+			t.Errorf("expected 1 task in Today, got %d", len(result.Today))
 		}
 	})
 
-	t.Run("empty tasks returns empty groups", func(t *testing.T) {
-		grouped := GroupTasksByTime([]journal.Task{})
+	t.Run("scheduled for this week goes to ThisWeek", func(t *testing.T) {
+		daysUntilFriday := (time.Friday - time.Now().Weekday() + 7) % 7
+		if daysUntilFriday == 0 {
+			daysUntilFriday = 7
+		}
+		thisFriday := time.Now().AddDate(0, 0, int(daysUntilFriday)).Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "This week's task", Status: journal.TaskOpen, ScheduledDate: &thisFriday},
+		}
+		result := GroupTasksByTime(tasks)
+		if len(result.ThisWeek) != 1 {
+			t.Errorf("expected 1 task in ThisWeek, got %d", len(result.ThisWeek))
+		}
+	})
 
-		if !grouped.IsEmpty() {
-			t.Error("empty tasks should result in empty groups")
+	t.Run("done tasks are excluded", func(t *testing.T) {
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Done task", Status: journal.TaskDone, ScheduledDate: &today},
+		}
+		result := GroupTasksByTime(tasks)
+		if len(result.Today) != 0 {
+			t.Errorf("expected 0 tasks in Today, got %d", len(result.Today))
+		}
+	})
+
+	t.Run("future tasks go to AllTasks", func(t *testing.T) {
+		futureDate := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Future task", Status: journal.TaskOpen, ScheduledDate: &futureDate},
+		}
+		result := GroupTasksByTime(tasks)
+		if len(result.AllTasks) != 1 {
+			t.Errorf("expected 1 task in AllTasks, got %d", len(result.AllTasks))
+		}
+	})
+
+	t.Run("tasks with both scheduled and deadline", func(t *testing.T) {
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Task with both dates", Status: journal.TaskOpen, ScheduledDate: &today, DeadlineDate: &tomorrow},
+		}
+		result := GroupTasksByTime(tasks)
+		if len(result.Today) != 1 {
+			t.Errorf("expected 1 task in Today, got %d", len(result.Today))
 		}
 	})
 }
 
-func TestNewTimeGroupedTaskList(t *testing.T) {
-	today := time.Now()
-	todayStr := today.Format("2006-01-02")
-
-	t.Run("creates with tasks grouped", func(t *testing.T) {
+func TestTimeGroupedTaskCount(t *testing.T) {
+	t.Run("TodayCount counts only open tasks", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
 		tasks := []journal.Task{
-			{ID: "t1", Text: "Today", Status: journal.TaskOpen, ScheduledDate: &todayStr},
+			{ID: "task1", Text: "Open task", Status: journal.TaskOpen, ScheduledDate: &today},
+			{ID: "task2", Text: "Done task", Status: journal.TaskDone, ScheduledDate: &today},
 		}
-		tgl := NewTimeGroupedTaskList(tasks)
-
-		if tgl == nil {
-			t.Fatal("NewTimeGroupedTaskList returned nil")
-		}
-
-		if tgl.groupedTasks.TodayCount() != 1 {
-			t.Errorf("expected 1 task in Today, got %d", tgl.groupedTasks.TodayCount())
+		grouped := GroupTasksByTime(tasks)
+		if grouped.TodayCount() != 1 {
+			t.Errorf("expected TodayCount to be 1, got %d", grouped.TodayCount())
 		}
 	})
 
-	t.Run("handles empty tasks", func(t *testing.T) {
-		tgl := NewTimeGroupedTaskList([]journal.Task{})
+	t.Run("ThisWeekCount counts only open tasks", func(t *testing.T) {
+		daysUntilFriday := (time.Friday - time.Now().Weekday() + 7) % 7
+		if daysUntilFriday == 0 {
+			daysUntilFriday = 7
+		}
+		thisFriday := time.Now().AddDate(0, 0, int(daysUntilFriday)).Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Open task", Status: journal.TaskOpen, ScheduledDate: &thisFriday},
+			{ID: "task2", Text: "Done task", Status: journal.TaskDone, ScheduledDate: &thisFriday},
+		}
+		grouped := GroupTasksByTime(tasks)
+		if grouped.ThisWeekCount() != 1 {
+			t.Errorf("expected ThisWeekCount to be 1, got %d", grouped.ThisWeekCount())
+		}
+	})
 
-		if tgl == nil {
-			t.Fatal("NewTimeGroupedTaskList returned nil")
+	t.Run("AllTasksCount counts only open tasks", func(t *testing.T) {
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Open task", Status: journal.TaskOpen},
+			{ID: "task2", Text: "Done task", Status: journal.TaskDone},
+		}
+		grouped := GroupTasksByTime(tasks)
+		if grouped.AllTasksCount() != 1 {
+			t.Errorf("expected AllTasksCount to be 1, got %d", grouped.AllTasksCount())
+		}
+	})
+}
+
+func TestTimeGroupedTaskList_Navigation(t *testing.T) {
+	t.Run("j at end of section wraps to next section", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		nextWeek := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Today task 1", Status: journal.TaskOpen, ScheduledDate: &today},
+			{ID: "task2", Text: "Today task 2", Status: journal.TaskOpen, ScheduledDate: &today},
+			{ID: "task3", Text: "Week task", Status: journal.TaskOpen, ScheduledDate: &nextWeek},
 		}
 
-		if !tgl.groupedTasks.IsEmpty() {
-			t.Error("empty tasks should result in empty groups")
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		if tgl.sectionIndex != 0 {
+			t.Errorf("expected initial sectionIndex 0, got %d", tgl.sectionIndex)
+		}
+
+		// Select last item in TODAY section
+		tgl.list.Select(1)
+
+		// Press j to move down (should wrap to THIS WEEK)
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		tgl, _ = tgl.Update(msg)
+
+		if tgl.sectionIndex != 1 {
+			t.Errorf("expected sectionIndex 1 after wrapping, got %d", tgl.sectionIndex)
+		}
+		if tgl.list.Index() != 0 {
+			t.Errorf("expected index 0 in new section, got %d", tgl.list.Index())
+		}
+	})
+
+	t.Run("k at start of section wraps to previous section", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		nextWeek := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Today task", Status: journal.TaskOpen, ScheduledDate: &today},
+			{ID: "task2", Text: "Week task 1", Status: journal.TaskOpen, ScheduledDate: &nextWeek},
+			{ID: "task3", Text: "Week task 2", Status: journal.TaskOpen, ScheduledDate: &nextWeek},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// Start in TODAY (first non-empty section)
+		if tgl.sectionIndex != 0 {
+			t.Errorf("expected initial sectionIndex 0, got %d", tgl.sectionIndex)
+		}
+
+		// Move to THIS WEEK section first
+		tgl.sectionIndex = 1
+		tgl.updateListForSection()
+
+		// Press k to move up (should wrap to TODAY)
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		tgl, _ = tgl.Update(msg)
+
+		if tgl.sectionIndex != 0 {
+			t.Errorf("expected sectionIndex 0 after wrapping, got %d", tgl.sectionIndex)
+		}
+		if tgl.list.Index() != 0 {
+			t.Errorf("expected index 0 in new section, got %d", tgl.list.Index())
+		}
+	})
+
+	t.Run("j at end of ALL TASKS wraps to TODAY", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		futureDate := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Today task", Status: journal.TaskOpen, ScheduledDate: &today},
+			{ID: "task2", Text: "Future task 1", Status: journal.TaskOpen, ScheduledDate: &futureDate},
+			{ID: "task3", Text: "Future task 2", Status: journal.TaskOpen, ScheduledDate: &futureDate},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// Move to ALL TASKS and select last item
+		tgl.sectionIndex = 2
+		tgl.updateListForSection()
+		tgl.list.Select(1)
+
+		// Press j to wrap to TODAY
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		tgl, _ = tgl.Update(msg)
+
+		if tgl.sectionIndex != 0 {
+			t.Errorf("expected sectionIndex 0 after wrapping, got %d", tgl.sectionIndex)
+		}
+	})
+
+	t.Run("k at start of TODAY wraps to ALL TASKS", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		futureDate := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Today task", Status: journal.TaskOpen, ScheduledDate: &today},
+			{ID: "task2", Text: "Future task", Status: journal.TaskOpen, ScheduledDate: &futureDate},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// Press k at start of TODAY (should wrap to ALL TASKS)
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		tgl, _ = tgl.Update(msg)
+
+		if tgl.sectionIndex != 2 {
+			t.Errorf("expected sectionIndex 2 after wrapping, got %d", tgl.sectionIndex)
+		}
+	})
+
+	t.Run("empty section is skipped", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Today task", Status: journal.TaskOpen, ScheduledDate: &today},
+			// THIS WEEK is empty
+			{ID: "task2", Text: "All tasks", Status: journal.TaskOpen},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// Should skip empty THIS WEEK and go directly to ALL TASKS
+		if tgl.sectionIndex != 0 {
+			t.Errorf("expected initial sectionIndex 0, got %d", tgl.sectionIndex)
+		}
+
+		tgl.list.Select(0)
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		tgl, _ = tgl.Update(msg)
+
+		// Should wrap from TODAY to ALL TASKS (skipping empty THIS WEEK)
+		if tgl.sectionIndex != 2 {
+			t.Errorf("expected sectionIndex 2 (skipping empty section), got %d", tgl.sectionIndex)
+		}
+	})
+}
+
+func TestTimeGroupedTaskList_SelectedTask(t *testing.T) {
+	t.Run("returns nil for empty list", func(t *testing.T) {
+		tgl := NewTimeGroupedTaskList([]journal.Task{})
+		if tgl.SelectedTask() != nil {
+			t.Error("SelectedTask should return nil for empty list")
+		}
+	})
+
+	t.Run("returns selected task", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Today task", Status: journal.TaskOpen, ScheduledDate: &today},
+		}
+		tgl := NewTimeGroupedTaskList(tasks)
+
+		selected := tgl.SelectedTask()
+		if selected == nil {
+			t.Fatal("SelectedTask should return a task")
+		}
+		if selected.ID != "task1" {
+			t.Errorf("expected task1, got %s", selected.ID)
 		}
 	})
 }

@@ -32,114 +32,7 @@ var (
 	focusedTaskListTitleStyle = lipgloss.NewStyle().
 					Foreground(lipgloss.Color("11")).
 					Bold(true)
-
-	sectionHeaderStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("14")).
-				Bold(true).
-				Border(lipgloss.RoundedBorder()).
-				Padding(0, 1)
-
-	sectionHeaderFocusedStyle = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("11")).
-					Bold(true).
-					Border(lipgloss.RoundedBorder()).
-					BorderForeground(lipgloss.Color("11")).
-					Padding(0, 1)
 )
-
-type TimeGroupedTasks struct {
-	Today    []journal.Task
-	ThisWeek []journal.Task
-	AllTasks []journal.Task
-}
-
-func (t TimeGroupedTasks) IsEmpty() bool {
-	return len(t.Today) == 0 && len(t.ThisWeek) == 0 && len(t.AllTasks) == 0
-}
-
-func (t TimeGroupedTasks) TodayCount() int {
-	count := 0
-	for _, task := range t.Today {
-		if task.Status == journal.TaskOpen {
-			count++
-		}
-	}
-	return count
-}
-
-func (t TimeGroupedTasks) ThisWeekCount() int {
-	count := 0
-	for _, task := range t.ThisWeek {
-		if task.Status == journal.TaskOpen {
-			count++
-		}
-	}
-	return count
-}
-
-func (t TimeGroupedTasks) AllTasksCount() int {
-	count := 0
-	for _, task := range t.AllTasks {
-		if task.Status == journal.TaskOpen {
-			count++
-		}
-	}
-	return count
-}
-
-func GroupTasksByTime(tasks []journal.Task) TimeGroupedTasks {
-	now := time.Now()
-	today := now.Truncate(24 * time.Hour)
-	weekStart := today.AddDate(0, 0, -int(now.Weekday()))
-	weekEnd := weekStart.AddDate(0, 0, 7)
-
-	result := TimeGroupedTasks{}
-
-	for _, task := range tasks {
-		if task.Status == journal.TaskDone {
-			continue
-		}
-
-		isToday := false
-		isThisWeek := false
-
-		if task.ScheduledDate != nil {
-			scheduled, err := time.Parse("2006-01-02", *task.ScheduledDate)
-			if err == nil {
-				scheduled = scheduled.Truncate(24 * time.Hour)
-				if scheduled.Equal(today) {
-					isToday = true
-				} else if (scheduled.Equal(weekStart) || scheduled.After(weekStart)) && scheduled.Before(weekEnd) {
-					isThisWeek = true
-				}
-			}
-		}
-
-		if task.DeadlineDate != nil {
-			deadline, err := time.Parse("2006-01-02", *task.DeadlineDate)
-			if err == nil {
-				deadline = deadline.Truncate(24 * time.Hour)
-				if deadline.Before(today) {
-					isToday = true
-				} else if deadline.Equal(today) {
-					isToday = true
-				} else if (deadline.Equal(weekStart) || deadline.After(weekStart)) && deadline.Before(weekEnd) {
-					isThisWeek = true
-				}
-			}
-		}
-
-		if isToday {
-			result.Today = append(result.Today, task)
-		} else if isThisWeek {
-			result.ThisWeek = append(result.ThisWeek, task)
-		} else {
-			result.AllTasks = append(result.AllTasks, task)
-		}
-	}
-
-	return result
-}
 
 // TaskToggleMsg is sent when a task's status is toggled
 type TaskToggleMsg struct {
@@ -533,152 +426,289 @@ func (tl *TaskList) GetTasks() []journal.Task {
 	return tl.tasks
 }
 
-type TimeGroupedTaskList struct {
-	taskList     *TaskList
-	groupedTasks TimeGroupedTasks
-	focused      bool
-	sectionIndex int
-	list         list.Model
+type TimeGroupedTasks struct {
+	Today    []journal.Task
+	ThisWeek []journal.Task
+	AllTasks []journal.Task
 }
 
-type SectionType int
+func parseDate(dateStr *string) (time.Time, bool) {
+	if dateStr == nil || *dateStr == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse("2006-01-02", *dateStr)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
 
-const (
-	SectionToday SectionType = iota
-	SectionThisWeek
-	SectionAllTasks
-)
+func GroupTasksByTime(tasks []journal.Task) TimeGroupedTasks {
+	today := time.Now().Truncate(24 * time.Hour)
+	now := time.Now()
+	weekday := now.Weekday()
+	if weekday == time.Sunday {
+		weekday = 7
+	}
+	weekStart := today.AddDate(0, 0, -int(weekday-time.Monday))
+	weekEnd := weekStart.AddDate(0, 0, 7)
+
+	var grouped TimeGroupedTasks
+	for _, task := range tasks {
+		if task.Status == journal.TaskDone {
+			continue
+		}
+		isToday := false
+		isThisWeek := false
+
+		if scheduledDate, ok := parseDate(task.ScheduledDate); ok {
+			if scheduledDate.Equal(today) || scheduledDate.Before(today) {
+				isToday = true
+			} else if (scheduledDate.After(weekStart) || scheduledDate.Equal(weekStart)) && scheduledDate.Before(weekEnd) {
+				isThisWeek = true
+			}
+		}
+		if deadlineDate, ok := parseDate(task.DeadlineDate); ok {
+			if deadlineDate.Before(today) || deadlineDate.Equal(today) {
+				isToday = true
+			} else if (deadlineDate.After(weekStart) || deadlineDate.Equal(weekStart)) && deadlineDate.Before(weekEnd) {
+				isThisWeek = true
+			}
+		}
+
+		if isToday {
+			grouped.Today = append(grouped.Today, task)
+		} else if isThisWeek {
+			grouped.ThisWeek = append(grouped.ThisWeek, task)
+		} else {
+			grouped.AllTasks = append(grouped.AllTasks, task)
+		}
+	}
+	return grouped
+}
+
+func (t TimeGroupedTasks) TodayCount() int {
+	count := 0
+	for _, task := range t.Today {
+		if task.Status == journal.TaskOpen {
+			count++
+		}
+	}
+	return count
+}
+
+func (t TimeGroupedTasks) ThisWeekCount() int {
+	count := 0
+	for _, task := range t.ThisWeek {
+		if task.Status == journal.TaskOpen {
+			count++
+		}
+	}
+	return count
+}
+
+func (t TimeGroupedTasks) AllTasksCount() int {
+	count := 0
+	for _, task := range t.AllTasks {
+		if task.Status == journal.TaskOpen {
+			count++
+		}
+	}
+	return count
+}
+
+type TimeGroupedTaskList struct {
+	list         list.Model
+	groupedTasks TimeGroupedTasks
+	sectionIndex int
+	collapsedMap map[string]bool
+	focused      bool
+	delegate     TaskDelegate
+}
 
 func NewTimeGroupedTaskList(tasks []journal.Task) *TimeGroupedTaskList {
-	grouped := GroupTasksByTime(tasks)
-
+	groupedTasks := GroupTasksByTime(tasks)
+	collapsedMap := make(map[string]bool)
 	tgl := &TimeGroupedTaskList{
-		groupedTasks: grouped,
+		groupedTasks: groupedTasks,
 		sectionIndex: 0,
+		collapsedMap: collapsedMap,
 	}
-
 	tgl.updateListForSection()
-
 	return tgl
 }
 
 func (tgl *TimeGroupedTaskList) updateListForSection() {
-	var tasks []journal.Task
-	var sectionTitle string
-
+	var items []list.Item
 	switch tgl.sectionIndex {
 	case 0:
-		tasks = tgl.groupedTasks.Today
-		sectionTitle = "TODAY"
+		items = buildTaskItems(tgl.groupedTasks.Today, tgl.collapsedMap)
 	case 1:
-		tasks = tgl.groupedTasks.ThisWeek
-		sectionTitle = "THIS WEEK"
+		items = buildTaskItems(tgl.groupedTasks.ThisWeek, tgl.collapsedMap)
 	case 2:
-		tasks = tgl.groupedTasks.AllTasks
-		sectionTitle = "ALL TASKS"
+		items = buildTaskItems(tgl.groupedTasks.AllTasks, tgl.collapsedMap)
 	}
-
-	collapsedMap := make(map[string]bool)
-	items := buildTaskItems(tasks, collapsedMap)
-
-	delegate := TaskDelegate{collapsedMap: collapsedMap}
-	l := list.New(items, delegate, 0, 0)
-	l.Title = sectionTitle
+	tgl.delegate = TaskDelegate{collapsedMap: tgl.collapsedMap}
+	l := list.New(items, tgl.delegate, 0, 0)
+	l.Title = "Tasks"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 	l.Styles.Title = taskListTitleStyle
-
 	tgl.list = l
 }
 
-func (tgl *TimeGroupedTaskList) View() string {
-	if tgl.groupedTasks.IsEmpty() {
-		return "Tasks\n\nNo tasks yet - press t to add one"
+func (tgl *TimeGroupedTaskList) currentSectionTasks() []journal.Task {
+	switch tgl.sectionIndex {
+	case 0:
+		return tgl.groupedTasks.Today
+	case 1:
+		return tgl.groupedTasks.ThisWeek
+	case 2:
+		return tgl.groupedTasks.AllTasks
 	}
+	return nil
+}
 
+func (tgl *TimeGroupedTaskList) currentSectionLength() int {
+	tasks := tgl.currentSectionTasks()
+	if tasks == nil {
+		return 0
+	}
+	return len(tasks)
+}
+
+func (tgl *TimeGroupedTaskList) findNextNonEmptySection(startIdx, direction int) int {
+	sections := []func() []journal.Task{
+		func() []journal.Task { return tgl.groupedTasks.Today },
+		func() []journal.Task { return tgl.groupedTasks.ThisWeek },
+		func() []journal.Task { return tgl.groupedTasks.AllTasks },
+	}
+	for i := 1; i <= 3; i++ {
+		nextIdx := (startIdx + direction*i + 3) % 3
+		if len(sections[nextIdx]()) > 0 {
+			return nextIdx
+		}
+	}
+	return -1
+}
+
+func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if !tgl.focused {
+			var cmd tea.Cmd
+			tgl.list, cmd = tgl.list.Update(msg)
+			return tgl, cmd
+		}
+		switch msg.String() {
+		case "j", "down":
+			currentLen := tgl.currentSectionLength()
+			if currentLen == 0 {
+				nextIdx := tgl.findNextNonEmptySection(tgl.sectionIndex, 1)
+				if nextIdx != -1 {
+					tgl.sectionIndex = nextIdx
+					tgl.updateListForSection()
+				}
+				return tgl, nil
+			}
+			if tgl.list.Index() >= currentLen-1 {
+				nextIdx := tgl.findNextNonEmptySection(tgl.sectionIndex, 1)
+				if nextIdx != -1 {
+					tgl.sectionIndex = nextIdx
+					tgl.updateListForSection()
+					tgl.list.Select(0)
+				}
+			} else {
+				var cmd tea.Cmd
+				tgl.list, cmd = tgl.list.Update(msg)
+				return tgl, cmd
+			}
+		case "k", "up":
+			currentLen := tgl.currentSectionLength()
+			if currentLen == 0 {
+				prevIdx := tgl.findNextNonEmptySection(tgl.sectionIndex, -1)
+				if prevIdx != -1 {
+					tgl.sectionIndex = prevIdx
+					tgl.updateListForSection()
+					tgl.list.Select(len(tgl.currentSectionTasks()) - 1)
+				}
+				return tgl, nil
+			}
+			if tgl.list.Index() <= 0 {
+				prevIdx := tgl.findNextNonEmptySection(tgl.sectionIndex, -1)
+				if prevIdx != -1 {
+					tgl.sectionIndex = prevIdx
+					tgl.updateListForSection()
+					tgl.list.Select(len(tgl.currentSectionTasks()) - 1)
+				}
+			} else {
+				var cmd tea.Cmd
+				tgl.list, cmd = tgl.list.Update(msg)
+				return tgl, cmd
+			}
+		case " ":
+			selectedItem := tgl.list.SelectedItem()
+			if selectedItem == nil {
+				return tgl, nil
+			}
+			taskItem, ok := selectedItem.(TaskItem)
+			if !ok || taskItem.isNote {
+				return tgl, nil
+			}
+			return tgl, func() tea.Msg {
+				return TaskToggleMsg{TaskID: taskItem.task.ID}
+			}
+		case "enter":
+			selectedItem := tgl.list.SelectedItem()
+			if selectedItem == nil {
+				return tgl, nil
+			}
+			taskItem, ok := selectedItem.(TaskItem)
+			if !ok || taskItem.isNote || len(taskItem.task.Notes) == 0 {
+				return tgl, nil
+			}
+			tgl.collapsedMap[taskItem.task.ID] = !tgl.collapsedMap[taskItem.task.ID]
+			tgl.updateListForSection()
+			tgl.list.Select(0)
+		}
+	}
+	var cmd tea.Cmd
+	tgl.list, cmd = tgl.list.Update(msg)
+	return tgl, cmd
+}
+
+func (tgl *TimeGroupedTaskList) View() string {
 	var sb strings.Builder
 
-	todayCount := tgl.groupedTasks.TodayCount()
-	thisWeekCount := tgl.groupedTasks.ThisWeekCount()
-	allTasksCount := tgl.groupedTasks.AllTasksCount()
+	sectionNames := []string{"TODAY", "THIS WEEK", "ALL TASKS"}
+	sectionCounts := []int{tgl.groupedTasks.TodayCount(), tgl.groupedTasks.ThisWeekCount(), tgl.groupedTasks.AllTasksCount()}
+	sectionTasks := [][]journal.Task{tgl.groupedTasks.Today, tgl.groupedTasks.ThisWeek, tgl.groupedTasks.AllTasks}
 
-	todayTitle := fmt.Sprintf(" TODAY (%d) ", todayCount)
-	weekTitle := fmt.Sprintf(" THIS WEEK (%d) ", thisWeekCount)
-	allTitle := fmt.Sprintf(" ALL TASKS (%d) ", allTasksCount)
+	for i, name := range sectionNames {
+		count := sectionCounts[i]
+		tasks := sectionTasks[i]
 
-	if tgl.sectionIndex == 0 {
-		sb.WriteString(sectionHeaderFocusedStyle.Render(todayTitle))
-	} else {
-		sb.WriteString(sectionHeaderStyle.Render(todayTitle))
-	}
-	sb.WriteString("\n")
-
-	if len(tgl.groupedTasks.Today) > 0 || tgl.sectionIndex == 0 {
-		if tgl.sectionIndex == 0 {
-			sb.WriteString(tgl.list.View())
-		} else {
-			for _, task := range tgl.groupedTasks.Today {
-				if task.Status == journal.TaskOpen {
-					sb.WriteString(fmt.Sprintf("[ ] %s\n", task.Text))
-				}
-			}
-			if len(tgl.groupedTasks.Today) == 0 {
+		if i == tgl.sectionIndex {
+			sb.WriteString(fmt.Sprintf("\n━━ %s (%d) ━━\n", name, count))
+			if len(tasks) == 0 {
 				sb.WriteString("  No tasks\n")
 			}
-		}
-	}
-
-	sb.WriteString("\n")
-
-	if tgl.sectionIndex == 1 {
-		sb.WriteString(sectionHeaderFocusedStyle.Render(weekTitle))
-	} else {
-		sb.WriteString(sectionHeaderStyle.Render(weekTitle))
-	}
-	sb.WriteString("\n")
-
-	if len(tgl.groupedTasks.ThisWeek) > 0 || tgl.sectionIndex == 1 {
-		if tgl.sectionIndex == 1 {
 			sb.WriteString(tgl.list.View())
 		} else {
-			for _, task := range tgl.groupedTasks.ThisWeek {
-				if task.Status == journal.TaskOpen {
-					sb.WriteString(fmt.Sprintf("[ ] %s\n", task.Text))
+			sb.WriteString(fmt.Sprintf("\n━━ %s (%d) ━━\n", name, count))
+			if len(tasks) == 0 {
+				sb.WriteString("  No tasks\n")
+			} else {
+				for _, task := range tasks {
+					if task.Status == journal.TaskOpen {
+						sb.WriteString(fmt.Sprintf("[ ] %s\n", task.Text))
+					}
 				}
 			}
-			if len(tgl.groupedTasks.ThisWeek) == 0 {
-				sb.WriteString("  No tasks\n")
-			}
-		}
-	}
-
-	sb.WriteString("\n")
-
-	if tgl.sectionIndex == 2 {
-		sb.WriteString(sectionHeaderFocusedStyle.Render(allTitle))
-	} else {
-		sb.WriteString(sectionHeaderStyle.Render(allTitle))
-	}
-	sb.WriteString("\n")
-
-	if tgl.sectionIndex == 2 {
-		sb.WriteString(tgl.list.View())
-	} else {
-		for _, task := range tgl.groupedTasks.AllTasks {
-			if task.Status == journal.TaskOpen {
-				sb.WriteString(fmt.Sprintf("[ ] %s\n", task.Text))
-			}
-		}
-		if len(tgl.groupedTasks.AllTasks) == 0 {
-			sb.WriteString("  No tasks\n")
 		}
 	}
 
 	return sb.String()
-}
-
-func (tgl *TimeGroupedTaskList) SetSize(width, height int) {
-	tgl.list.SetSize(width, height)
 }
 
 func (tgl *TimeGroupedTaskList) SetFocused(focused bool) {
@@ -690,117 +720,6 @@ func (tgl *TimeGroupedTaskList) SetFocused(focused bool) {
 	}
 }
 
-func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		if !tgl.focused {
-			var cmd tea.Cmd
-			tgl.list, cmd = tgl.list.Update(msg)
-			return tgl, cmd
-		}
-
-		switch msg.String() {
-		case "j", "down":
-			currentListLen := tgl.currentSectionLength()
-			if tgl.list.Index() >= currentListLen-1 {
-				if tgl.sectionIndex < 2 {
-					tgl.sectionIndex++
-					tgl.updateListForSection()
-					return tgl, nil
-				}
-			}
-			var cmd tea.Cmd
-			tgl.list, cmd = tgl.list.Update(msg)
-			return tgl, cmd
-
-		case "k", "up":
-			if tgl.list.Index() <= 0 {
-				if tgl.sectionIndex > 0 {
-					tgl.sectionIndex--
-					tgl.updateListForSection()
-					tgl.list.Select(tgl.currentSectionLength() - 1)
-					return tgl, nil
-				}
-			}
-			var cmd tea.Cmd
-			tgl.list, cmd = tgl.list.Update(msg)
-			return tgl, cmd
-
-		case " ":
-			selectedItem := tgl.list.SelectedItem()
-			if selectedItem == nil {
-				return tgl, nil
-			}
-			taskItem, ok := selectedItem.(TaskItem)
-			if !ok {
-				return tgl, nil
-			}
-			if taskItem.isNote {
-				return tgl, nil
-			}
-			return tgl, func() tea.Msg {
-				return TaskToggleMsg{TaskID: taskItem.task.ID}
-			}
-
-		case "enter":
-			selectedItem := tgl.list.SelectedItem()
-			if selectedItem == nil {
-				return tgl, nil
-			}
-			taskItem, ok := selectedItem.(TaskItem)
-			if !ok {
-				return tgl, nil
-			}
-			if taskItem.isNote || len(taskItem.task.Notes) == 0 {
-				return tgl, nil
-			}
-
-			taskList := NewTaskList(tgl.getAllTasks())
-			taskList.SetFocused(true)
-			taskList.collapsedMap[taskItem.task.ID] = !taskList.collapsedMap[taskItem.task.ID]
-			items := buildTaskItems(taskList.tasks, taskList.collapsedMap)
-			taskList.list.SetItems(items)
-
-			for i, item := range items {
-				if ti, ok := item.(TaskItem); ok && !ti.isNote && ti.task.ID == taskItem.task.ID {
-					taskList.list.Select(i)
-					break
-				}
-			}
-
-			delegate := TaskDelegate{collapsedMap: taskList.collapsedMap}
-			taskList.list.SetDelegate(delegate)
-
-			tgl.taskList = taskList
-			return tgl, nil
-		}
-	}
-
-	var cmd tea.Cmd
-	tgl.list, cmd = tgl.list.Update(msg)
-	return tgl, cmd
-}
-
-func (tgl *TimeGroupedTaskList) currentSectionLength() int {
-	switch tgl.sectionIndex {
-	case 0:
-		return len(tgl.groupedTasks.Today)
-	case 1:
-		return len(tgl.groupedTasks.ThisWeek)
-	case 2:
-		return len(tgl.groupedTasks.AllTasks)
-	}
-	return 0
-}
-
-func (tgl *TimeGroupedTaskList) getAllTasks() []journal.Task {
-	var all []journal.Task
-	all = append(all, tgl.groupedTasks.Today...)
-	all = append(all, tgl.groupedTasks.ThisWeek...)
-	all = append(all, tgl.groupedTasks.AllTasks...)
-	return all
-}
-
 func (tgl *TimeGroupedTaskList) SelectedTask() *journal.Task {
 	item := tgl.list.SelectedItem()
 	if item == nil {
@@ -810,36 +729,46 @@ func (tgl *TimeGroupedTaskList) SelectedTask() *journal.Task {
 	if !ok {
 		return nil
 	}
-
-	allTasks := tgl.getAllTasks()
-	for i := range allTasks {
-		if allTasks[i].ID == taskItem.task.ID {
-			return &allTasks[i]
+	tasks := tgl.currentSectionTasks()
+	for i := range tasks {
+		if tasks[i].ID == taskItem.task.ID {
+			return &tasks[i]
 		}
 	}
 	return nil
 }
 
-func (tgl *TimeGroupedTaskList) IsSelectedItemNote() bool {
-	item := tgl.list.SelectedItem()
-	if item == nil {
-		return false
-	}
-	taskItem, ok := item.(TaskItem)
-	if !ok {
-		return false
-	}
-	return taskItem.isNote
-}
-
 func (tgl *TimeGroupedTaskList) UpdateTasks(tasks []journal.Task) {
-	tgl.groupedTasks = GroupTasksByTime(tasks)
-	if tgl.sectionIndex >= 3 {
-		tgl.sectionIndex = 0
+	selectedItem := tgl.list.SelectedItem()
+	var selectedTaskID string
+	if selectedItem != nil {
+		if taskItem, ok := selectedItem.(TaskItem); ok {
+			selectedTaskID = taskItem.task.ID
+		}
 	}
-	tgl.updateListForSection()
-}
 
-func (tgl *TimeGroupedTaskList) GetTasks() []journal.Task {
-	return tgl.getAllTasks()
+	tgl.groupedTasks = GroupTasksByTime(tasks)
+
+	if selectedTaskID != "" {
+		for i, section := range [][]journal.Task{tgl.groupedTasks.Today, tgl.groupedTasks.ThisWeek, tgl.groupedTasks.AllTasks} {
+			for _, task := range section {
+				if task.ID == selectedTaskID {
+					tgl.sectionIndex = i
+					break
+				}
+			}
+		}
+	}
+
+	tgl.updateListForSection()
+
+	if selectedTaskID != "" {
+		items := tgl.list.Items()
+		for i, item := range items {
+			if taskItem, ok := item.(TaskItem); ok && !taskItem.isNote && taskItem.task.ID == selectedTaskID {
+				tgl.list.Select(i)
+				break
+			}
+		}
+	}
 }
