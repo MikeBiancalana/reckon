@@ -2,6 +2,7 @@ package journal
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rs/xid"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -24,7 +26,22 @@ var (
 	// 1. Hyphenated IDs: prefix-suffix where prefix has 2+ chars (e.g., task-123, note-001)
 	// 2. XID format: 15+ alphanumeric characters (e.g., d58mbq96rjumohmic4dg which is 20 chars)
 	idTokenRe = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_]+-[a-zA-Z0-9_-]+|[a-zA-Z0-9]{15,})$`)
+
+	// Frontmatter pattern - matches the opening/closing ---
+	frontmatterRe = regexp.MustCompile(`^---\s*$`)
 )
+
+var ErrNoFrontmatter = errors.New("no frontmatter found")
+
+type TaskFileFrontmatter struct {
+	ID        string   `yaml:"id"`
+	Title     string   `yaml:"title"`
+	Created   string   `yaml:"created"`
+	Status    string   `yaml:"status"`
+	Tags      []string `yaml:"tags,omitempty"`
+	Scheduled *string  `yaml:"scheduled,omitempty"`
+	Deadline  *string  `yaml:"deadline,omitempty"`
+}
 
 // ParseTasksFile parses the tasks.md file content and returns a slice of tasks
 func ParseTasksFile(content string) ([]Task, error) {
@@ -150,6 +167,120 @@ func extractID(text string) (id string, remaining string) {
 
 	remaining = strings.Join(parts[i:], " ")
 	return id, remaining
+}
+
+func parseTaskFileFrontmatter(frontmatterContent string) (*TaskFileFrontmatter, error) {
+	var fm TaskFileFrontmatter
+	if err := yaml.Unmarshal([]byte(frontmatterContent), &fm); err != nil {
+		return nil, fmt.Errorf("error parsing frontmatter: %w", err)
+	}
+
+	if fm.Scheduled != nil && !isValidDate(*fm.Scheduled) {
+		return nil, fmt.Errorf("invalid scheduled date format: %s (expected YYYY-MM-DD)", *fm.Scheduled)
+	}
+	if fm.Deadline != nil && !isValidDate(*fm.Deadline) {
+		return nil, fmt.Errorf("invalid deadline date format: %s (expected YYYY-MM-DD)", *fm.Deadline)
+	}
+
+	return &fm, nil
+}
+
+func isValidDate(s string) bool {
+	_, err := time.Parse("2006-01-02", s)
+	return err == nil
+}
+
+func newTaskFromFrontmatter(fm *TaskFileFrontmatter, notes []TaskNote) *Task {
+	createdAt := time.Now()
+	if fm.Created != "" {
+		if parsed, err := time.Parse("2006-01-02", fm.Created); err == nil {
+			createdAt = parsed
+		}
+	}
+
+	status := TaskOpen
+	if fm.Status == "done" {
+		status = TaskDone
+	}
+
+	return &Task{
+		ID:            fm.ID,
+		Text:          fm.Title,
+		Status:        status,
+		Tags:          fm.Tags,
+		Notes:         notes,
+		Position:      0,
+		CreatedAt:     createdAt,
+		ScheduledDate: fm.Scheduled,
+		DeadlineDate:  fm.Deadline,
+	}
+}
+
+func newTaskFromLine(line string, status TaskStatus, position int) *Task {
+	line = strings.TrimSpace(line)
+	taskID, text := extractID(line)
+	if taskID == "" {
+		taskID = xid.New().String()
+	}
+
+	return &Task{
+		ID:        taskID,
+		Text:      text,
+		Status:    status,
+		Notes:     make([]TaskNote, 0),
+		Position:  position,
+		CreatedAt: time.Now(),
+	}
+}
+
+func parseTaskFileContent(content string) (*Task, error) {
+	lines := strings.Split(content, "\n")
+
+	var fmStart, fmEnd int = -1, -1
+	for i, line := range lines {
+		if frontmatterRe.MatchString(line) {
+			if fmStart == -1 {
+				fmStart = i
+			} else {
+				fmEnd = i
+				break
+			}
+		}
+	}
+
+	if fmStart == -1 || fmEnd == -1 {
+		return nil, nil
+	}
+
+	frontmatterContent := strings.Join(lines[fmStart+1:fmEnd], "\n")
+	fm, err := parseTaskFileFrontmatter(frontmatterContent)
+	if err != nil {
+		return nil, err
+	}
+
+	bodyStart := fmEnd + 1
+	body := strings.Join(lines[bodyStart:], "\n")
+	notes := parseNotesFromBody(body)
+
+	return newTaskFromFrontmatter(fm, notes), nil
+}
+
+// ParseTaskFile parses a task file with YAML frontmatter and returns a Task.
+// Returns (nil, nil) if content is empty.
+// Returns (nil, ErrNoFrontmatter) if content has no frontmatter.
+func ParseTaskFile(content string) (*Task, error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, nil
+	}
+
+	task, err := parseTaskFileContent(content)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, ErrNoFrontmatter
+	}
+	return task, nil
 }
 
 // WriteTasksFile serializes tasks to markdown format
