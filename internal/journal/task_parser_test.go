@@ -3,6 +3,7 @@ package journal
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseTasksFile(t *testing.T) {
@@ -621,6 +622,439 @@ func TestRoundTripParsing(t *testing.T) {
 		written := WriteTasksFile(tasks)
 		if written != original {
 			t.Errorf("Round trip failed.\nExpected:\n%s\nGot:\n%s", original, written)
+		}
+	})
+}
+
+func TestParseTaskFile(t *testing.T) {
+	t.Run("parse task with scheduled only", func(t *testing.T) {
+		content := `---
+id: task-123
+title: Buy groceries
+status: open
+scheduled: 2025-01-15
+---
+
+## Description
+
+Buy groceries
+`
+		task, err := ParseTaskFile(content)
+		if err != nil {
+			t.Fatalf("ParseTaskFile failed: %v", err)
+		}
+		if task == nil {
+			t.Fatal("Expected task, got nil")
+		}
+		if task.ID != "task-123" {
+			t.Errorf("Expected ID 'task-123', got '%s'", task.ID)
+		}
+		if task.Text != "Buy groceries" {
+			t.Errorf("Expected text 'Buy groceries', got '%s'", task.Text)
+		}
+		if task.ScheduledDate == nil {
+			t.Error("Expected scheduled date, got nil")
+		}
+		if task.ScheduledDate == nil || *task.ScheduledDate != "2025-01-15" {
+			if task.ScheduledDate != nil {
+				t.Errorf("Expected scheduled '2025-01-15', got '%s'", *task.ScheduledDate)
+			} else {
+				t.Error("Expected scheduled date, got nil")
+			}
+		}
+		if task.DeadlineDate != nil {
+			t.Errorf("Expected nil deadline, got '%s'", *task.DeadlineDate)
+		}
+	})
+
+	t.Run("parse task with deadline only", func(t *testing.T) {
+		content := `---
+id: task-456
+title: Complete project
+status: open
+deadline: 2025-01-20
+---
+
+## Description
+
+Complete project
+`
+		task, err := ParseTaskFile(content)
+		if err != nil {
+			t.Fatalf("ParseTaskFile failed: %v", err)
+		}
+		if task == nil {
+			t.Fatal("Expected task, got nil")
+		}
+		if task.DeadlineDate == nil {
+			t.Error("Expected deadline date, got nil")
+		}
+		if task.DeadlineDate != nil && *task.DeadlineDate != "2025-01-20" {
+			t.Errorf("Expected deadline '2025-01-20', got '%s'", *task.DeadlineDate)
+		}
+		if task.ScheduledDate != nil {
+			t.Errorf("Expected nil scheduled, got '%s'", *task.ScheduledDate)
+		}
+	})
+
+	t.Run("parse task with both scheduled and deadline", func(t *testing.T) {
+		content := `---
+id: task-789
+title: Finish report
+status: done
+scheduled: 2025-01-15
+deadline: 2025-01-20
+---
+
+## Description
+
+Finish report
+`
+		task, err := ParseTaskFile(content)
+		if err != nil {
+			t.Fatalf("ParseTaskFile failed: %v", err)
+		}
+		if task == nil {
+			t.Fatal("Expected task, got nil")
+		}
+		if task.Status != TaskDone {
+			t.Errorf("Expected status 'done', got '%s'", task.Status)
+		}
+		if task.ScheduledDate == nil || *task.ScheduledDate != "2025-01-15" {
+			t.Error("Expected scheduled date '2025-01-15'")
+		}
+		if task.DeadlineDate == nil || *task.DeadlineDate != "2025-01-20" {
+			t.Error("Expected deadline date '2025-01-20'")
+		}
+	})
+
+	t.Run("parse task with neither scheduled nor deadline", func(t *testing.T) {
+		content := `---
+id: task-abc
+title: Simple task
+status: open
+---
+
+## Description
+
+Simple task
+`
+		task, err := ParseTaskFile(content)
+		if err != nil {
+			t.Fatalf("ParseTaskFile failed: %v", err)
+		}
+		if task == nil {
+			t.Fatal("Expected task, got nil")
+		}
+		if task.ScheduledDate != nil {
+			t.Errorf("Expected nil scheduled, got '%s'", *task.ScheduledDate)
+		}
+		if task.DeadlineDate != nil {
+			t.Errorf("Expected nil deadline, got '%s'", *task.DeadlineDate)
+		}
+	})
+
+	t.Run("parse task with notes", func(t *testing.T) {
+		content := `---
+id: task-notes
+title: Task with notes
+status: open
+scheduled: 2025-01-15
+deadline: 2025-01-20
+---
+
+## Description
+
+Task with notes
+
+## Log
+
+- note-001 First note
+- note-002 Second note
+`
+		task, err := ParseTaskFile(content)
+		if err != nil {
+			t.Fatalf("ParseTaskFile failed: %v", err)
+		}
+		if task == nil {
+			t.Fatal("Expected task, got nil")
+		}
+		if len(task.Notes) != 2 {
+			t.Errorf("Expected 2 notes, got %d", len(task.Notes))
+		}
+		if len(task.Notes) >= 1 && task.Notes[0].ID != "note-001" {
+			t.Errorf("Expected first note ID 'note-001', got '%s'", task.Notes[0].ID)
+		}
+		if len(task.Notes) >= 2 && task.Notes[1].ID != "note-002" {
+			t.Errorf("Expected second note ID 'note-002', got '%s'", task.Notes[1].ID)
+		}
+	})
+
+	t.Run("parse empty content returns nil", func(t *testing.T) {
+		task, err := ParseTaskFile("")
+		if err != nil {
+			t.Fatalf("ParseTaskFile failed: %v", err)
+		}
+		if task != nil {
+			t.Errorf("Expected nil task for empty content, got %+v", task)
+		}
+	})
+
+	t.Run("parse content without frontmatter returns ErrNoFrontmatter", func(t *testing.T) {
+		content := `## Description
+
+Just some content without frontmatter
+`
+		task, err := ParseTaskFile(content)
+		if err != ErrNoFrontmatter {
+			t.Errorf("Expected ErrNoFrontmatter, got: %v", err)
+		}
+		if task != nil {
+			t.Errorf("Expected nil task for content without frontmatter, got %+v", task)
+		}
+	})
+
+	t.Run("parse task with tags", func(t *testing.T) {
+		content := `---
+id: task-tags
+title: Tagged task
+status: open
+tags:
+  - important
+  - work
+scheduled: 2025-01-15
+---
+
+## Description
+
+Tagged task
+`
+		task, err := ParseTaskFile(content)
+		if err != nil {
+			t.Fatalf("ParseTaskFile failed: %v", err)
+		}
+		if task == nil {
+			t.Fatal("Expected task, got nil")
+		}
+		if len(task.Tags) != 2 {
+			t.Errorf("Expected 2 tags, got %d", len(task.Tags))
+		}
+		if len(task.Tags) >= 1 && task.Tags[0] != "important" {
+			t.Errorf("Expected first tag 'important', got '%s'", task.Tags[0])
+		}
+		if len(task.Tags) >= 2 && task.Tags[1] != "work" {
+			t.Errorf("Expected second tag 'work', got '%s'", task.Tags[1])
+		}
+	})
+}
+
+func TestWriteTaskFile(t *testing.T) {
+	t.Run("write task with scheduled", func(t *testing.T) {
+		scheduled := "2025-01-15"
+		task := Task{
+			ID:            "task-123",
+			Text:          "Buy groceries",
+			Status:        TaskOpen,
+			Tags:          []string{},
+			Notes:         []TaskNote{},
+			Position:      0,
+			CreatedAt:     time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC),
+			ScheduledDate: &scheduled,
+			DeadlineDate:  nil,
+		}
+		content, err := WriteTaskFile(task)
+		if err != nil {
+			t.Fatalf("WriteTaskFile failed: %v", err)
+		}
+		if !contains(content, "scheduled: 2025-01-15") {
+			t.Errorf("Expected frontmatter to contain 'scheduled: 2025-01-15', got:\n%s", content)
+		}
+		if contains(content, "deadline:") {
+			t.Errorf("Expected no deadline in frontmatter, got:\n%s", content)
+		}
+	})
+
+	t.Run("write task with deadline", func(t *testing.T) {
+		deadline := "2025-01-20"
+		task := Task{
+			ID:            "task-456",
+			Text:          "Complete project",
+			Status:        TaskOpen,
+			Tags:          []string{},
+			Notes:         []TaskNote{},
+			Position:      0,
+			CreatedAt:     time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC),
+			ScheduledDate: nil,
+			DeadlineDate:  &deadline,
+		}
+		content, err := WriteTaskFile(task)
+		if err != nil {
+			t.Fatalf("WriteTaskFile failed: %v", err)
+		}
+		if !contains(content, "deadline: 2025-01-20") {
+			t.Errorf("Expected frontmatter to contain 'deadline: 2025-01-20', got:\n%s", content)
+		}
+		if contains(content, "scheduled:") {
+			t.Errorf("Expected no scheduled in frontmatter, got:\n%s", content)
+		}
+	})
+
+	t.Run("write task with both scheduled and deadline", func(t *testing.T) {
+		scheduled := "2025-01-15"
+		deadline := "2025-01-20"
+		task := Task{
+			ID:            "task-789",
+			Text:          "Finish report",
+			Status:        TaskDone,
+			Tags:          []string{"work"},
+			Notes:         []TaskNote{},
+			Position:      0,
+			CreatedAt:     time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC),
+			ScheduledDate: &scheduled,
+			DeadlineDate:  &deadline,
+		}
+		content, err := WriteTaskFile(task)
+		if err != nil {
+			t.Fatalf("WriteTaskFile failed: %v", err)
+		}
+		if !contains(content, "scheduled: 2025-01-15") {
+			t.Errorf("Expected frontmatter to contain 'scheduled: 2025-01-15', got:\n%s", content)
+		}
+		if !contains(content, "deadline: 2025-01-20") {
+			t.Errorf("Expected frontmatter to contain 'deadline: 2025-01-20', got:\n%s", content)
+		}
+		if !contains(content, "status: done") {
+			t.Errorf("Expected frontmatter to contain 'status: done', got:\n%s", content)
+		}
+	})
+
+	t.Run("write task with neither scheduled nor deadline", func(t *testing.T) {
+		task := Task{
+			ID:            "task-abc",
+			Text:          "Simple task",
+			Status:        TaskOpen,
+			Tags:          []string{},
+			Notes:         []TaskNote{},
+			Position:      0,
+			CreatedAt:     time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC),
+			ScheduledDate: nil,
+			DeadlineDate:  nil,
+		}
+		content, err := WriteTaskFile(task)
+		if err != nil {
+			t.Fatalf("WriteTaskFile failed: %v", err)
+		}
+		if contains(content, "scheduled:") {
+			t.Errorf("Expected no scheduled in frontmatter, got:\n%s", content)
+		}
+		if contains(content, "deadline:") {
+			t.Errorf("Expected no deadline in frontmatter, got:\n%s", content)
+		}
+	})
+
+	t.Run("write task with notes", func(t *testing.T) {
+		scheduled := "2025-01-15"
+		deadline := "2025-01-20"
+		task := Task{
+			ID:     "task-notes",
+			Text:   "Task with notes",
+			Status: TaskOpen,
+			Tags:   []string{},
+			Notes: []TaskNote{
+				{ID: "note-001", Text: "First note", Position: 0},
+				{ID: "note-002", Text: "Second note", Position: 1},
+			},
+			Position:      0,
+			CreatedAt:     time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC),
+			ScheduledDate: &scheduled,
+			DeadlineDate:  &deadline,
+		}
+		content, err := WriteTaskFile(task)
+		if err != nil {
+			t.Fatalf("WriteTaskFile failed: %v", err)
+		}
+		if !contains(content, "## Log") {
+			t.Errorf("Expected content to contain '## Log', got:\n%s", content)
+		}
+		if !contains(content, "note-001") {
+			t.Errorf("Expected content to contain 'note-001', got:\n%s", content)
+		}
+		if !contains(content, "note-002") {
+			t.Errorf("Expected content to contain 'note-002', got:\n%s", content)
+		}
+	})
+}
+
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}
+
+func TestRoundTripTaskFile(t *testing.T) {
+	t.Run("parse and write preserves scheduling data", func(t *testing.T) {
+		original := `---
+id: task-123
+title: Test task
+status: open
+scheduled: 2025-01-15
+deadline: 2025-01-20
+tags:
+  - work
+  - important
+---
+
+## Description
+
+Test task
+
+## Log
+
+- note-001 First note
+- note-002 Second note
+`
+		task, err := ParseTaskFile(original)
+		if err != nil {
+			t.Fatalf("ParseTaskFile failed: %v", err)
+		}
+		if task == nil {
+			t.Fatal("Expected task, got nil")
+		}
+
+		output, err := WriteTaskFile(*task)
+		if err != nil {
+			t.Fatalf("WriteTaskFile failed: %v", err)
+		}
+
+		parsedAgain, err := ParseTaskFile(output)
+		if err != nil {
+			t.Fatalf("ParseTaskFile on written content failed: %v", err)
+		}
+		if parsedAgain == nil {
+			t.Fatal("Expected parsed task, got nil")
+		}
+
+		if task.ID != parsedAgain.ID {
+			t.Errorf("ID mismatch: expected '%s', got '%s'", task.ID, parsedAgain.ID)
+		}
+		if task.Text != parsedAgain.Text {
+			t.Errorf("Text mismatch: expected '%s', got '%s'", task.Text, parsedAgain.Text)
+		}
+		if task.Status != parsedAgain.Status {
+			t.Errorf("Status mismatch: expected '%s', got '%s'", task.Status, parsedAgain.Status)
+		}
+		if (task.ScheduledDate == nil) != (parsedAgain.ScheduledDate == nil) {
+			t.Error("ScheduledDate presence mismatch")
+		}
+		if task.ScheduledDate != nil && parsedAgain.ScheduledDate != nil && *task.ScheduledDate != *parsedAgain.ScheduledDate {
+			t.Errorf("ScheduledDate mismatch: expected '%s', got '%s'", *task.ScheduledDate, *parsedAgain.ScheduledDate)
+		}
+		if (task.DeadlineDate == nil) != (parsedAgain.DeadlineDate == nil) {
+			t.Error("DeadlineDate presence mismatch")
+		}
+		if task.DeadlineDate != nil && parsedAgain.DeadlineDate != nil && *task.DeadlineDate != *parsedAgain.DeadlineDate {
+			t.Errorf("DeadlineDate mismatch: expected '%s', got '%s'", *task.DeadlineDate, *parsedAgain.DeadlineDate)
+		}
+		if len(task.Notes) != len(parsedAgain.Notes) {
+			t.Errorf("Notes count mismatch: expected %d, got %d", len(task.Notes), len(parsedAgain.Notes))
 		}
 	})
 }
