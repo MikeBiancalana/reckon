@@ -305,7 +305,6 @@ func WriteTasksFile(tasks []Task) string {
 	// Write each task
 	for _, task := range sortedTasks {
 		// Write task line with checkbox
-		// Note: TaskArchived status is not supported in markdown format
 		checkbox := "[ ]"
 		if task.Status == TaskDone {
 			checkbox = "[x]"
