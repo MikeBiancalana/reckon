@@ -19,9 +19,8 @@ const (
 type TaskStatus string
 
 const (
-	TaskOpen     TaskStatus = "open"
-	TaskDone     TaskStatus = "done"
-	TaskArchived TaskStatus = "archived"
+	TaskOpen TaskStatus = "open"
+	TaskDone TaskStatus = "done"
 )
 
 // EntryType represents the type of a log entry
