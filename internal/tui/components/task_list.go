@@ -32,6 +32,21 @@ var (
 	focusedTaskListTitleStyle = lipgloss.NewStyle().
 					Foreground(lipgloss.Color("11")).
 					Bold(true)
+
+	overdueStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196"))
+
+	dueTodayStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("226"))
+
+	dueSoonStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214"))
+
+	scheduledStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245"))
+
+	dateInfoStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245"))
 )
 
 // TaskToggleMsg is sent when a task's status is toggled
@@ -112,6 +127,13 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 			tagStr := fmt.Sprintf(" [%s]", strings.Join(item.task.Tags, " "))
 			text = text + tagStr
 		}
+
+		// Add date information
+		dateInfo := formatDateInfo(item.task)
+		if dateInfo != "" {
+			text = text + "  " + dateInfo
+			style = combineStyles(style, getDateStyle(item.task))
+		}
 	}
 
 	// Highlight selected item
@@ -132,6 +154,76 @@ func findNoteText(notes []journal.TaskNote, noteID string) string {
 		}
 	}
 	return ""
+}
+
+func formatDateInfo(task journal.Task) string {
+	today := time.Now().Truncate(24 * time.Hour)
+	var parts []string
+
+	if scheduledDate, ok := parseDate(task.ScheduledDate); ok {
+		dateStr := formatFriendlyDate(scheduledDate, today)
+		parts = append(parts, "📅 "+dateStr)
+	}
+
+	if deadlineDate, ok := parseDate(task.DeadlineDate); ok {
+		dateStr := formatFriendlyDate(deadlineDate, today)
+		if deadlineDate.Before(today) {
+			parts = append(parts, "🔴 overdue (due "+dateStr+")")
+		} else if deadlineDate.Equal(today) {
+			parts = append(parts, "due today 🟡")
+		} else if deadlineDate.Before(today.AddDate(0, 0, 2)) {
+			parts = append(parts, "due "+dateStr+" 🟡")
+		} else {
+			parts = append(parts, "due "+dateStr)
+		}
+	}
+
+	return strings.Join(parts, "  ")
+}
+
+func formatFriendlyDate(t time.Time, today time.Time) string {
+	diff := t.Sub(today)
+
+	switch {
+	case diff == 0:
+		return "today"
+	case diff == 24*time.Hour:
+		return "tomorrow"
+	case diff == -24*time.Hour:
+		return "yesterday"
+	case t.Year() == today.Year():
+		return t.Format("Jan 2")
+	default:
+		return t.Format("Jan 2, 2006")
+	}
+}
+
+func combineStyles(base, modifier lipgloss.Style) lipgloss.Style {
+	return base
+}
+
+func getDateStyle(task journal.Task) lipgloss.Style {
+	today := time.Now().Truncate(24 * time.Hour)
+
+	if deadlineDate, ok := parseDate(task.DeadlineDate); ok {
+		if deadlineDate.Before(today) {
+			return overdueStyle
+		}
+		if deadlineDate.Equal(today) {
+			return dueTodayStyle
+		}
+		if deadlineDate.Before(today.AddDate(0, 0, 2)) {
+			return dueSoonStyle
+		}
+	}
+
+	if scheduledDate, ok := parseDate(task.ScheduledDate); ok {
+		if !scheduledDate.Before(today) && !scheduledDate.After(today.AddDate(0, 0, 7)) {
+			return scheduledStyle
+		}
+	}
+
+	return dateInfoStyle
 }
 
 // TaskList represents the tasks component
