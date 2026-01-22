@@ -128,11 +128,13 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 			text = text + tagStr
 		}
 
-		// Add date information
-		dateInfo := formatDateInfo(item.task)
-		if dateInfo != "" {
-			text = text + "  " + dateInfo
-			style = combineStyles(style, getDateStyle(item.task))
+		// Add date information for open tasks
+		if item.task.Status != journal.TaskDone {
+			dateInfo := formatDateInfo(item.task)
+			if dateInfo != "" {
+				text = text + "  " + dateInfo
+				style = getDateStyle(item.task)
+			}
 		}
 	}
 
@@ -167,11 +169,13 @@ func formatDateInfo(task journal.Task) string {
 
 	if deadlineDate, ok := parseDate(task.DeadlineDate); ok {
 		dateStr := formatFriendlyDate(deadlineDate, today)
-		if deadlineDate.Before(today) {
+		daysUntil := int(deadlineDate.Sub(today).Hours() / 24)
+
+		if daysUntil < 0 {
 			parts = append(parts, "🔴 overdue (due "+dateStr+")")
-		} else if deadlineDate.Equal(today) {
+		} else if daysUntil == 0 {
 			parts = append(parts, "due today 🟡")
-		} else if deadlineDate.Before(today.AddDate(0, 0, 2)) {
+		} else if daysUntil <= 2 {
 			parts = append(parts, "due "+dateStr+" 🟡")
 		} else {
 			parts = append(parts, "due "+dateStr)
@@ -189,8 +193,6 @@ func formatFriendlyDate(t time.Time, today time.Time) string {
 		return "today"
 	case diff == 24*time.Hour:
 		return "tomorrow"
-	case diff == -24*time.Hour:
-		return "yesterday"
 	case t.Year() == today.Year():
 		return t.Format("Jan 2")
 	default:
@@ -198,27 +200,26 @@ func formatFriendlyDate(t time.Time, today time.Time) string {
 	}
 }
 
-func combineStyles(base, modifier lipgloss.Style) lipgloss.Style {
-	return base
-}
-
 func getDateStyle(task journal.Task) lipgloss.Style {
 	today := time.Now().Truncate(24 * time.Hour)
 
 	if deadlineDate, ok := parseDate(task.DeadlineDate); ok {
-		if deadlineDate.Before(today) {
+		daysUntil := int(deadlineDate.Sub(today).Hours() / 24)
+
+		if daysUntil < 0 {
 			return overdueStyle
 		}
-		if deadlineDate.Equal(today) {
+		if daysUntil == 0 {
 			return dueTodayStyle
 		}
-		if deadlineDate.Before(today.AddDate(0, 0, 2)) {
+		if daysUntil <= 2 {
 			return dueSoonStyle
 		}
 	}
 
 	if scheduledDate, ok := parseDate(task.ScheduledDate); ok {
-		if !scheduledDate.Before(today) && !scheduledDate.After(today.AddDate(0, 0, 7)) {
+		daysUntil := int(scheduledDate.Sub(today).Hours() / 24)
+		if daysUntil >= 0 && daysUntil <= 7 {
 			return scheduledStyle
 		}
 	}
