@@ -25,19 +25,18 @@ const (
 )
 
 var (
-	taskStatusFlag          string
-	taskTagsFlag            []string
-	taskCompactFlag         bool
-	taskVerboseFlag         bool
-	taskFormatFlag          string
-	taskEditTitleFlag       string
-	taskEditDescriptionFlag string
-	taskEditTagsFlag        []string
-	taskMatchFlag           string
-	taskScheduledFlag       string
-	taskDeadlineFlag        string
-	taskOverdueFlag         bool
-	taskGroupedFlag         bool
+	taskStatusFlag    string
+	taskTagsFlag      []string
+	taskCompactFlag   bool
+	taskVerboseFlag   bool
+	taskFormatFlag    string
+	taskEditTitleFlag string
+	taskEditTagsFlag  []string
+	taskMatchFlag     string
+	taskScheduledFlag string
+	taskDeadlineFlag  string
+	taskOverdueFlag   bool
+	taskGroupedFlag   bool
 )
 
 // taskCmd represents the task command
@@ -208,6 +207,10 @@ var taskListCmd = &cobra.Command{
 					}
 				case "this-week":
 					if deadlineDate >= todayDate && deadlineDate <= endOfWeek {
+						filtered = append(filtered, t)
+					}
+				default:
+					if deadlineDate == taskDeadlineFlag {
 						filtered = append(filtered, t)
 					}
 				}
@@ -510,7 +513,7 @@ Examples:
 var taskEditCmd = &cobra.Command{
 	Use:   "edit [task-id|--match <pattern>]",
 	Short: "Edit task details",
-	Long: `Edit a task's title using the --title flag. Tags support will be added in a future update.
+	Long: `Edit a task's title using the --title flag and tags with --tags flag.
 
 Use task index (1, 2, 3...) or exact task ID.
 Or use --match to fuzzy-match by task title.
@@ -763,7 +766,10 @@ Examples:
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
-		clearFlag, _ := cmd.Flags().GetBool("clear")
+		clearFlag, err := cmd.Flags().GetBool("clear")
+		if err != nil {
+			return fmt.Errorf("internal error: %w", err)
+		}
 
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
@@ -808,7 +814,7 @@ Examples:
 			}
 		}
 
-		if tmpMatch != "" && clearFlag {
+		if tmpMatch != "" {
 			taskID = tmpMatch
 		}
 
@@ -879,7 +885,10 @@ Examples:
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
 
-		clearFlag, _ := cmd.Flags().GetBool("clear")
+		clearFlag, err := cmd.Flags().GetBool("clear")
+		if err != nil {
+			return fmt.Errorf("internal error: %w", err)
+		}
 
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
@@ -924,7 +933,7 @@ Examples:
 			}
 		}
 
-		if tmpMatch != "" && clearFlag {
+		if tmpMatch != "" {
 			taskID = tmpMatch
 		}
 
@@ -991,7 +1000,6 @@ func init() {
 	taskListCmd.Flags().BoolVar(&taskOverdueFlag, "overdue", false, "Show only overdue tasks")
 	taskListCmd.Flags().BoolVar(&taskGroupedFlag, "grouped", false, "Group tasks by timeframe (TODAY, THIS WEEK, ALL TASKS)")
 	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
-	taskEditCmd.Flags().StringVarP(&taskEditDescriptionFlag, "description", "d", "", "New task description")
 	taskEditCmd.Flags().StringSliceVar(&taskEditTagsFlag, "tags", []string{}, "New task tags (comma-separated)")
 
 	// Commands that support --match flag for fuzzy title matching
