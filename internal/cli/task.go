@@ -7,12 +7,13 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	"github.com/sahilm/fuzzy"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-
-	"github.com/MikeBiancalana/reckon/internal/journal"
 )
 
 const (
@@ -24,15 +25,18 @@ const (
 )
 
 var (
-	taskStatusFlag          string
-	taskTagsFlag            []string
-	taskCompactFlag         bool
-	taskVerboseFlag         bool
-	taskFormatFlag          string
-	taskEditTitleFlag       string
-	taskEditDescriptionFlag string
-	taskEditTagsFlag        []string
-	taskMatchFlag           string
+	taskStatusFlag    string
+	taskTagsFlag      []string
+	taskCompactFlag   bool
+	taskVerboseFlag   bool
+	taskFormatFlag    string
+	taskEditTitleFlag string
+	taskEditTagsFlag  []string
+	taskMatchFlag     string
+	taskScheduledFlag string
+	taskDeadlineFlag  string
+	taskOverdueFlag   bool
+	taskGroupedFlag   bool
 )
 
 // taskCmd represents the task command
@@ -97,6 +101,9 @@ var taskListCmd = &cobra.Command{
 			return fmt.Errorf("failed to list tasks: %w", err)
 		}
 
+		// Initialize date helpers for filtering
+		todayDate := time.Now().Format("2006-01-02")
+
 		// Apply status filter if provided
 		if taskStatusFlag != "" {
 			statusLower := strings.ToLower(taskStatusFlag)
@@ -148,6 +155,83 @@ var taskListCmd = &cobra.Command{
 				}
 			}
 			tasks = filtered
+		}
+
+		// Apply scheduled date filter if provided
+		if taskScheduledFlag != "" {
+			todayDate := time.Now().Format("2006-01-02")
+			endOfWeek := getEndOfWeek()
+
+			filtered := make([]journal.Task, 0)
+			for _, t := range tasks {
+				if t.ScheduledDate == nil {
+					continue
+				}
+				scheduledDate := *t.ScheduledDate
+
+				switch taskScheduledFlag {
+				case "today":
+					if scheduledDate == todayDate {
+						filtered = append(filtered, t)
+					}
+				case "this-week":
+					if scheduledDate >= todayDate && scheduledDate <= endOfWeek {
+						filtered = append(filtered, t)
+					}
+				default:
+					// Treat as specific date
+					if scheduledDate == taskScheduledFlag {
+						filtered = append(filtered, t)
+					}
+				}
+			}
+			tasks = filtered
+		}
+
+		// Apply deadline filter if provided
+		if taskDeadlineFlag != "" {
+			todayDate := time.Now().Format("2006-01-02")
+			endOfWeek := getEndOfWeek()
+
+			filtered := make([]journal.Task, 0)
+			for _, t := range tasks {
+				if t.DeadlineDate == nil {
+					continue
+				}
+				deadlineDate := *t.DeadlineDate
+
+				switch taskDeadlineFlag {
+				case "today":
+					if deadlineDate == todayDate {
+						filtered = append(filtered, t)
+					}
+				case "this-week":
+					if deadlineDate >= todayDate && deadlineDate <= endOfWeek {
+						filtered = append(filtered, t)
+					}
+				default:
+					if deadlineDate == taskDeadlineFlag {
+						filtered = append(filtered, t)
+					}
+				}
+			}
+			tasks = filtered
+		}
+
+		// Apply overdue filter if provided
+		if taskOverdueFlag {
+			filtered := make([]journal.Task, 0)
+			for _, t := range tasks {
+				if t.DeadlineDate != nil && *t.DeadlineDate < todayDate && t.Status != journal.TaskDone {
+					filtered = append(filtered, t)
+				}
+			}
+			tasks = filtered
+		}
+
+		// Apply grouped output if requested
+		if taskGroupedFlag {
+			return listTasksGrouped(tasks)
 		}
 
 		if taskFormatFlag != "" {
@@ -429,7 +513,7 @@ Examples:
 var taskEditCmd = &cobra.Command{
 	Use:   "edit [task-id|--match <pattern>]",
 	Short: "Edit task details",
-	Long: `Edit a task's title using the --title flag. Tags support will be added in a future update.
+	Long: `Edit a task's title using the --title flag and tags with --tags flag.
 
 Use task index (1, 2, 3...) or exact task ID.
 Or use --match to fuzzy-match by task title.
@@ -653,6 +737,244 @@ Examples:
 	},
 }
 
+// taskScheduleCmd sets a task's scheduled date
+var taskScheduleCmd = &cobra.Command{
+	Use:   "schedule [task-id|--match <pattern>] <date>",
+	Short: "Set a task's scheduled date",
+	Long: `Set a task's scheduled date.
+
+Use task index (1, 2, 3...) or exact task ID.
+Or use --match to fuzzy-match by task title.
+
+Supported date formats:
+  - YYYY-MM-DD (e.g., 2025-01-15)
+  - today/t (today)
+  - tomorrow/tm (tomorrow)
+  - mon, tue, wed, thu, fri, sat, sun (next occurrence)
+  - +3d (3 days from now)
+  - +2w (2 weeks from now)
+
+Use --clear to remove the scheduled date.
+
+Examples:
+  rk task schedule 1 2025-01-15
+  rk task schedule abc123 tomorrow
+  rk task schedule --match auth +3d
+  rk task schedule 1 --clear`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
+		taskMatchFlag = ""
+
+		clearFlag, err := cmd.Flags().GetBool("clear")
+		if err != nil {
+			return fmt.Errorf("internal error: %w", err)
+		}
+
+		if journalTaskService == nil {
+			return fmt.Errorf("task service not initialized")
+		}
+
+		var taskID, dateStr string
+
+		if clearFlag {
+			if len(args) > 1 {
+				return fmt.Errorf("too many arguments; use --match for task matching or provide only task ID")
+			}
+			if tmpMatch != "" && len(args) == 1 {
+				return fmt.Errorf("cannot use both task-id and --match with --clear")
+			}
+			if tmpMatch == "" && len(args) == 0 {
+				return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+			}
+			if len(args) == 1 {
+				taskID = args[0]
+			}
+		} else {
+			if len(args) < 2 {
+				return fmt.Errorf("missing date; provide a date or use --clear")
+			}
+			if len(args) > 2 {
+				return fmt.Errorf("too many arguments; use quotes for dates with spaces")
+			}
+
+			if tmpMatch != "" && len(args) > 1 {
+				return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+			}
+			if tmpMatch == "" && len(args) < 2 {
+				return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+			}
+
+			if tmpMatch != "" {
+				taskID = tmpMatch
+				dateStr = args[0]
+			} else {
+				taskID = args[0]
+				dateStr = args[1]
+			}
+		}
+
+		if tmpMatch != "" {
+			taskID = tmpMatch
+		}
+
+		if taskID == "" {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		resolvedTaskID, err := resolveJournalTaskID(taskID, "", journalTaskService)
+		if err != nil {
+			return err
+		}
+
+		if clearFlag {
+			if err := journalTaskService.ClearTaskSchedule(resolvedTaskID); err != nil {
+				return fmt.Errorf("failed to clear schedule: %w", err)
+			}
+			if !quietFlag {
+				fmt.Printf("✓ Cleared scheduled date for task %s\n", resolvedTaskID)
+			}
+			return nil
+		}
+
+		parsedDate, err := components.ParseRelativeDate(dateStr)
+		if err != nil {
+			return fmt.Errorf("invalid date: %w", err)
+		}
+		formattedDate := components.FormatDate(parsedDate)
+
+		if err := journalTaskService.ScheduleTask(resolvedTaskID, formattedDate); err != nil {
+			return fmt.Errorf("failed to set schedule: %w", err)
+		}
+
+		if !quietFlag {
+			desc := components.GetDateDescription(parsedDate)
+			fmt.Printf("✓ Set scheduled date for task %s to %s (%s)\n", resolvedTaskID, formattedDate, desc)
+		}
+
+		return nil
+	},
+}
+
+// taskDeadlineCmd sets a task's deadline
+var taskDeadlineCmd = &cobra.Command{
+	Use:   "deadline [task-id|--match <pattern>] <date>",
+	Short: "Set a task's deadline",
+	Long: `Set a task's deadline.
+
+Use task index (1, 2, 3...) or exact task ID.
+Or use --match to fuzzy-match by task title.
+
+Supported date formats:
+  - YYYY-MM-DD (e.g., 2025-01-15)
+  - today/t (today)
+  - tomorrow/tm (tomorrow)
+  - mon, tue, wed, thu, fri, sat, sun (next occurrence)
+  - +3d (3 days from now)
+  - +2w (2 weeks from now)
+
+Use --clear to remove the deadline.
+
+Examples:
+  rk task deadline 1 2025-01-15
+  rk task deadline abc123 +3d
+  rk task deadline --match auth next fri
+  rk task deadline 1 --clear`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tmpMatch := taskMatchFlag
+		taskMatchFlag = ""
+
+		clearFlag, err := cmd.Flags().GetBool("clear")
+		if err != nil {
+			return fmt.Errorf("internal error: %w", err)
+		}
+
+		if journalTaskService == nil {
+			return fmt.Errorf("task service not initialized")
+		}
+
+		var taskID, dateStr string
+
+		if clearFlag {
+			if len(args) > 1 {
+				return fmt.Errorf("too many arguments; use --match for task matching or provide only task ID")
+			}
+			if tmpMatch != "" && len(args) == 1 {
+				return fmt.Errorf("cannot use both task-id and --match with --clear")
+			}
+			if tmpMatch == "" && len(args) == 0 {
+				return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+			}
+			if len(args) == 1 {
+				taskID = args[0]
+			}
+		} else {
+			if len(args) < 2 {
+				return fmt.Errorf("missing date; provide a date or use --clear")
+			}
+			if len(args) > 2 {
+				return fmt.Errorf("too many arguments; use quotes for dates with spaces")
+			}
+
+			if tmpMatch != "" && len(args) > 1 {
+				return fmt.Errorf("cannot use both task-id and --match; use one or the other")
+			}
+			if tmpMatch == "" && len(args) < 2 {
+				return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+			}
+
+			if tmpMatch != "" {
+				taskID = tmpMatch
+				dateStr = args[0]
+			} else {
+				taskID = args[0]
+				dateStr = args[1]
+			}
+		}
+
+		if tmpMatch != "" {
+			taskID = tmpMatch
+		}
+
+		if taskID == "" {
+			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		resolvedTaskID, err := resolveJournalTaskID(taskID, "", journalTaskService)
+		if err != nil {
+			return err
+		}
+
+		if clearFlag {
+			if err := journalTaskService.ClearTaskDeadline(resolvedTaskID); err != nil {
+				return fmt.Errorf("failed to clear deadline: %w", err)
+			}
+			if !quietFlag {
+				fmt.Printf("✓ Cleared deadline for task %s\n", resolvedTaskID)
+			}
+			return nil
+		}
+
+		parsedDate, err := components.ParseRelativeDate(dateStr)
+		if err != nil {
+			return fmt.Errorf("invalid date: %w", err)
+		}
+		formattedDate := components.FormatDate(parsedDate)
+
+		if err := journalTaskService.SetTaskDeadline(resolvedTaskID, formattedDate); err != nil {
+			return fmt.Errorf("failed to set deadline: %w", err)
+		}
+
+		if !quietFlag {
+			desc := components.GetDateDescription(parsedDate)
+			fmt.Printf("✓ Set deadline for task %s to %s (%s)\n", resolvedTaskID, formattedDate, desc)
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	// Add subcommands
 	taskCmd.AddCommand(taskNewCmd)
@@ -663,6 +985,8 @@ func init() {
 	taskCmd.AddCommand(taskEditCmd)
 	taskCmd.AddCommand(taskNoteCmd)
 	taskCmd.AddCommand(taskDeleteCmd)
+	taskCmd.AddCommand(taskScheduleCmd)
+	taskCmd.AddCommand(taskDeadlineCmd)
 
 	// Flags
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
@@ -671,8 +995,11 @@ func init() {
 	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact single-line output")
 	taskListCmd.Flags().BoolVarP(&taskVerboseFlag, "verbose", "v", false, "Show verbose multi-line output")
 	taskListCmd.Flags().StringVar(&taskFormatFlag, "format", "", "Output format (json, tsv, csv)")
+	taskListCmd.Flags().StringVar(&taskScheduledFlag, "scheduled", "", "Filter by scheduled date (today, this-week, YYYY-MM-DD)")
+	taskListCmd.Flags().StringVar(&taskDeadlineFlag, "deadline", "", "Filter by deadline (today, this-week)")
+	taskListCmd.Flags().BoolVar(&taskOverdueFlag, "overdue", false, "Show only overdue tasks")
+	taskListCmd.Flags().BoolVar(&taskGroupedFlag, "grouped", false, "Group tasks by timeframe (TODAY, THIS WEEK, ALL TASKS)")
 	taskEditCmd.Flags().StringVar(&taskEditTitleFlag, "title", "", "New task title")
-	taskEditCmd.Flags().StringVarP(&taskEditDescriptionFlag, "description", "d", "", "New task description")
 	taskEditCmd.Flags().StringSliceVar(&taskEditTagsFlag, "tags", []string{}, "New task tags (comma-separated)")
 
 	// Commands that support --match flag for fuzzy title matching
@@ -682,6 +1009,10 @@ func init() {
 	taskEditCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 	taskNoteCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
 	taskDeleteCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+	taskScheduleCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+	taskScheduleCmd.Flags().Bool("clear", false, "Clear the scheduled date")
+	taskDeadlineCmd.Flags().StringVar(&taskMatchFlag, "match", "", "Fuzzy match task by title (alternative to task-id)")
+	taskDeadlineCmd.Flags().Bool("clear", false, "Clear the deadline")
 
 	// Commands that support --stdin flag for batch operations
 	taskDoneCmd.Flags().Bool("stdin", false, "Read task IDs from stdin (one per line)")
@@ -783,3 +1114,84 @@ func readStdinIDs() ([]string, error) {
 
 	return ids, nil
 }
+
+// getEndOfWeek returns the date string for the end of the current week (Sunday)
+func getEndOfWeek() string {
+	now := time.Now()
+	weekday := now.Weekday()
+	daysToSunday := int(time.Sunday - weekday)
+	if daysToSunday <= 0 {
+		daysToSunday += 7
+	}
+	return now.AddDate(0, 0, daysToSunday).Format("2006-01-02")
+}
+
+// listTasksGrouped outputs tasks grouped by timeframe: TODAY, THIS WEEK, and ALL TASKS
+func listTasksGrouped(tasks []Task) error {
+	todayDate := time.Now().Format("2006-01-02")
+	endOfWeek := getEndOfWeek()
+
+	var today, thisWeek, allTasks []Task
+	for _, t := range tasks {
+		if t.ScheduledDate == nil {
+			allTasks = append(allTasks, t)
+			continue
+		}
+
+		scheduledDate := *t.ScheduledDate
+		if scheduledDate == todayDate {
+			today = append(today, t)
+		} else if scheduledDate >= todayDate && scheduledDate <= endOfWeek {
+			thisWeek = append(thisWeek, t)
+		} else {
+			allTasks = append(allTasks, t)
+		}
+	}
+
+	// Print each group
+	if len(today) > 0 {
+		fmt.Println("=== TODAY ===")
+		for i, t := range today {
+			fmt.Printf("[%d] [%s] %s", i+1, t.Status, t.Text)
+			if t.DeadlineDate != nil {
+				fmt.Printf(" [deadline: %s]", *t.DeadlineDate)
+			}
+			fmt.Println()
+		}
+		fmt.Println()
+	}
+
+	if len(thisWeek) > 0 {
+		fmt.Println("=== THIS WEEK ===")
+		for i, t := range thisWeek {
+			fmt.Printf("[%d] [%s] %s", i+1, t.Status, t.Text)
+			if t.ScheduledDate != nil {
+				fmt.Printf(" [scheduled: %s]", *t.ScheduledDate)
+			}
+			if t.DeadlineDate != nil {
+				fmt.Printf(" [deadline: %s]", *t.DeadlineDate)
+			}
+			fmt.Println()
+		}
+		fmt.Println()
+	}
+
+	if len(allTasks) > 0 {
+		fmt.Println("=== ALL TASKS ===")
+		for i, t := range allTasks {
+			fmt.Printf("[%d] [%s] %s", i+1, t.Status, t.Text)
+			if t.ScheduledDate != nil {
+				fmt.Printf(" [scheduled: %s]", *t.ScheduledDate)
+			}
+			if t.DeadlineDate != nil {
+				fmt.Printf(" [deadline: %s]", *t.DeadlineDate)
+			}
+			fmt.Println()
+		}
+	}
+
+	return nil
+}
+
+// Task is a local alias for journal.Task to use in listTasksGrouped
+type Task = journal.Task
