@@ -147,24 +147,27 @@ func CalculateTaskSectionDimensions(termWidth, termHeight int, detailPanePositio
 		dims.ThisWeekHeight = effectiveHeight / 3
 		dims.AllTasksHeight = effectiveHeight - dims.TodayHeight - dims.ThisWeekHeight
 	} else {
-		// Detail pane visible: replace one section
+		// Detail pane visible: one of three sections is replaced by detail pane
+		// The other two sections are shown
 		switch detailPanePosition {
 		case DetailPaneBottom:
 			// Detail pane replaces ALL TASKS (bottom)
-			// TODAY and THIS WEEK split the available height (50-50)
-			topHalfHeight := effectiveHeight / 2
-			dims.TodayHeight = topHalfHeight / 2
-			dims.ThisWeekHeight = topHalfHeight - dims.TodayHeight
+			// TODAY and THIS WEEK are shown, detail pane is shown
+			// Split: TODAY (25%), THIS WEEK (25%), DETAIL (50%)
+			topQuarterHeight := effectiveHeight / 4
+			dims.TodayHeight = topQuarterHeight
+			dims.ThisWeekHeight = topQuarterHeight
 			dims.AllTasksHeight = 0
-			dims.DetailHeight = effectiveHeight - topHalfHeight
+			dims.DetailHeight = effectiveHeight - dims.TodayHeight - dims.ThisWeekHeight
 		case DetailPaneMiddle:
 			// Detail pane replaces THIS WEEK (middle)
-			// TODAY and ALL TASKS split the available height (50-50)
-			topHalfHeight := effectiveHeight / 2
-			dims.TodayHeight = topHalfHeight
+			// TODAY and ALL TASKS are shown, detail pane is shown
+			// Split: TODAY (25%), DETAIL (50%), ALL TASKS (25%)
+			topQuarterHeight := effectiveHeight / 4
+			dims.TodayHeight = topQuarterHeight
 			dims.ThisWeekHeight = 0
-			dims.AllTasksHeight = effectiveHeight - topHalfHeight
-			dims.DetailHeight = topHalfHeight
+			dims.DetailHeight = effectiveHeight / 2
+			dims.AllTasksHeight = effectiveHeight - dims.TodayHeight - dims.DetailHeight
 		}
 	}
 

@@ -325,3 +325,145 @@ func TestCalculatePaneDimensions_Consistency(t *testing.T) {
 		t.Errorf("Multiple calls with same parameters should produce identical results")
 	}
 }
+
+// TestCalculateTaskSectionDimensions_NoDetailPane tests layout without detail pane
+func TestCalculateTaskSectionDimensions_NoDetailPane(t *testing.T) {
+	termWidth, termHeight := 120, 30
+
+	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneBottom, false)
+
+	// Center width should be 40% of terminal width
+	expectedWidth := int(float64(termWidth) * 0.40)
+	if dims.CenterWidth != expectedWidth {
+		t.Errorf("Expected CenterWidth=%d, got %d", expectedWidth, dims.CenterWidth)
+	}
+
+	// All three sections should be visible and roughly equal
+	if dims.TodayHeight == 0 {
+		t.Error("TodayHeight should not be 0 when detail pane is hidden")
+	}
+	if dims.ThisWeekHeight == 0 {
+		t.Error("ThisWeekHeight should not be 0 when detail pane is hidden")
+	}
+	if dims.AllTasksHeight == 0 {
+		t.Error("AllTasksHeight should not be 0 when detail pane is hidden")
+	}
+
+	// Verify sections add up to available height (minus separators)
+	totalHeight := dims.TodayHeight + dims.ThisWeekHeight + dims.AllTasksHeight
+	const sectionSeparators = 2
+	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators // text entry, status, summary, separators
+	if totalHeight != expectedAvailableHeight {
+		t.Errorf("Expected total section height=%d, got %d", expectedAvailableHeight, totalHeight)
+	}
+}
+
+// TestCalculateTaskSectionDimensions_DetailPaneBottom tests layout with detail pane at bottom
+func TestCalculateTaskSectionDimensions_DetailPaneBottom(t *testing.T) {
+	termWidth, termHeight := 120, 30
+
+	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneBottom, true)
+
+	// ALL TASKS should be replaced by detail pane
+	if dims.AllTasksHeight != 0 {
+		t.Errorf("AllTasksHeight should be 0 when detail pane is at bottom, got %d", dims.AllTasksHeight)
+	}
+
+	// Detail height should be non-zero
+	if dims.DetailHeight == 0 {
+		t.Error("DetailHeight should not be 0 when detail pane is visible")
+	}
+
+	// TODAY and THIS WEEK should be visible
+	if dims.TodayHeight == 0 {
+		t.Error("TodayHeight should not be 0")
+	}
+	if dims.ThisWeekHeight == 0 {
+		t.Error("ThisWeekHeight should not be 0")
+	}
+
+	// Verify total height
+	totalHeight := dims.TodayHeight + dims.ThisWeekHeight + dims.DetailHeight
+	const sectionSeparators = 2
+	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators
+	if totalHeight != expectedAvailableHeight {
+		t.Errorf("Expected total height=%d, got %d", expectedAvailableHeight, totalHeight)
+	}
+}
+
+// TestCalculateTaskSectionDimensions_DetailPaneMiddle tests layout with detail pane in middle
+func TestCalculateTaskSectionDimensions_DetailPaneMiddle(t *testing.T) {
+	termWidth, termHeight := 120, 30
+
+	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneMiddle, true)
+
+	// THIS WEEK should be replaced by detail pane
+	if dims.ThisWeekHeight != 0 {
+		t.Errorf("ThisWeekHeight should be 0 when detail pane is in middle, got %d", dims.ThisWeekHeight)
+	}
+
+	// Detail height should be non-zero
+	if dims.DetailHeight == 0 {
+		t.Error("DetailHeight should not be 0 when detail pane is visible")
+	}
+
+	// TODAY and ALL TASKS should be visible
+	if dims.TodayHeight == 0 {
+		t.Error("TodayHeight should not be 0")
+	}
+	if dims.AllTasksHeight == 0 {
+		t.Error("AllTasksHeight should not be 0")
+	}
+
+	// Verify total height
+	totalHeight := dims.TodayHeight + dims.DetailHeight + dims.AllTasksHeight
+	const sectionSeparators = 2
+	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators
+	if totalHeight != expectedAvailableHeight {
+		t.Errorf("Expected total height=%d, got %d", expectedAvailableHeight, totalHeight)
+	}
+}
+
+// TestCalculateTaskSectionDimensions_VariousSizes tests different terminal sizes
+func TestCalculateTaskSectionDimensions_VariousSizes(t *testing.T) {
+	tests := []struct {
+		name       string
+		termWidth  int
+		termHeight int
+	}{
+		{"Standard 80x24", 80, 24},
+		{"Common 120x30", 120, 30},
+		{"Large 160x40", 160, 40},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test all combinations of position and visibility
+			positions := []DetailPanePosition{DetailPaneBottom, DetailPaneMiddle}
+			visibilities := []bool{true, false}
+
+			for _, pos := range positions {
+				for _, visible := range visibilities {
+					dims := CalculateTaskSectionDimensions(tt.termWidth, tt.termHeight, pos, visible)
+
+					// All dimensions should be non-negative
+					if dims.CenterWidth < 0 {
+						t.Errorf("CenterWidth should be non-negative, got %d", dims.CenterWidth)
+					}
+					if dims.TodayHeight < 0 {
+						t.Errorf("TodayHeight should be non-negative, got %d", dims.TodayHeight)
+					}
+					if dims.ThisWeekHeight < 0 {
+						t.Errorf("ThisWeekHeight should be non-negative, got %d", dims.ThisWeekHeight)
+					}
+					if dims.AllTasksHeight < 0 {
+						t.Errorf("AllTasksHeight should be non-negative, got %d", dims.AllTasksHeight)
+					}
+					if dims.DetailHeight < 0 {
+						t.Errorf("DetailHeight should be non-negative, got %d", dims.DetailHeight)
+					}
+				}
+			}
+		})
+	}
+}
