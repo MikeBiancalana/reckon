@@ -25,6 +25,7 @@ type PaneDimensions struct {
 
 	// Bottom bars
 	TextEntryHeight int // Fixed: 3 lines
+	SummaryHeight   int // Fixed: 1 line
 	StatusHeight    int // Fixed: 1 line
 }
 
@@ -35,11 +36,12 @@ type PaneDimensions struct {
 func CalculatePaneDimensions(termWidth, termHeight int, notesPaneVisible bool) PaneDimensions {
 	dims := PaneDimensions{
 		TextEntryHeight: 3,
+		SummaryHeight:   1,
 		StatusHeight:    1,
 	}
 
 	// Calculate available height (terminal height minus fixed bottom bars)
-	availableHeight := termHeight - dims.TextEntryHeight - dims.StatusHeight
+	availableHeight := termHeight - dims.TextEntryHeight - dims.SummaryHeight - dims.StatusHeight
 	if availableHeight < 0 {
 		availableHeight = 0
 	}
