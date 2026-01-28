@@ -321,3 +321,101 @@ func TestCalculateDetailPanePosition(t *testing.T) {
 		})
 	}
 }
+
+// TestNilTaskListHandling tests that model methods handle nil taskList gracefully
+func TestNilTaskListHandling(t *testing.T) {
+	t.Run("calculateDetailPanePosition with nil taskList", func(t *testing.T) {
+		m := &Model{
+			taskList:           nil,
+			detailPanePosition: DetailPaneBottom, // Set to bottom initially
+		}
+
+		// Should not panic with nil taskList
+		m.calculateDetailPanePosition()
+
+		// Position should remain unchanged since taskList is nil
+		if m.detailPanePosition != DetailPaneBottom {
+			t.Errorf("Expected position to remain DetailPaneBottom, got %v", m.detailPanePosition)
+		}
+	})
+
+	t.Run("renderDetailPane with nil taskList", func(t *testing.T) {
+		m := &Model{
+			taskList: nil,
+		}
+
+		// Should not panic with nil taskList
+		result := m.renderDetailPane(80, 20)
+
+		// Should return appropriate message
+		if result == "" {
+			t.Error("Expected non-empty result from renderDetailPane with nil taskList")
+		}
+		if !strings.Contains(result, "No task list available") {
+			t.Errorf("Expected result to mention no task list, got: %s", result)
+		}
+	})
+
+	t.Run("renderTasksWithDetailPane with nil taskList", func(t *testing.T) {
+		m := &Model{
+			taskList: nil,
+		}
+
+		// Should not panic with nil taskList
+		result := m.renderTasksWithDetailPane()
+
+		// Should return appropriate message
+		if result != "No tasks" {
+			t.Errorf("Expected 'No tasks' result, got: %s", result)
+		}
+	})
+
+	t.Run("updateNotesForSelectedTask with nil taskList", func(t *testing.T) {
+		m := &Model{
+			taskList:  nil,
+			notesPane: components.NewNotesPane(),
+		}
+
+		// Should not panic with nil taskList
+		m.updateNotesForSelectedTask()
+
+		// selectedTaskID should remain empty
+		if m.selectedTaskID != "" {
+			t.Errorf("Expected selectedTaskID to remain empty, got %s", m.selectedTaskID)
+		}
+	})
+
+	t.Run("updateNotesForSelectedTask with nil notesPane", func(t *testing.T) {
+		m := &Model{
+			taskList:  components.NewTaskList([]journal.Task{}),
+			notesPane: nil,
+		}
+
+		// Should not panic with nil notesPane
+		m.updateNotesForSelectedTask()
+	})
+
+	t.Run("full model with nil taskList during initialization", func(t *testing.T) {
+		// Create a model without taskService (simulates early initialization)
+		service := &journal.Service{}
+		m := NewModel(service)
+
+		// taskList should be nil initially
+		if m.taskList != nil {
+			t.Error("Expected taskList to be nil before journal loaded")
+		}
+
+		// These methods should not panic even with nil taskList
+		m.calculateDetailPanePosition()
+
+		detailPaneView := m.renderDetailPane(80, 20)
+		if detailPaneView == "" {
+			t.Error("Expected non-empty detail pane view")
+		}
+
+		tasksView := m.renderTasksWithDetailPane()
+		if tasksView == "" {
+			t.Error("Expected non-empty tasks view")
+		}
+	})
+}
