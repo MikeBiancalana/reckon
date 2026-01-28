@@ -100,6 +100,12 @@ const (
 	MinTerminalHeight = 24
 )
 
+// Border dimensions for lipgloss boxes
+const (
+	BorderWidth  = 2 // Left + right border (1 char each)
+	BorderHeight = 2 // Top + bottom border (1 char each)
+)
+
 // Model represents the main TUI state
 type Model struct {
 	service        *journal.Service
@@ -569,24 +575,21 @@ func (m *Model) renderTasksWithDetailPane() string {
 	// Calculate dimensions for task sections
 	sectionDims := CalculateTaskSectionDimensions(m.width, m.height, m.detailPanePosition, m.notesPaneVisible)
 
-	borderWidth := 2
-	borderHeight := 2
-
 	// Build sections based on detail pane position
 	var sections []string
 
 	if !m.notesPaneVisible {
 		// No detail pane: show all three sections
 		if sectionDims.TodayHeight > 0 {
-			todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-borderWidth, sectionDims.TodayHeight-borderHeight)
+			todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-BorderWidth, sectionDims.TodayHeight-BorderHeight)
 			sections = append(sections, todayView)
 		}
 		if sectionDims.ThisWeekHeight > 0 {
-			thisWeekView := m.renderTaskSection("THIS WEEK", grouped.ThisWeek, sectionDims.CenterWidth-borderWidth, sectionDims.ThisWeekHeight-borderHeight)
+			thisWeekView := m.renderTaskSection("THIS WEEK", grouped.ThisWeek, sectionDims.CenterWidth-BorderWidth, sectionDims.ThisWeekHeight-BorderHeight)
 			sections = append(sections, thisWeekView)
 		}
 		if sectionDims.AllTasksHeight > 0 {
-			allTasksView := m.renderTaskSection("ALL TASKS", grouped.AllTasks, sectionDims.CenterWidth-borderWidth, sectionDims.AllTasksHeight-borderHeight)
+			allTasksView := m.renderTaskSection("ALL TASKS", grouped.AllTasks, sectionDims.CenterWidth-BorderWidth, sectionDims.AllTasksHeight-BorderHeight)
 			sections = append(sections, allTasksView)
 		}
 	} else {
@@ -595,29 +598,29 @@ func (m *Model) renderTasksWithDetailPane() string {
 		case DetailPaneBottom:
 			// Show TODAY and THIS WEEK, detail pane at bottom
 			if sectionDims.TodayHeight > 0 {
-				todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-borderWidth, sectionDims.TodayHeight-borderHeight)
+				todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-BorderWidth, sectionDims.TodayHeight-BorderHeight)
 				sections = append(sections, todayView)
 			}
 			if sectionDims.ThisWeekHeight > 0 {
-				thisWeekView := m.renderTaskSection("THIS WEEK", grouped.ThisWeek, sectionDims.CenterWidth-borderWidth, sectionDims.ThisWeekHeight-borderHeight)
+				thisWeekView := m.renderTaskSection("THIS WEEK", grouped.ThisWeek, sectionDims.CenterWidth-BorderWidth, sectionDims.ThisWeekHeight-BorderHeight)
 				sections = append(sections, thisWeekView)
 			}
 			if sectionDims.DetailHeight > 0 {
-				detailView := m.renderDetailPane(sectionDims.CenterWidth-borderWidth, sectionDims.DetailHeight-borderHeight)
+				detailView := m.renderDetailPane(sectionDims.CenterWidth-BorderWidth, sectionDims.DetailHeight-BorderHeight)
 				sections = append(sections, detailView)
 			}
 		case DetailPaneMiddle:
 			// Show TODAY, detail pane in middle, ALL TASKS at bottom
 			if sectionDims.TodayHeight > 0 {
-				todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-borderWidth, sectionDims.TodayHeight-borderHeight)
+				todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-BorderWidth, sectionDims.TodayHeight-BorderHeight)
 				sections = append(sections, todayView)
 			}
 			if sectionDims.DetailHeight > 0 {
-				detailView := m.renderDetailPane(sectionDims.CenterWidth-borderWidth, sectionDims.DetailHeight-borderHeight)
+				detailView := m.renderDetailPane(sectionDims.CenterWidth-BorderWidth, sectionDims.DetailHeight-BorderHeight)
 				sections = append(sections, detailView)
 			}
 			if sectionDims.AllTasksHeight > 0 {
-				allTasksView := m.renderTaskSection("ALL TASKS", grouped.AllTasks, sectionDims.CenterWidth-borderWidth, sectionDims.AllTasksHeight-borderHeight)
+				allTasksView := m.renderTaskSection("ALL TASKS", grouped.AllTasks, sectionDims.CenterWidth-BorderWidth, sectionDims.AllTasksHeight-BorderHeight)
 				sections = append(sections, allTasksView)
 			}
 		}
@@ -630,7 +633,7 @@ func (m *Model) renderTasksWithDetailPane() string {
 
 	separatorStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240"))
-	separator := separatorStyle.Render(strings.Repeat("─", sectionDims.CenterWidth-borderWidth))
+	separator := separatorStyle.Render(strings.Repeat("─", sectionDims.CenterWidth-BorderWidth))
 
 	return strings.Join(sections, "\n"+separator+"\n")
 }
@@ -639,33 +642,29 @@ func (m *Model) renderTasksWithDetailPane() string {
 func (m *Model) renderNewLayout() string {
 	dims := CalculatePaneDimensions(m.width, m.height, m.notesPaneVisible)
 
-	// Border overhead: 2 chars width (left + right), 2 chars height (top + bottom)
-	borderWidth := 2
-	borderHeight := 2
-
 	// Size components accounting for borders
 	if m.taskList != nil {
-		m.taskList.SetSize(dims.TasksWidth-borderWidth, dims.TasksHeight-borderHeight)
+		m.taskList.SetSize(dims.TasksWidth-BorderWidth, dims.TasksHeight-BorderHeight)
 		m.taskList.SetFocused(m.focusedSection == SectionTasks)
 	}
 	if m.notesPane != nil {
-		m.notesPane.SetSize(dims.NotesWidth-borderWidth, dims.NotesHeight-borderHeight)
+		m.notesPane.SetSize(dims.NotesWidth-BorderWidth, dims.NotesHeight-BorderHeight)
 		// Notes pane is not focusable, so no SetFocused
 	}
 	if m.scheduleView != nil {
-		m.scheduleView.SetSize(dims.RightWidth-borderWidth, dims.ScheduleHeight-borderHeight)
+		m.scheduleView.SetSize(dims.RightWidth-BorderWidth, dims.ScheduleHeight-BorderHeight)
 		m.scheduleView.SetFocused(m.focusedSection == SectionSchedule)
 	}
 	if m.intentionList != nil {
-		m.intentionList.SetSize(dims.RightWidth-borderWidth, dims.IntentionsHeight-borderHeight)
+		m.intentionList.SetSize(dims.RightWidth-BorderWidth, dims.IntentionsHeight-BorderHeight)
 		m.intentionList.SetFocused(m.focusedSection == SectionIntentions)
 	}
 	if m.winsView != nil {
-		m.winsView.SetSize(dims.RightWidth-borderWidth, dims.WinsHeight-borderHeight)
+		m.winsView.SetSize(dims.RightWidth-BorderWidth, dims.WinsHeight-BorderHeight)
 		m.winsView.SetFocused(m.focusedSection == SectionWins)
 	}
 	if m.logView != nil {
-		m.logView.SetSize(dims.LogsWidth-borderWidth, dims.LogsHeight-borderHeight)
+		m.logView.SetSize(dims.LogsWidth-BorderWidth, dims.LogsHeight-BorderHeight)
 		m.logView.SetFocused(m.focusedSection == SectionLogs)
 	}
 
@@ -676,11 +675,11 @@ func (m *Model) renderNewLayout() string {
 	}
 
 	// Calculate inner dimensions for centering
-	logsInnerWidth := dims.LogsWidth - borderWidth
-	logsInnerHeight := dims.LogsHeight - borderHeight
-	tasksInnerWidth := dims.TasksWidth - borderWidth
-	tasksInnerHeight := dims.TasksHeight - borderHeight
-	rightInnerWidth := dims.RightWidth - borderWidth
+	logsInnerWidth := dims.LogsWidth - BorderWidth
+	logsInnerHeight := dims.LogsHeight - BorderHeight
+	tasksInnerWidth := dims.TasksWidth - BorderWidth
+	tasksInnerHeight := dims.TasksHeight - BorderHeight
+	rightInnerWidth := dims.RightWidth - BorderWidth
 
 	// Center and box Logs pane
 	logsBox := m.getBorderStyle(SectionLogs).Render(
@@ -698,7 +697,7 @@ func (m *Model) renderNewLayout() string {
 	tasksBox := m.getBorderStyle(SectionTasks).Render(tasksCentered)
 
 	// Build right sidebar with centered, boxed components
-	rightSidebar := m.buildRightSidebar(dims, rightInnerWidth, borderHeight)
+	rightSidebar := m.buildRightSidebar(dims, rightInnerWidth, BorderHeight)
 
 	// Join main panes horizontally
 	content := lipgloss.JoinHorizontal(
@@ -751,14 +750,14 @@ func (m *Model) renderNewLayout() string {
 }
 
 // buildRightSidebar constructs the vertically stacked right sidebar
-func (m *Model) buildRightSidebar(dims PaneDimensions, rightInnerWidth, borderHeight int) string {
+func (m *Model) buildRightSidebar(dims PaneDimensions, rightInnerWidth, _ int) string {
 	if m.scheduleView == nil || m.intentionList == nil || m.winsView == nil {
 		return ""
 	}
 
-	scheduleView := centerView(rightInnerWidth, dims.ScheduleHeight-borderHeight, m.scheduleView.View())
-	intentionsView := centerView(rightInnerWidth, dims.IntentionsHeight-borderHeight, m.intentionList.View())
-	winsView := centerView(rightInnerWidth, dims.WinsHeight-borderHeight, m.winsView.View())
+	scheduleView := centerView(rightInnerWidth, dims.ScheduleHeight-BorderHeight, m.scheduleView.View())
+	intentionsView := centerView(rightInnerWidth, dims.IntentionsHeight-BorderHeight, m.intentionList.View())
+	winsView := centerView(rightInnerWidth, dims.WinsHeight-BorderHeight, m.winsView.View())
 
 	scheduleBox := m.getBorderStyle(SectionSchedule).Render(scheduleView)
 	intentionsBox := m.getBorderStyle(SectionIntentions).Render(intentionsView)
