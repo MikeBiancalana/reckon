@@ -628,20 +628,26 @@ func (m *Model) handleScheduleTask() (tea.Model, tea.Cmd) {
 
 	// Get selected task
 	selectedTask := m.taskList.SelectedTask()
-	if selectedTask == nil || m.taskList.IsSelectedItemNote() {
-		return m, nil
+	if selectedTask == nil {
+		m.successMessage = "No task selected"
+		return m, func() tea.Msg {
+			return clearSuccessMsg{}
+		}
+	}
+
+	if m.taskList.IsSelectedItemNote() {
+		m.successMessage = "Cannot schedule a note"
+		return m, func() tea.Msg {
+			return clearSuccessMsg{}
+		}
 	}
 
 	// Show date picker in schedule mode
 	m.datePickerMode = "schedule"
 	m.datePickerTargetTask = selectedTask.ID
 	m.datePickerVisible = true
-	if m.datePicker != nil {
-		m.datePicker = components.NewDatePicker("Schedule Task")
-		return m, m.datePicker.Show()
-	}
-
-	return m, nil
+	m.datePicker = components.NewDatePicker("Schedule Task")
+	return m, m.datePicker.Show()
 }
 
 // handleSetDeadline initiates deadline setting
@@ -653,20 +659,26 @@ func (m *Model) handleSetDeadline() (tea.Model, tea.Cmd) {
 
 	// Get selected task
 	selectedTask := m.taskList.SelectedTask()
-	if selectedTask == nil || m.taskList.IsSelectedItemNote() {
-		return m, nil
+	if selectedTask == nil {
+		m.successMessage = "No task selected"
+		return m, func() tea.Msg {
+			return clearSuccessMsg{}
+		}
+	}
+
+	if m.taskList.IsSelectedItemNote() {
+		m.successMessage = "Cannot set deadline for a note"
+		return m, func() tea.Msg {
+			return clearSuccessMsg{}
+		}
 	}
 
 	// Show date picker in deadline mode
 	m.datePickerMode = "deadline"
 	m.datePickerTargetTask = selectedTask.ID
 	m.datePickerVisible = true
-	if m.datePicker != nil {
-		m.datePicker = components.NewDatePicker("Set Deadline")
-		return m, m.datePicker.Show()
-	}
-
-	return m, nil
+	m.datePicker = components.NewDatePicker("Set Deadline")
+	return m, m.datePicker.Show()
 }
 
 // handleClearDate initiates clear date submenu
@@ -678,8 +690,18 @@ func (m *Model) handleClearDate() (tea.Model, tea.Cmd) {
 
 	// Get selected task
 	selectedTask := m.taskList.SelectedTask()
-	if selectedTask == nil || m.taskList.IsSelectedItemNote() {
-		return m, nil
+	if selectedTask == nil {
+		m.successMessage = "No task selected"
+		return m, func() tea.Msg {
+			return clearSuccessMsg{}
+		}
+	}
+
+	if m.taskList.IsSelectedItemNote() {
+		m.successMessage = "Cannot clear dates for a note"
+		return m, func() tea.Msg {
+			return clearSuccessMsg{}
+		}
 	}
 
 	// Show clear date submenu
@@ -688,17 +710,22 @@ func (m *Model) handleClearDate() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// closeDatePicker cleans up date picker state
+func (m *Model) closeDatePicker() {
+	m.datePickerVisible = false
+	m.datePickerMode = ""
+	m.datePickerTargetTask = ""
+	if m.datePicker != nil {
+		m.datePicker.Hide()
+	}
+}
+
 // handleDatePickerKeys handles keyboard input when date picker is visible
 func (m *Model) handleDatePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
 		// Cancel date picker
-		m.datePickerVisible = false
-		m.datePickerMode = ""
-		m.datePickerTargetTask = ""
-		if m.datePicker != nil {
-			m.datePicker.Hide()
-		}
+		m.closeDatePicker()
 		return m, nil
 
 	case tea.KeyEnter:
@@ -721,10 +748,6 @@ func (m *Model) handleDatePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Format as YYYY-MM-DD
 		dateStr := parsedDate.Format("2006-01-02")
 
-		// Hide date picker
-		m.datePickerVisible = false
-		m.datePicker.Hide()
-
 		// Execute the appropriate command based on mode
 		capturedMode := m.datePickerMode
 		capturedTaskID := m.datePickerTargetTask
@@ -732,25 +755,24 @@ func (m *Model) handleDatePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		capturedDate := dateStr
 
 		// Reset state
-		m.datePickerMode = ""
-		m.datePickerTargetTask = ""
+		m.closeDatePicker()
 
 		return m, func() tea.Msg {
 			if capturedTaskService == nil {
-				return errMsg{err: fmt.Errorf("task service not available")}
+				return errMsg{err: fmt.Errorf("task service not available for setting date")}
 			}
 
 			var err error
 			if capturedMode == "schedule" {
 				err = capturedTaskService.ScheduleTask(capturedTaskID, capturedDate)
 				if err != nil {
-					return errMsg{err: err}
+					return errMsg{err: fmt.Errorf("failed to schedule task: %w", err)}
 				}
 				return taskScheduledMsg{date: capturedDate}
 			} else if capturedMode == "deadline" {
 				err = capturedTaskService.SetTaskDeadline(capturedTaskID, capturedDate)
 				if err != nil {
-					return errMsg{err: err}
+					return errMsg{err: fmt.Errorf("failed to set deadline: %w", err)}
 				}
 				return taskDeadlineSetMsg{date: capturedDate}
 			}
@@ -780,12 +802,12 @@ func (m *Model) handleClearDateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		return m, func() tea.Msg {
 			if capturedTaskService == nil {
-				return errMsg{err: fmt.Errorf("task service not available")}
+				return errMsg{err: fmt.Errorf("task service not available for clearing schedule")}
 			}
 
 			err := capturedTaskService.ClearTaskSchedule(capturedTaskID)
 			if err != nil {
-				return errMsg{err: err}
+				return errMsg{err: fmt.Errorf("failed to clear schedule: %w", err)}
 			}
 			return taskDateClearedMsg{clearedType: "schedule"}
 		}
@@ -800,12 +822,12 @@ func (m *Model) handleClearDateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		return m, func() tea.Msg {
 			if capturedTaskService == nil {
-				return errMsg{err: fmt.Errorf("task service not available")}
+				return errMsg{err: fmt.Errorf("task service not available for clearing deadline")}
 			}
 
 			err := capturedTaskService.ClearTaskDeadline(capturedTaskID)
 			if err != nil {
-				return errMsg{err: err}
+				return errMsg{err: fmt.Errorf("failed to clear deadline: %w", err)}
 			}
 			return taskDateClearedMsg{clearedType: "deadline"}
 		}
@@ -820,16 +842,16 @@ func (m *Model) handleClearDateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		return m, func() tea.Msg {
 			if capturedTaskService == nil {
-				return errMsg{err: fmt.Errorf("task service not available")}
+				return errMsg{err: fmt.Errorf("task service not available for clearing dates")}
 			}
 
 			err := capturedTaskService.ClearTaskSchedule(capturedTaskID)
 			if err != nil {
-				return errMsg{err: err}
+				return errMsg{err: fmt.Errorf("failed to clear schedule: %w", err)}
 			}
 			err = capturedTaskService.ClearTaskDeadline(capturedTaskID)
 			if err != nil {
-				return errMsg{err: err}
+				return errMsg{err: fmt.Errorf("failed to clear deadline: %w", err)}
 			}
 			return taskDateClearedMsg{clearedType: "both"}
 		}

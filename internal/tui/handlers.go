@@ -1,6 +1,8 @@
 package tui
 
 import (
+	stdtime "time"
+
 	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/MikeBiancalana/reckon/internal/time"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
@@ -127,14 +129,11 @@ func (m *Model) handleTasksLoaded(msg tasksLoadedMsg) (tea.Model, tea.Cmd) {
 
 	m.updateNotesForSelectedTask()
 
-	// Clear success message after a brief display
-	// Note: The message will be visible for one render cycle before clearing
-	// This is intentional to ensure the user sees the message
+	// Clear success message after 2 seconds
 	if m.successMessage != "" {
-		cmd := func() tea.Msg {
+		return m, tea.Tick(2*stdtime.Second, func(t stdtime.Time) tea.Msg {
 			return clearSuccessMsg{}
-		}
-		return m, cmd
+		})
 	}
 
 	return m, nil
