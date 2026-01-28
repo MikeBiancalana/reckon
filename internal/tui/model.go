@@ -210,6 +210,10 @@ func getTaskSection(task *journal.Task) TaskSection {
 // - If task is in TODAY or THIS WEEK: show detail pane at bottom (replacing ALL TASKS)
 // - If task is in ALL TASKS: show detail pane in middle (replacing THIS WEEK)
 func (m *Model) calculateDetailPanePosition() {
+	if m.taskList == nil {
+		return
+	}
+
 	selectedTask := m.taskList.SelectedTask()
 	section := getTaskSection(selectedTask)
 
@@ -278,6 +282,10 @@ func (m *Model) renderDetailPane(width, height int) string {
 	titleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("205")).
 		Bold(true)
+
+	if m.taskList == nil {
+		return titleStyle.Render("━━ TASK DETAILS ━━") + "\n\nNo task list available"
+	}
 
 	selectedTask := m.taskList.SelectedTask()
 	if selectedTask == nil {
@@ -550,6 +558,10 @@ func (m *Model) isRightPaneFocused() bool {
 
 // renderTasksWithDetailPane renders the center column with three task sections and optional detail pane
 func (m *Model) renderTasksWithDetailPane() string {
+	if m.taskList == nil {
+		return "No tasks"
+	}
+
 	// Get grouped tasks
 	allTasks := m.taskList.GetTasks()
 	grouped := components.GroupTasksByTime(allTasks)
