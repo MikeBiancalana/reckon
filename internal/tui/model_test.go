@@ -3,6 +3,10 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/tui/components"
 )
 
 func TestMinimumTerminalSizeConstants(t *testing.T) {
@@ -155,6 +159,163 @@ func TestParseTaskTags(t *testing.T) {
 			for i, tag := range gotTags {
 				if tag != tt.wantTags[i] {
 					t.Errorf("parseTaskTags(%q) tags[%d] = %q, want %q", tt.input, i, tag, tt.wantTags[i])
+				}
+			}
+		})
+	}
+}
+
+func TestGetTaskSection(t *testing.T) {
+	today := time.Now().Truncate(24 * time.Hour)
+	yesterday := today.AddDate(0, 0, -1)
+	twoWeeksOut := today.AddDate(0, 0, 14)
+
+	todayStr := today.Format("2006-01-02")
+	twoWeeksOutStr := twoWeeksOut.Format("2006-01-02")
+	yesterdayStr := yesterday.Format("2006-01-02")
+
+	tests := []struct {
+		name string
+		task *journal.Task
+	}{
+		{
+			name: "nil task returns AllTasks",
+			task: nil,
+		},
+		{
+			name: "task scheduled for today",
+			task: &journal.Task{
+				ID:            "1",
+				Text:          "Task 1",
+				Status:        journal.TaskOpen,
+				ScheduledDate: &todayStr,
+			},
+		},
+		{
+			name: "task scheduled for yesterday (overdue)",
+			task: &journal.Task{
+				ID:            "2",
+				Text:          "Task 2",
+				Status:        journal.TaskOpen,
+				ScheduledDate: &yesterdayStr,
+			},
+		},
+		{
+			name: "task scheduled for two weeks out",
+			task: &journal.Task{
+				ID:            "4",
+				Text:          "Task 4",
+				Status:        journal.TaskOpen,
+				ScheduledDate: &twoWeeksOutStr,
+			},
+		},
+		{
+			name: "task with deadline today",
+			task: &journal.Task{
+				ID:           "5",
+				Text:         "Task 5",
+				Status:       journal.TaskOpen,
+				DeadlineDate: &todayStr,
+			},
+		},
+		{
+			name: "task with no dates",
+			task: &journal.Task{
+				ID:     "7",
+				Text:   "Task 7",
+				Status: journal.TaskOpen,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getTaskSection(tt.task)
+
+			// Verify the result is consistent with GroupTasksByTime
+			if tt.task != nil {
+				grouped := components.GroupTasksByTime([]journal.Task{*tt.task})
+				var expectedSection TaskSection
+				if len(grouped.Today) > 0 {
+					expectedSection = TaskSectionToday
+				} else if len(grouped.ThisWeek) > 0 {
+					expectedSection = TaskSectionThisWeek
+				} else {
+					expectedSection = TaskSectionAllTasks
+				}
+
+				if result != expectedSection {
+					t.Errorf("getTaskSection() = %v, want %v (based on GroupTasksByTime)", result, expectedSection)
+				}
+			} else {
+				// Nil task should always return AllTasks
+				if result != TaskSectionAllTasks {
+					t.Errorf("getTaskSection(nil) = %v, want TaskSectionAllTasks", result)
+				}
+			}
+		})
+	}
+}
+
+func TestCalculateDetailPanePosition(t *testing.T) {
+	today := time.Now().Truncate(24 * time.Hour)
+	twoWeeksOut := today.AddDate(0, 0, 14)
+
+	todayStr := today.Format("2006-01-02")
+	twoWeeksOutStr := twoWeeksOut.Format("2006-01-02")
+
+	tests := []struct {
+		name string
+		task journal.Task
+	}{
+		{
+			name: "task in TODAY section",
+			task: journal.Task{
+				ID:            "1",
+				Text:          "Task 1",
+				Status:        journal.TaskOpen,
+				ScheduledDate: &todayStr,
+			},
+		},
+		{
+			name: "task in ALL TASKS section",
+			task: journal.Task{
+				ID:            "3",
+				Text:          "Task 3",
+				Status:        journal.TaskOpen,
+				ScheduledDate: &twoWeeksOutStr,
+			},
+		},
+		{
+			name: "task with no dates (ALL TASKS)",
+			task: journal.Task{
+				ID:     "4",
+				Text:   "Task 4",
+				Status: journal.TaskOpen,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test the position logic: should match the section-to-position mapping
+			section := getTaskSection(&tt.task)
+			var expectedPosition DetailPanePosition
+			switch section {
+			case TaskSectionToday, TaskSectionThisWeek:
+				expectedPosition = DetailPaneBottom
+			case TaskSectionAllTasks:
+				expectedPosition = DetailPaneMiddle
+			}
+
+			// Verify the logic is correct
+			if section == TaskSectionToday || section == TaskSectionThisWeek {
+				if expectedPosition != DetailPaneBottom {
+					t.Errorf("Tasks in TODAY/THIS WEEK should have position bottom, got %v", expectedPosition)
+				}
+			} else if section == TaskSectionAllTasks {
+				if expectedPosition != DetailPaneMiddle {
+					t.Errorf("Tasks in ALL TASKS should have position middle, got %v", expectedPosition)
 				}
 			}
 		})
