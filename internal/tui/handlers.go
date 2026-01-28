@@ -126,6 +126,17 @@ func (m *Model) handleTasksLoaded(msg tasksLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.updateNotesForSelectedTask()
+
+	// Clear success message after a brief display
+	// Note: The message will be visible for one render cycle before clearing
+	// This is intentional to ensure the user sees the message
+	if m.successMessage != "" {
+		cmd := func() tea.Msg {
+			return clearSuccessMsg{}
+		}
+		return m, cmd
+	}
+
 	return m, nil
 }
 
@@ -253,4 +264,39 @@ func (m *Model) handleError(msg errMsg) (tea.Model, tea.Cmd) {
 	// Store error for display
 	m.lastError = msg.err
 	return m, nil
+}
+
+// handleTaskScheduled handles task scheduled confirmation
+func (m *Model) handleTaskScheduled(msg taskScheduledMsg) (tea.Model, tea.Cmd) {
+	// Show success message
+	parsedDate, _ := components.ParseRelativeDate(msg.date)
+	friendlyDate := parsedDate.Format("Jan 2")
+	m.successMessage = "✓ Task scheduled for " + friendlyDate
+	// Reload tasks to reflect the change
+	return m, m.loadTasks()
+}
+
+// handleTaskDeadlineSet handles task deadline set confirmation
+func (m *Model) handleTaskDeadlineSet(msg taskDeadlineSetMsg) (tea.Model, tea.Cmd) {
+	// Show success message
+	parsedDate, _ := components.ParseRelativeDate(msg.date)
+	friendlyDate := parsedDate.Format("Jan 2")
+	m.successMessage = "✓ Deadline set to " + friendlyDate
+	// Reload tasks to reflect the change
+	return m, m.loadTasks()
+}
+
+// handleTaskDateCleared handles task date cleared confirmation
+func (m *Model) handleTaskDateCleared(msg taskDateClearedMsg) (tea.Model, tea.Cmd) {
+	// Show success message
+	switch msg.clearedType {
+	case "schedule":
+		m.successMessage = "✓ Schedule cleared"
+	case "deadline":
+		m.successMessage = "✓ Deadline cleared"
+	case "both":
+		m.successMessage = "✓ Schedule and deadline cleared"
+	}
+	// Reload tasks to reflect the change
+	return m, m.loadTasks()
 }
