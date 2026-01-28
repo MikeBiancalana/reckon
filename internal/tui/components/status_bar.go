@@ -67,7 +67,7 @@ func (sb *StatusBar) generateHints() string {
 	case "Logs":
 		return "Logs | q:quit tab/shift+tab:section j/k:nav h/l:day T:today L:add enter/space:expand d:delete ?:help"
 	case "Tasks":
-		return "Tasks | q:quit tab/shift+tab:section j/k:nav h/l:day T:today t:add n:add note space:toggle enter:expand d:delete ?:help"
+		return "Tasks | q:quit tab/shift+tab:section j/k:nav h/l:day T:today t:add n:add note space:toggle enter:expand s:schedule D:deadline c:clear d:delete ?:help"
 	case "Schedule":
 		return "Schedule | q:quit tab/shift+tab:section j/k:nav h/l:day T:today a:add d:delete ?:help"
 	default:
