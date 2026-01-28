@@ -194,18 +194,57 @@ const (
 )
 
 // getTaskSection determines which section a task belongs to based on its schedule and deadline
+// This function mirrors the logic from components.GroupTasksByTime but is optimized for single tasks
+// to avoid creating a single-element slice and iterating through it.
 func getTaskSection(task *journal.Task) TaskSection {
 	if task == nil {
 		return TaskSectionAllTasks
 	}
 
-	// Use the existing GroupTasksByTime logic
-	grouped := components.GroupTasksByTime([]journal.Task{*task})
+	// Skip done tasks (they don't appear in any section)
+	if task.Status == journal.TaskDone {
+		return TaskSectionAllTasks
+	}
 
-	if len(grouped.Today) > 0 {
+	// Calculate time boundaries
+	today := stdtime.Now().Truncate(24 * stdtime.Hour)
+	now := stdtime.Now()
+	weekday := now.Weekday()
+	if weekday == stdtime.Sunday {
+		weekday = 7
+	}
+	weekStart := today.AddDate(0, 0, -int(weekday-stdtime.Monday))
+	weekEnd := weekStart.AddDate(0, 0, 7)
+
+	isToday := false
+	isThisWeek := false
+
+	// Check scheduled date
+	if task.ScheduledDate != nil && *task.ScheduledDate != "" {
+		if scheduledDate, err := stdtime.Parse("2006-01-02", *task.ScheduledDate); err == nil {
+			if scheduledDate.Equal(today) || scheduledDate.Before(today) {
+				isToday = true
+			} else if (scheduledDate.After(weekStart) || scheduledDate.Equal(weekStart)) && scheduledDate.Before(weekEnd) {
+				isThisWeek = true
+			}
+		}
+	}
+
+	// Check deadline date
+	if task.DeadlineDate != nil && *task.DeadlineDate != "" {
+		if deadlineDate, err := stdtime.Parse("2006-01-02", *task.DeadlineDate); err == nil {
+			if deadlineDate.Before(today) || deadlineDate.Equal(today) {
+				isToday = true
+			} else if (deadlineDate.After(weekStart) || deadlineDate.Equal(weekStart)) && deadlineDate.Before(weekEnd) {
+				isThisWeek = true
+			}
+		}
+	}
+
+	if isToday {
 		return TaskSectionToday
 	}
-	if len(grouped.ThisWeek) > 0 {
+	if isThisWeek {
 		return TaskSectionThisWeek
 	}
 	return TaskSectionAllTasks

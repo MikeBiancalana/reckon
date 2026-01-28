@@ -473,3 +473,69 @@ func TestRenderTasksWithDetailPane_SmallWidth(t *testing.T) {
 		}
 	})
 }
+
+// TestGetTaskSection_DoneTasks tests that done tasks are categorized correctly
+func TestGetTaskSection_DoneTasks(t *testing.T) {
+	today := time.Now().Truncate(24 * time.Hour)
+	todayStr := today.Format("2006-01-02")
+
+	t.Run("done task with today's schedule returns AllTasks", func(t *testing.T) {
+		task := &journal.Task{
+			ID:            "1",
+			Text:          "Done task",
+			Status:        journal.TaskDone,
+			ScheduledDate: &todayStr,
+		}
+
+		section := getTaskSection(task)
+
+		// Done tasks should not appear in TODAY section
+		if section != TaskSectionAllTasks {
+			t.Errorf("Expected done task to be in AllTasks section, got %v", section)
+		}
+	})
+
+	t.Run("done task with today's deadline returns AllTasks", func(t *testing.T) {
+		task := &journal.Task{
+			ID:           "2",
+			Text:         "Done task",
+			Status:       journal.TaskDone,
+			DeadlineDate: &todayStr,
+		}
+
+		section := getTaskSection(task)
+
+		// Done tasks should not appear in TODAY section
+		if section != TaskSectionAllTasks {
+			t.Errorf("Expected done task to be in AllTasks section, got %v", section)
+		}
+	})
+}
+
+// TestGetTaskSection_Performance is a benchmark-style test to ensure the optimized version is efficient
+func TestGetTaskSection_Performance(t *testing.T) {
+	today := time.Now().Truncate(24 * time.Hour)
+	todayStr := today.Format("2006-01-02")
+
+	task := &journal.Task{
+		ID:            "1",
+		Text:          "Test task",
+		Status:        journal.TaskOpen,
+		ScheduledDate: &todayStr,
+	}
+
+	// Run many times to ensure no significant performance regression
+	iterations := 10000
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		getTaskSection(task)
+	}
+	elapsed := time.Since(start)
+
+	// Should complete very quickly (well under 100ms for 10000 iterations)
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("Performance regression: %d iterations took %v (expected < 100ms)", iterations, elapsed)
+	}
+
+	t.Logf("Performance: %d iterations completed in %v", iterations, elapsed)
+}
