@@ -120,6 +120,16 @@ type Model struct {
 	selectedTaskID   string
 	notesPaneVisible bool
 
+	// Date picker state
+	datePicker           *components.DatePicker
+	datePickerVisible    bool
+	datePickerMode       string // "schedule" or "deadline"
+	datePickerTargetTask string // ID of task being scheduled/deadline-set
+
+	// Clear date submenu state
+	clearDateMode       bool
+	clearDateTargetTask string // ID of task for clear submenu
+
 	// State for modes
 	helpMode          bool
 	taskCreationMode  bool
@@ -133,6 +143,7 @@ type Model struct {
 	noteTaskID        string   // ID of task being noted
 	noteLogEntryID    string   // ID of log entry being noted
 	lastError         error
+	successMessage    string // Temporary success message
 
 	// Terminal size validation
 	terminalTooSmall bool
@@ -179,6 +190,7 @@ func NewModel(service *journal.Service) *Model {
 		statusBar:      sb,
 		summaryView:    components.NewSummaryView(),
 		notesPane:      components.NewNotesPane(),
+		datePicker:     components.NewDatePicker(""),
 	}
 }
 
@@ -258,6 +270,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case taskNoteDeletedMsg:
 		return m.handleTaskNoteDeleted(msg)
 
+	case taskScheduledMsg:
+		return m.handleTaskScheduled(msg)
+
+	case taskDeadlineSetMsg:
+		return m.handleTaskDeadlineSet(msg)
+
+	case taskDateClearedMsg:
+		return m.handleTaskDateCleared(msg)
+
+	case clearSuccessMsg:
+		m.successMessage = ""
+		return m, nil
+
 	case fileChangedMsg:
 		return m.handleFileChanged(msg)
 
@@ -303,6 +328,11 @@ func (m *Model) View() string {
 		if m.lastError != nil {
 			view += "\n\nError: " + m.lastError.Error()
 		}
+		return view
+	}
+
+	if m.clearDateMode {
+		view := "Clear: [S]chedule [D]eadline [B]oth ESC:cancel"
 		return view
 	}
 
@@ -495,6 +525,15 @@ func (m *Model) renderNewLayout() string {
 		textEntry = m.textEntryBar.View()
 	}
 
+	// Add success message if present
+	successMsg := ""
+	if m.successMessage != "" {
+		successStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("40")).
+			Padding(0, 1)
+		successMsg = successStyle.Render(m.successMessage)
+	}
+
 	// Add summary view
 	summary := ""
 	if m.summaryView != nil {
@@ -509,7 +548,16 @@ func (m *Model) renderNewLayout() string {
 		status = m.statusBar.View()
 	}
 
-	return content + "\n" + textEntry + "\n" + summary + "\n" + status
+	mainView := content + "\n" + textEntry + "\n" + successMsg + "\n" + summary + "\n" + status
+
+	// Overlay date picker if visible
+	if m.datePickerVisible && m.datePicker != nil {
+		overlay := m.datePicker.View()
+		// Center the date picker overlay using Place
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
+	}
+
+	return mainView
 }
 
 // buildRightSidebar constructs the vertically stacked right sidebar
@@ -638,3 +686,17 @@ type TaskNoteDeleteMsg struct {
 }
 
 type taskNoteDeletedMsg struct{}
+
+type taskScheduledMsg struct {
+	date string
+}
+
+type taskDeadlineSetMsg struct {
+	date string
+}
+
+type taskDateClearedMsg struct {
+	clearedType string // "schedule", "deadline", or "both"
+}
+
+type clearSuccessMsg struct{}
