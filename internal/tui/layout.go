@@ -100,3 +100,73 @@ func CalculatePaneDimensions(termWidth, termHeight int, notesPaneVisible bool) P
 
 	return dims
 }
+
+// TaskSectionDimensions holds dimensions for the three-section task view
+type TaskSectionDimensions struct {
+	// Center column width (same for all sections)
+	CenterWidth int
+
+	// Section heights
+	TodayHeight    int // Top section
+	ThisWeekHeight int // Middle section
+	AllTasksHeight int // Bottom section
+
+	// Detail pane dimensions (replaces one of the sections)
+	DetailHeight int
+}
+
+// CalculateTaskSectionDimensions computes dimensions for the three-section task view
+// with detail pane positioning. The center column is divided into three vertical sections:
+// TODAY (top), THIS WEEK (middle), ALL TASKS (bottom).
+// When detail pane is visible, it replaces one of these sections based on detailPanePosition.
+func CalculateTaskSectionDimensions(termWidth, termHeight int, detailPanePosition DetailPanePosition, detailPaneVisible bool) TaskSectionDimensions {
+	dims := TaskSectionDimensions{}
+
+	// Calculate center column width (40% of terminal width)
+	dims.CenterWidth = int(float64(termWidth) * 0.40)
+
+	// Calculate available height (terminal height minus fixed bottom bars: 3 + 1 + 1 for text entry, summary, status)
+	textEntryHeight := 3
+	statusHeight := 1
+	summaryHeight := 1
+	availableHeight := termHeight - textEntryHeight - statusHeight - summaryHeight
+	if availableHeight < 0 {
+		availableHeight = 0
+	}
+
+	// Account for section separators (2 lines between 3 sections)
+	const sectionSeparators = 2
+	effectiveHeight := availableHeight - sectionSeparators
+	if effectiveHeight < 0 {
+		effectiveHeight = 0
+	}
+
+	if !detailPaneVisible {
+		// No detail pane: split evenly among three sections (33% each)
+		dims.TodayHeight = effectiveHeight / 3
+		dims.ThisWeekHeight = effectiveHeight / 3
+		dims.AllTasksHeight = effectiveHeight - dims.TodayHeight - dims.ThisWeekHeight
+	} else {
+		// Detail pane visible: replace one section
+		switch detailPanePosition {
+		case DetailPaneBottom:
+			// Detail pane replaces ALL TASKS (bottom)
+			// TODAY and THIS WEEK split the available height (50-50)
+			topHalfHeight := effectiveHeight / 2
+			dims.TodayHeight = topHalfHeight / 2
+			dims.ThisWeekHeight = topHalfHeight - dims.TodayHeight
+			dims.AllTasksHeight = 0
+			dims.DetailHeight = effectiveHeight - topHalfHeight
+		case DetailPaneMiddle:
+			// Detail pane replaces THIS WEEK (middle)
+			// TODAY and ALL TASKS split the available height (50-50)
+			topHalfHeight := effectiveHeight / 2
+			dims.TodayHeight = topHalfHeight
+			dims.ThisWeekHeight = 0
+			dims.AllTasksHeight = effectiveHeight - topHalfHeight
+			dims.DetailHeight = topHalfHeight
+		}
+	}
+
+	return dims
+}

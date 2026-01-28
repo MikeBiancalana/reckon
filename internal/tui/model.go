@@ -12,6 +12,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// DetailPanePosition represents where the detail pane should be displayed
+type DetailPanePosition int
+
+const (
+	DetailPaneBottom DetailPanePosition = iota // Detail pane replaces bottom section (ALL TASKS)
+	DetailPaneMiddle                           // Detail pane replaces middle section (THIS WEEK)
+)
+
 // Section represents different sections of the journal
 //
 // Async Closure Capture Pattern
@@ -120,6 +128,9 @@ type Model struct {
 	selectedTaskID   string
 	notesPaneVisible bool
 
+	// Detail pane positioning
+	detailPanePosition DetailPanePosition
+
 	// Date picker state
 	datePicker           *components.DatePicker
 	datePickerVisible    bool
@@ -165,6 +176,127 @@ func (m *Model) updateNotesForSelectedTask() {
 	}
 	m.selectedTaskID = selectedTask.ID
 	m.notesPane.UpdateNotes(selectedTask.ID, selectedTask.Notes)
+}
+
+// TaskSection represents which time-based section a task belongs to
+type TaskSection int
+
+const (
+	TaskSectionToday    TaskSection = iota // Task is scheduled/due today or overdue
+	TaskSectionThisWeek                    // Task is scheduled/due this week (but not today)
+	TaskSectionAllTasks                    // All other tasks
+)
+
+// getTaskSection determines which section a task belongs to based on its schedule and deadline
+func getTaskSection(task *journal.Task) TaskSection {
+	if task == nil {
+		return TaskSectionAllTasks
+	}
+
+	// Use the existing GroupTasksByTime logic
+	grouped := components.GroupTasksByTime([]journal.Task{*task})
+
+	if len(grouped.Today) > 0 {
+		return TaskSectionToday
+	}
+	if len(grouped.ThisWeek) > 0 {
+		return TaskSectionThisWeek
+	}
+	return TaskSectionAllTasks
+}
+
+// calculateDetailPanePosition determines where to show the detail pane based on the selected task's section
+// Rules:
+// - If task is in TODAY or THIS WEEK: show detail pane at bottom (replacing ALL TASKS)
+// - If task is in ALL TASKS: show detail pane in middle (replacing THIS WEEK)
+func (m *Model) calculateDetailPanePosition() {
+	selectedTask := m.taskList.SelectedTask()
+	section := getTaskSection(selectedTask)
+
+	switch section {
+	case TaskSectionToday, TaskSectionThisWeek:
+		m.detailPanePosition = DetailPaneBottom
+	case TaskSectionAllTasks:
+		m.detailPanePosition = DetailPaneMiddle
+	}
+}
+
+// renderTaskSection renders a task section with a header
+func (m *Model) renderTaskSection(title string, tasks []journal.Task, width, height int) string {
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("205")).
+		Bold(true)
+
+	header := titleStyle.Render(fmt.Sprintf("━━ %s (%d) ━━", title, len(tasks)))
+
+	if len(tasks) == 0 {
+		noTasksStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Padding(1, 2)
+		content := noTasksStyle.Render("No tasks")
+		return header + "\n" + content
+	}
+
+	// Define task styles
+	taskStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("39"))
+	taskDoneStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Strikethrough(true)
+
+	// Render tasks
+	var taskLines []string
+	for _, task := range tasks {
+		checkbox := "[ ]"
+		style := taskStyle
+		if task.Status == journal.TaskDone {
+			checkbox = "[x]"
+			style = taskDoneStyle
+		}
+
+		line := fmt.Sprintf("%s %s", checkbox, task.Text)
+		if len(task.Tags) > 0 {
+			line = line + fmt.Sprintf(" [%s]", strings.Join(task.Tags, " "))
+		}
+
+		taskLines = append(taskLines, style.Render(line))
+	}
+
+	content := strings.Join(taskLines, "\n")
+
+	// Ensure content fits within height
+	contentHeight := height - 1 // Reserve 1 line for header
+	if contentHeight < 0 {
+		contentHeight = 0
+	}
+
+	return header + "\n" + content
+}
+
+// renderDetailPane renders a placeholder for the task detail pane
+func (m *Model) renderDetailPane(width, height int) string {
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("205")).
+		Bold(true)
+
+	selectedTask := m.taskList.SelectedTask()
+	if selectedTask == nil {
+		return titleStyle.Render("━━ TASK DETAILS ━━") + "\n\nNo task selected"
+	}
+
+	header := titleStyle.Render("━━ TASK DETAILS ━━")
+
+	// Render basic task info as placeholder
+	placeholderStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245")).
+		Padding(1, 2)
+
+	placeholder := placeholderStyle.Render(
+		fmt.Sprintf("Task: %s\n\nDetail pane positioning framework is ready.\nActual task details component (reckon-egt) not yet implemented.",
+			selectedTask.Text),
+	)
+
+	return header + "\n" + placeholder
 }
 
 // NewModel creates a new TUI model
@@ -416,6 +548,81 @@ func (m *Model) isRightPaneFocused() bool {
 		m.focusedSection == SectionSchedule
 }
 
+// renderTasksWithDetailPane renders the center column with three task sections and optional detail pane
+func (m *Model) renderTasksWithDetailPane() string {
+	// Get grouped tasks
+	allTasks := m.taskList.GetTasks()
+	grouped := components.GroupTasksByTime(allTasks)
+
+	// Calculate dimensions for task sections
+	sectionDims := CalculateTaskSectionDimensions(m.width, m.height, m.detailPanePosition, m.notesPaneVisible)
+
+	borderWidth := 2
+	borderHeight := 2
+
+	// Build sections based on detail pane position
+	var sections []string
+
+	if !m.notesPaneVisible {
+		// No detail pane: show all three sections
+		if sectionDims.TodayHeight > 0 {
+			todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-borderWidth, sectionDims.TodayHeight-borderHeight)
+			sections = append(sections, todayView)
+		}
+		if sectionDims.ThisWeekHeight > 0 {
+			thisWeekView := m.renderTaskSection("THIS WEEK", grouped.ThisWeek, sectionDims.CenterWidth-borderWidth, sectionDims.ThisWeekHeight-borderHeight)
+			sections = append(sections, thisWeekView)
+		}
+		if sectionDims.AllTasksHeight > 0 {
+			allTasksView := m.renderTaskSection("ALL TASKS", grouped.AllTasks, sectionDims.CenterWidth-borderWidth, sectionDims.AllTasksHeight-borderHeight)
+			sections = append(sections, allTasksView)
+		}
+	} else {
+		// Detail pane visible: show sections based on position
+		switch m.detailPanePosition {
+		case DetailPaneBottom:
+			// Show TODAY and THIS WEEK, detail pane at bottom
+			if sectionDims.TodayHeight > 0 {
+				todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-borderWidth, sectionDims.TodayHeight-borderHeight)
+				sections = append(sections, todayView)
+			}
+			if sectionDims.ThisWeekHeight > 0 {
+				thisWeekView := m.renderTaskSection("THIS WEEK", grouped.ThisWeek, sectionDims.CenterWidth-borderWidth, sectionDims.ThisWeekHeight-borderHeight)
+				sections = append(sections, thisWeekView)
+			}
+			if sectionDims.DetailHeight > 0 {
+				detailView := m.renderDetailPane(sectionDims.CenterWidth-borderWidth, sectionDims.DetailHeight-borderHeight)
+				sections = append(sections, detailView)
+			}
+		case DetailPaneMiddle:
+			// Show TODAY, detail pane in middle, ALL TASKS at bottom
+			if sectionDims.TodayHeight > 0 {
+				todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-borderWidth, sectionDims.TodayHeight-borderHeight)
+				sections = append(sections, todayView)
+			}
+			if sectionDims.DetailHeight > 0 {
+				detailView := m.renderDetailPane(sectionDims.CenterWidth-borderWidth, sectionDims.DetailHeight-borderHeight)
+				sections = append(sections, detailView)
+			}
+			if sectionDims.AllTasksHeight > 0 {
+				allTasksView := m.renderTaskSection("ALL TASKS", grouped.AllTasks, sectionDims.CenterWidth-borderWidth, sectionDims.AllTasksHeight-borderHeight)
+				sections = append(sections, allTasksView)
+			}
+		}
+	}
+
+	// Join sections with separators
+	if len(sections) == 0 {
+		return "No tasks"
+	}
+
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
+	separator := separatorStyle.Render(strings.Repeat("─", sectionDims.CenterWidth-borderWidth))
+
+	return strings.Join(sections, "\n"+separator+"\n")
+}
+
 // renderNewLayout renders the 40-40-18 layout: Logs | Tasks | Schedule/Intentions/Wins
 func (m *Model) renderNewLayout() string {
 	dims := CalculatePaneDimensions(m.width, m.height, m.notesPaneVisible)
@@ -456,23 +663,11 @@ func (m *Model) renderNewLayout() string {
 		logsView = m.logView.View()
 	}
 
-	tasksView := ""
-	if m.taskList != nil {
-		tasksView = m.taskList.View()
-	}
-
-	notesView := ""
-	if m.notesPane != nil {
-		notesView = m.notesPane.View()
-	}
-
 	// Calculate inner dimensions for centering
 	logsInnerWidth := dims.LogsWidth - borderWidth
 	logsInnerHeight := dims.LogsHeight - borderHeight
 	tasksInnerWidth := dims.TasksWidth - borderWidth
 	tasksInnerHeight := dims.TasksHeight - borderHeight
-	notesInnerWidth := dims.NotesWidth - borderWidth
-	notesInnerHeight := dims.NotesHeight - borderHeight
 	rightInnerWidth := dims.RightWidth - borderWidth
 
 	// Center and box Logs pane
@@ -480,32 +675,15 @@ func (m *Model) renderNewLayout() string {
 		centerView(logsInnerWidth, logsInnerHeight, logsView),
 	)
 
-	// Center and box Tasks pane (conditionally split vertically with notes)
-	tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, tasksView)
-
-	var centerContent string
-	if m.notesPaneVisible {
-		// Show notes pane with separator
-		notesCentered := centerView(notesInnerWidth, notesInnerHeight, notesView)
-
-		// Create separator with proper width matching the actual rendered width
-		separatorWidth := tasksInnerWidth
-		if separatorWidth > notesInnerWidth {
-			separatorWidth = notesInnerWidth
-		}
-		separator := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Width(separatorWidth).
-			Align(lipgloss.Center).
-			Render(strings.Repeat("─", separatorWidth))
-
-		centerContent = lipgloss.JoinVertical(lipgloss.Left, tasksCentered, separator, notesCentered)
-	} else {
-		// Notes pane hidden, show only tasks
-		centerContent = tasksCentered
+	// Render center column with three-section task view and detail pane
+	centerContent := ""
+	if m.taskList != nil {
+		centerContent = m.renderTasksWithDetailPane()
 	}
 
-	tasksBox := m.getBorderStyle(SectionTasks).Render(centerContent)
+	// Center and box the center column
+	tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, centerContent)
+	tasksBox := m.getBorderStyle(SectionTasks).Render(tasksCentered)
 
 	// Build right sidebar with centered, boxed components
 	rightSidebar := m.buildRightSidebar(dims, rightInnerWidth, borderHeight)
