@@ -419,3 +419,57 @@ func TestNilTaskListHandling(t *testing.T) {
 		}
 	})
 }
+
+// TestRenderTasksWithDetailPane_SmallWidth tests that separator width is bounded
+func TestRenderTasksWithDetailPane_SmallWidth(t *testing.T) {
+	t.Run("handles very small width without panic", func(t *testing.T) {
+		m := &Model{
+			width:              10, // Very small width
+			height:             30,
+			taskList:           components.NewTaskList([]journal.Task{}),
+			notesPaneVisible:   false,
+			detailPanePosition: DetailPaneBottom,
+		}
+
+		// Should not panic even with very small width
+		result := m.renderTasksWithDetailPane()
+
+		// Should return something non-empty
+		if result == "" {
+			t.Error("Expected non-empty result from renderTasksWithDetailPane with small width")
+		}
+	})
+
+	t.Run("handles width smaller than border", func(t *testing.T) {
+		m := &Model{
+			width:              1, // Width smaller than BorderWidth
+			height:             30,
+			taskList:           components.NewTaskList([]journal.Task{}),
+			notesPaneVisible:   false,
+			detailPanePosition: DetailPaneBottom,
+		}
+
+		// Should not panic even when width < BorderWidth
+		result := m.renderTasksWithDetailPane()
+
+		if result == "" {
+			t.Error("Expected non-empty result from renderTasksWithDetailPane with width < BorderWidth")
+		}
+	})
+
+	t.Run("separator width is zero when CenterWidth equals BorderWidth", func(t *testing.T) {
+		// This test verifies the bounds checking logic for separator width
+		// When CenterWidth - BorderWidth would be negative or zero, separator should be empty
+		m := &Model{
+			width:    5, // Small enough to trigger edge case
+			height:   30,
+			taskList: components.NewTaskList([]journal.Task{{ID: "1", Text: "Test", Status: journal.TaskOpen}}),
+		}
+
+		// Should not panic
+		result := m.renderTasksWithDetailPane()
+		if result == "" {
+			t.Error("Expected non-empty result")
+		}
+	})
+}

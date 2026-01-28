@@ -631,9 +631,15 @@ func (m *Model) renderTasksWithDetailPane() string {
 		return "No tasks"
 	}
 
+	// Calculate separator width with bounds checking to prevent negative widths
+	separatorWidth := sectionDims.CenterWidth - BorderWidth
+	if separatorWidth < 0 {
+		separatorWidth = 0
+	}
+
 	separatorStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240"))
-	separator := separatorStyle.Render(strings.Repeat("─", sectionDims.CenterWidth-BorderWidth))
+	separator := separatorStyle.Render(strings.Repeat("─", separatorWidth))
 
 	return strings.Join(sections, "\n"+separator+"\n")
 }
