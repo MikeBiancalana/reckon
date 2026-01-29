@@ -26,6 +26,9 @@ func TestCalculatePaneDimensions_StandardSizes(t *testing.T) {
 			if dims.TextEntryHeight != 3 {
 				t.Errorf("Expected TextEntryHeight=3, got %d", dims.TextEntryHeight)
 			}
+			if dims.SummaryHeight != 1 {
+				t.Errorf("Expected SummaryHeight=1, got %d", dims.SummaryHeight)
+			}
 			if dims.StatusHeight != 1 {
 				t.Errorf("Expected StatusHeight=1, got %d", dims.StatusHeight)
 			}
@@ -110,8 +113,8 @@ func TestCalculatePaneDimensions_HeightDistribution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dims := CalculatePaneDimensions(120, tt.termHeight, false)
 
-			// Available height should be termHeight - text entry (3) - status (1)
-			expectedAvailableHeight := tt.termHeight - 4
+			// Available height should be termHeight - text entry (3) - summary (1) - status (1)
+			expectedAvailableHeight := tt.termHeight - 5
 			if dims.LogsHeight != expectedAvailableHeight {
 				t.Errorf("Expected LogsHeight=%d, got %d", expectedAvailableHeight, dims.LogsHeight)
 			}
@@ -153,15 +156,17 @@ func TestCalculatePaneDimensions_RightSidebarSplit(t *testing.T) {
 			intentionsPercent := float64(dims.IntentionsHeight) / float64(dims.RightHeight)
 			winsPercent := float64(dims.WinsHeight) / float64(dims.RightHeight)
 
-			// Verify 30-35-35 split (allow 5% tolerance for rounding with small heights)
+			// Verify 30-35-35 split (allow larger tolerance for rounding with small heights)
+			// Wins gets the remainder, so it can vary more with small heights due to integer rounding
 			tolerance := 0.05
+			winsTolerance := 0.10 // Wins gets remainder, so allow more variance
 			if schedulePercent < 0.30-tolerance || schedulePercent > 0.30+tolerance {
 				t.Errorf("Expected ScheduleHeight ~30%%, got %.2f%%", schedulePercent*100)
 			}
 			if intentionsPercent < 0.35-tolerance || intentionsPercent > 0.35+tolerance {
 				t.Errorf("Expected IntentionsHeight ~35%%, got %.2f%%", intentionsPercent*100)
 			}
-			if winsPercent < 0.35-tolerance || winsPercent > 0.35+tolerance {
+			if winsPercent < 0.35-winsTolerance || winsPercent > 0.35+winsTolerance {
 				t.Errorf("Expected WinsHeight ~35%%, got %.2f%%", winsPercent*100)
 			}
 
@@ -235,6 +240,9 @@ func TestCalculatePaneDimensions_MinimumSizes(t *testing.T) {
 			if dims.TextEntryHeight != 3 {
 				t.Errorf("Expected TextEntryHeight=3, got %d", dims.TextEntryHeight)
 			}
+			if dims.SummaryHeight != 1 {
+				t.Errorf("Expected SummaryHeight=1, got %d", dims.SummaryHeight)
+			}
 			if dims.StatusHeight != 1 {
 				t.Errorf("Expected StatusHeight=1, got %d", dims.StatusHeight)
 			}
@@ -258,8 +266,8 @@ func TestCalculatePaneDimensions_SpecificDimensions(t *testing.T) {
 		t.Errorf("Expected RightWidth=20, got %d", dims.RightWidth)
 	}
 
-	// Height calculations: 30 - 3 - 1 = 26
-	expectedHeight := 26
+	// Height calculations: 30 - 3 - 1 - 1 = 25
+	expectedHeight := 25
 	if dims.LogsHeight != expectedHeight {
 		t.Errorf("Expected LogsHeight=%d, got %d", expectedHeight, dims.LogsHeight)
 	}
@@ -270,7 +278,7 @@ func TestCalculatePaneDimensions_SpecificDimensions(t *testing.T) {
 		t.Errorf("Expected RightHeight=%d, got %d", expectedHeight, dims.RightHeight)
 	}
 
-	// Right sidebar: 30% of 26 = 7.8 ≈ 8, 35% of 26 = 9.1 ≈ 9, remaining = 9
+	// Right sidebar: 30% of 25 = 7.5 ≈ 7, 35% of 25 = 8.75 ≈ 8, remaining = 10
 	// (actual values may vary slightly due to rounding strategy)
 	totalRightHeight := dims.ScheduleHeight + dims.IntentionsHeight + dims.WinsHeight
 	if totalRightHeight != expectedHeight {
@@ -323,5 +331,147 @@ func TestCalculatePaneDimensions_Consistency(t *testing.T) {
 
 	if dims1 != dims2 {
 		t.Errorf("Multiple calls with same parameters should produce identical results")
+	}
+}
+
+// TestCalculateTaskSectionDimensions_NoDetailPane tests layout without detail pane
+func TestCalculateTaskSectionDimensions_NoDetailPane(t *testing.T) {
+	termWidth, termHeight := 120, 30
+
+	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneBottom, false)
+
+	// Center width should be 40% of terminal width
+	expectedWidth := int(float64(termWidth) * 0.40)
+	if dims.CenterWidth != expectedWidth {
+		t.Errorf("Expected CenterWidth=%d, got %d", expectedWidth, dims.CenterWidth)
+	}
+
+	// All three sections should be visible and roughly equal
+	if dims.TodayHeight == 0 {
+		t.Error("TodayHeight should not be 0 when detail pane is hidden")
+	}
+	if dims.ThisWeekHeight == 0 {
+		t.Error("ThisWeekHeight should not be 0 when detail pane is hidden")
+	}
+	if dims.AllTasksHeight == 0 {
+		t.Error("AllTasksHeight should not be 0 when detail pane is hidden")
+	}
+
+	// Verify sections add up to available height (minus separators)
+	totalHeight := dims.TodayHeight + dims.ThisWeekHeight + dims.AllTasksHeight
+	const sectionSeparators = 2
+	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators // text entry, status, summary, separators
+	if totalHeight != expectedAvailableHeight {
+		t.Errorf("Expected total section height=%d, got %d", expectedAvailableHeight, totalHeight)
+	}
+}
+
+// TestCalculateTaskSectionDimensions_DetailPaneBottom tests layout with detail pane at bottom
+func TestCalculateTaskSectionDimensions_DetailPaneBottom(t *testing.T) {
+	termWidth, termHeight := 120, 30
+
+	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneBottom, true)
+
+	// ALL TASKS should be replaced by detail pane
+	if dims.AllTasksHeight != 0 {
+		t.Errorf("AllTasksHeight should be 0 when detail pane is at bottom, got %d", dims.AllTasksHeight)
+	}
+
+	// Detail height should be non-zero
+	if dims.DetailHeight == 0 {
+		t.Error("DetailHeight should not be 0 when detail pane is visible")
+	}
+
+	// TODAY and THIS WEEK should be visible
+	if dims.TodayHeight == 0 {
+		t.Error("TodayHeight should not be 0")
+	}
+	if dims.ThisWeekHeight == 0 {
+		t.Error("ThisWeekHeight should not be 0")
+	}
+
+	// Verify total height
+	totalHeight := dims.TodayHeight + dims.ThisWeekHeight + dims.DetailHeight
+	const sectionSeparators = 2
+	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators
+	if totalHeight != expectedAvailableHeight {
+		t.Errorf("Expected total height=%d, got %d", expectedAvailableHeight, totalHeight)
+	}
+}
+
+// TestCalculateTaskSectionDimensions_DetailPaneMiddle tests layout with detail pane in middle
+func TestCalculateTaskSectionDimensions_DetailPaneMiddle(t *testing.T) {
+	termWidth, termHeight := 120, 30
+
+	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneMiddle, true)
+
+	// THIS WEEK should be replaced by detail pane
+	if dims.ThisWeekHeight != 0 {
+		t.Errorf("ThisWeekHeight should be 0 when detail pane is in middle, got %d", dims.ThisWeekHeight)
+	}
+
+	// Detail height should be non-zero
+	if dims.DetailHeight == 0 {
+		t.Error("DetailHeight should not be 0 when detail pane is visible")
+	}
+
+	// TODAY and ALL TASKS should be visible
+	if dims.TodayHeight == 0 {
+		t.Error("TodayHeight should not be 0")
+	}
+	if dims.AllTasksHeight == 0 {
+		t.Error("AllTasksHeight should not be 0")
+	}
+
+	// Verify total height
+	totalHeight := dims.TodayHeight + dims.DetailHeight + dims.AllTasksHeight
+	const sectionSeparators = 2
+	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators
+	if totalHeight != expectedAvailableHeight {
+		t.Errorf("Expected total height=%d, got %d", expectedAvailableHeight, totalHeight)
+	}
+}
+
+// TestCalculateTaskSectionDimensions_VariousSizes tests different terminal sizes
+func TestCalculateTaskSectionDimensions_VariousSizes(t *testing.T) {
+	tests := []struct {
+		name       string
+		termWidth  int
+		termHeight int
+	}{
+		{"Standard 80x24", 80, 24},
+		{"Common 120x30", 120, 30},
+		{"Large 160x40", 160, 40},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test all combinations of position and visibility
+			positions := []DetailPanePosition{DetailPaneBottom, DetailPaneMiddle}
+			visibilities := []bool{true, false}
+
+			for _, pos := range positions {
+				for _, visible := range visibilities {
+					dims := CalculateTaskSectionDimensions(tt.termWidth, tt.termHeight, pos, visible)
+
+					// All dimensions should be non-negative
+					if dims.CenterWidth < 0 {
+						t.Errorf("CenterWidth should be non-negative, got %d", dims.CenterWidth)
+					}
+					if dims.TodayHeight < 0 {
+						t.Errorf("TodayHeight should be non-negative, got %d", dims.TodayHeight)
+					}
+					if dims.ThisWeekHeight < 0 {
+						t.Errorf("ThisWeekHeight should be non-negative, got %d", dims.ThisWeekHeight)
+					}
+					if dims.AllTasksHeight < 0 {
+						t.Errorf("AllTasksHeight should be non-negative, got %d", dims.AllTasksHeight)
+					}
+					if dims.DetailHeight < 0 {
+						t.Errorf("DetailHeight should be non-negative, got %d", dims.DetailHeight)
+					}
+				}
+			}
+		})
 	}
 }

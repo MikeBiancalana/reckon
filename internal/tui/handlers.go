@@ -128,6 +128,7 @@ func (m *Model) handleTasksLoaded(msg tasksLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.updateNotesForSelectedTask()
+	m.calculateDetailPanePosition()
 
 	// Clear success message after 2 seconds
 	if m.successMessage != "" {
@@ -153,6 +154,7 @@ func (m *Model) handleTaskToggle(msg components.TaskToggleMsg) (tea.Model, tea.C
 // handleTaskSelectionChanged handles task selection change events
 func (m *Model) handleTaskSelectionChanged(msg components.TaskSelectionChangedMsg) (tea.Model, tea.Cmd) {
 	m.updateNotesForSelectedTask()
+	m.calculateDetailPanePosition()
 	return m, nil
 }
 
