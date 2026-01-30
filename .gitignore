@@ -24,6 +24,10 @@ rk
 *~
 tags
 
+# LLMs
+.mcp
+.playwright-mcp/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -31,5 +35,9 @@ Thumbs.db
 reckon-32t/
 reckon-st3/
 reckon-51j/
-# bd worktree
 reckon-2qh/
+reckon-9gt/
+reckon-kwi/
+reckon-125/
+# bd worktree
+reckon-39e-task-scheduling-shortcuts/
