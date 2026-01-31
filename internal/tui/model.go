@@ -293,7 +293,11 @@ func (m *Model) renderTaskSection(title string, tasks []journal.Task, width, hei
 		Foreground(lipgloss.Color("240")).
 		Strikethrough(true)
 
-	// Get selected task ID for highlighting
+	// Get selected task ID for highlighting.
+	// Note: We must manually apply selection styling in renderTaskSection because
+	// this function bypasses the TaskList delegate which normally handles selection
+	// rendering. The delegate is only used for the main task list view, not for
+	// embedded task sections in the daily view.
 	var selectedTaskID string
 	if m.taskList != nil {
 		selectedTask := m.taskList.SelectedTask()
@@ -317,7 +321,9 @@ func (m *Model) renderTaskSection(title string, tasks []journal.Task, width, hei
 			line = line + fmt.Sprintf(" [%s]", strings.Join(task.Tags, " "))
 		}
 
-		// Apply selection highlighting if this task is selected
+		// Apply selection highlighting if this task is selected.
+		// Selection style takes precedence over task status styling (e.g., strikethrough
+		// for done tasks) to ensure the selected item is always clearly visible.
 		if task.ID == selectedTaskID {
 			line = components.SelectedStyle.Render(line)
 		} else {
