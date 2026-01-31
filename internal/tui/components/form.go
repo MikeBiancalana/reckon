@@ -73,14 +73,14 @@ var (
 
 // Form is a reusable multi-field form component
 type Form struct {
-	title        string
-	fields       []FormField
-	focusIndex   int
-	visible      bool
-	errors       map[string]string
-	width        int
-	submitted    bool
-	datePreview  string // Preview for date fields
+	title       string
+	fields      []FormField
+	focusIndex  int
+	visible     bool
+	errors      map[string]string
+	width       int
+	submitted   bool
+	datePreview string // Preview for date fields
 }
 
 // NewForm creates a new form with the given title
