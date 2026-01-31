@@ -293,6 +293,15 @@ func (m *Model) renderTaskSection(title string, tasks []journal.Task, width, hei
 		Foreground(lipgloss.Color("240")).
 		Strikethrough(true)
 
+	// Get selected task ID for highlighting
+	var selectedTaskID string
+	if m.taskList != nil {
+		selectedTask := m.taskList.SelectedTask()
+		if selectedTask != nil {
+			selectedTaskID = selectedTask.ID
+		}
+	}
+
 	// Render tasks
 	var taskLines []string
 	for _, task := range tasks {
@@ -308,7 +317,14 @@ func (m *Model) renderTaskSection(title string, tasks []journal.Task, width, hei
 			line = line + fmt.Sprintf(" [%s]", strings.Join(task.Tags, " "))
 		}
 
-		taskLines = append(taskLines, style.Render(line))
+		// Apply selection highlighting if this task is selected
+		if task.ID == selectedTaskID {
+			line = components.SelectedStyle.Render(line)
+		} else {
+			line = style.Render(line)
+		}
+
+		taskLines = append(taskLines, line)
 	}
 
 	content := strings.Join(taskLines, "\n")
