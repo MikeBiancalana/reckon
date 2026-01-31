@@ -490,7 +490,7 @@ Test task 3 description
 	}
 
 	// Test adding a new task
-	err = journalTaskSvc.AddTask("New integration test task", []string{})
+	_, err = journalTaskSvc.AddTask("New integration test task", []string{})
 	if err != nil {
 		t.Fatalf("Failed to add task: %v", err)
 	}

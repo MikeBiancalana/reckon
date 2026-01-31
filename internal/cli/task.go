@@ -25,6 +25,36 @@ const (
 	minTitleWidth = 20
 )
 
+// setTaskDates is a helper function to set schedule and deadline dates on a task.
+// It takes the task ID and optional schedule/deadline strings in relative date format.
+func setTaskDates(taskID, scheduleStr, deadlineStr string) error {
+	// Set schedule if provided
+	if scheduleStr != "" {
+		parsedDate, err := components.ParseRelativeDate(scheduleStr)
+		if err != nil {
+			return fmt.Errorf("invalid schedule date: %w", err)
+		}
+		formattedDate := components.FormatDate(parsedDate)
+		if err := journalTaskService.ScheduleTask(taskID, formattedDate); err != nil {
+			return fmt.Errorf("failed to set schedule: %w", err)
+		}
+	}
+
+	// Set deadline if provided
+	if deadlineStr != "" {
+		parsedDate, err := components.ParseRelativeDate(deadlineStr)
+		if err != nil {
+			return fmt.Errorf("invalid deadline date: %w", err)
+		}
+		formattedDate := components.FormatDate(parsedDate)
+		if err := journalTaskService.SetTaskDeadline(taskID, formattedDate); err != nil {
+			return fmt.Errorf("failed to set deadline: %w", err)
+		}
+	}
+
+	return nil
+}
+
 var (
 	taskStatusFlag       string
 	taskTagsFlag         []string
@@ -74,54 +104,14 @@ var taskNewCmd = &cobra.Command{
 		}
 
 		// Create task
-		err := journalTaskService.AddTask(title, taskTagsFlag)
+		taskID, err := journalTaskService.AddTask(title, taskTagsFlag)
 		if err != nil {
 			return fmt.Errorf("failed to create task: %w", err)
 		}
 
-		// If schedule or deadline flags are set, we need to find the newly created task
-		if taskNewScheduleFlag != "" || taskNewDeadlineFlag != "" {
-			tasks, err := journalTaskService.GetAllTasks()
-			if err != nil {
-				return fmt.Errorf("failed to get tasks: %w", err)
-			}
-
-			// Find the task we just created (it should be the last one with matching title)
-			var taskID string
-			for i := len(tasks) - 1; i >= 0; i-- {
-				if tasks[i].Text == title {
-					taskID = tasks[i].ID
-					break
-				}
-			}
-
-			if taskID == "" {
-				return fmt.Errorf("failed to find newly created task")
-			}
-
-			// Set schedule if provided
-			if taskNewScheduleFlag != "" {
-				parsedDate, err := components.ParseRelativeDate(taskNewScheduleFlag)
-				if err != nil {
-					return fmt.Errorf("invalid schedule date: %w", err)
-				}
-				formattedDate := components.FormatDate(parsedDate)
-				if err := journalTaskService.ScheduleTask(taskID, formattedDate); err != nil {
-					return fmt.Errorf("failed to set schedule: %w", err)
-				}
-			}
-
-			// Set deadline if provided
-			if taskNewDeadlineFlag != "" {
-				parsedDate, err := components.ParseRelativeDate(taskNewDeadlineFlag)
-				if err != nil {
-					return fmt.Errorf("invalid deadline date: %w", err)
-				}
-				formattedDate := components.FormatDate(parsedDate)
-				if err := journalTaskService.SetTaskDeadline(taskID, formattedDate); err != nil {
-					return fmt.Errorf("failed to set deadline: %w", err)
-				}
-			}
+		// Set schedule and deadline if provided
+		if err := setTaskDates(taskID, taskNewScheduleFlag, taskNewDeadlineFlag); err != nil {
+			return err
 		}
 
 		if !quietFlag {
@@ -1041,7 +1031,6 @@ Examples:
 type taskNewFormModel struct {
 	form   *components.Form
 	result *components.FormResult
-	err    error
 	quit   bool
 }
 
@@ -1125,10 +1114,6 @@ func launchTaskNewForm() error {
 	}
 
 	m := finalModel.(taskNewFormModel)
-	if m.err != nil {
-		return m.err
-	}
-
 	if m.result == nil {
 		// Form was cancelled
 		return nil
@@ -1157,53 +1142,16 @@ func createTaskFromForm(result *components.FormResult) error {
 	}
 
 	// Create the task
-	err := journalTaskService.AddTask(title, tags)
+	taskID, err := journalTaskService.AddTask(title, tags)
 	if err != nil {
 		return fmt.Errorf("failed to create task: %w", err)
 	}
 
-	// Find the newly created task to get its ID
-	tasks, err := journalTaskService.GetAllTasks()
-	if err != nil {
-		return fmt.Errorf("failed to get tasks: %w", err)
-	}
-
-	var taskID string
-	for i := len(tasks) - 1; i >= 0; i-- {
-		if tasks[i].Text == title {
-			taskID = tasks[i].ID
-			break
-		}
-	}
-
-	if taskID == "" {
-		return fmt.Errorf("failed to find newly created task")
-	}
-
-	// Set schedule if provided
+	// Set schedule and deadline if provided
 	scheduleStr := strings.TrimSpace(result.Values["schedule"])
-	if scheduleStr != "" {
-		parsedDate, err := components.ParseRelativeDate(scheduleStr)
-		if err != nil {
-			return fmt.Errorf("invalid schedule date: %w", err)
-		}
-		formattedDate := components.FormatDate(parsedDate)
-		if err := journalTaskService.ScheduleTask(taskID, formattedDate); err != nil {
-			return fmt.Errorf("failed to set schedule: %w", err)
-		}
-	}
-
-	// Set deadline if provided
 	deadlineStr := strings.TrimSpace(result.Values["deadline"])
-	if deadlineStr != "" {
-		parsedDate, err := components.ParseRelativeDate(deadlineStr)
-		if err != nil {
-			return fmt.Errorf("invalid deadline date: %w", err)
-		}
-		formattedDate := components.FormatDate(parsedDate)
-		if err := journalTaskService.SetTaskDeadline(taskID, formattedDate); err != nil {
-			return fmt.Errorf("failed to set deadline: %w", err)
-		}
+	if err := setTaskDates(taskID, scheduleStr, deadlineStr); err != nil {
+		return err
 	}
 
 	// Print success message
@@ -1213,11 +1161,15 @@ func createTaskFromForm(result *components.FormResult) error {
 			fmt.Printf("  Tags: %s\n", strings.Join(tags, ", "))
 		}
 		if scheduleStr != "" {
+			// Date parsing errors are safely ignored here because the date was already
+			// validated during form submission, so ParseRelativeDate cannot fail
 			parsedDate, _ := components.ParseRelativeDate(scheduleStr)
 			desc := components.GetDateDescription(parsedDate)
 			fmt.Printf("  Scheduled: %s (%s)\n", components.FormatDate(parsedDate), desc)
 		}
 		if deadlineStr != "" {
+			// Date parsing errors are safely ignored here because the date was already
+			// validated during form submission, so ParseRelativeDate cannot fail
 			parsedDate, _ := components.ParseRelativeDate(deadlineStr)
 			desc := components.GetDateDescription(parsedDate)
 			fmt.Printf("  Deadline: %s (%s)\n", components.FormatDate(parsedDate), desc)
