@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	"github.com/sahilm/fuzzy"
@@ -25,18 +26,20 @@ const (
 )
 
 var (
-	taskStatusFlag    string
-	taskTagsFlag      []string
-	taskCompactFlag   bool
-	taskVerboseFlag   bool
-	taskFormatFlag    string
-	taskEditTitleFlag string
-	taskEditTagsFlag  []string
-	taskMatchFlag     string
-	taskScheduledFlag string
-	taskDeadlineFlag  string
-	taskOverdueFlag   bool
-	taskGroupedFlag   bool
+	taskStatusFlag       string
+	taskTagsFlag         []string
+	taskCompactFlag      bool
+	taskVerboseFlag      bool
+	taskFormatFlag       string
+	taskEditTitleFlag    string
+	taskEditTagsFlag     []string
+	taskMatchFlag        string
+	taskScheduledFlag    string
+	taskDeadlineFlag     string
+	taskOverdueFlag      bool
+	taskGroupedFlag      bool
+	taskNewScheduleFlag  string
+	taskNewDeadlineFlag  string
 )
 
 // taskCmd represents the task command
@@ -58,6 +61,14 @@ var taskNewCmd = &cobra.Command{
 			return fmt.Errorf("task service not initialized")
 		}
 
+		// Check if we should launch the interactive form
+		// Launch form if: no title AND no flags are set
+		hasFlags := len(taskTagsFlag) > 0 || taskNewScheduleFlag != "" || taskNewDeadlineFlag != ""
+		if title == "" && !hasFlags {
+			return launchTaskNewForm()
+		}
+
+		// Otherwise, use CLI arguments
 		if title == "" {
 			return fmt.Errorf("task title is required")
 		}
@@ -68,10 +79,61 @@ var taskNewCmd = &cobra.Command{
 			return fmt.Errorf("failed to create task: %w", err)
 		}
 
+		// If schedule or deadline flags are set, we need to find the newly created task
+		if taskNewScheduleFlag != "" || taskNewDeadlineFlag != "" {
+			tasks, err := journalTaskService.GetAllTasks()
+			if err != nil {
+				return fmt.Errorf("failed to get tasks: %w", err)
+			}
+
+			// Find the task we just created (it should be the last one with matching title)
+			var taskID string
+			for i := len(tasks) - 1; i >= 0; i-- {
+				if tasks[i].Text == title {
+					taskID = tasks[i].ID
+					break
+				}
+			}
+
+			if taskID == "" {
+				return fmt.Errorf("failed to find newly created task")
+			}
+
+			// Set schedule if provided
+			if taskNewScheduleFlag != "" {
+				parsedDate, err := components.ParseRelativeDate(taskNewScheduleFlag)
+				if err != nil {
+					return fmt.Errorf("invalid schedule date: %w", err)
+				}
+				formattedDate := components.FormatDate(parsedDate)
+				if err := journalTaskService.ScheduleTask(taskID, formattedDate); err != nil {
+					return fmt.Errorf("failed to set schedule: %w", err)
+				}
+			}
+
+			// Set deadline if provided
+			if taskNewDeadlineFlag != "" {
+				parsedDate, err := components.ParseRelativeDate(taskNewDeadlineFlag)
+				if err != nil {
+					return fmt.Errorf("invalid deadline date: %w", err)
+				}
+				formattedDate := components.FormatDate(parsedDate)
+				if err := journalTaskService.SetTaskDeadline(taskID, formattedDate); err != nil {
+					return fmt.Errorf("failed to set deadline: %w", err)
+				}
+			}
+		}
+
 		if !quietFlag {
 			fmt.Printf("✓ Created task: %s\n", title)
 			if len(taskTagsFlag) > 0 {
 				fmt.Printf("  Tags: %s\n", strings.Join(taskTagsFlag, ", "))
+			}
+			if taskNewScheduleFlag != "" {
+				fmt.Printf("  Scheduled: %s\n", taskNewScheduleFlag)
+			}
+			if taskNewDeadlineFlag != "" {
+				fmt.Printf("  Deadline: %s\n", taskNewDeadlineFlag)
 			}
 		}
 
@@ -975,6 +1037,196 @@ Examples:
 	},
 }
 
+// taskNewFormModel is the Bubble Tea model for the task creation form
+type taskNewFormModel struct {
+	form   *components.Form
+	result *components.FormResult
+	err    error
+	quit   bool
+}
+
+func (m taskNewFormModel) Init() tea.Cmd {
+	return m.form.Show()
+}
+
+func (m taskNewFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.Type == tea.KeyCtrlC {
+			m.quit = true
+			return m, tea.Quit
+		}
+
+	case components.FormSubmitMsg:
+		m.result = &msg.Result
+		m.quit = true
+		return m, tea.Quit
+
+	case components.FormCancelMsg:
+		m.quit = true
+		return m, tea.Quit
+	}
+
+	// Update form
+	var cmd tea.Cmd
+	m.form, cmd = m.form.Update(msg)
+	return m, cmd
+}
+
+func (m taskNewFormModel) View() string {
+	if m.quit {
+		return ""
+	}
+	return m.form.View()
+}
+
+// launchTaskNewForm launches the interactive form for creating a new task
+func launchTaskNewForm() error {
+	// Create form
+	form := components.NewForm("Create New Task")
+
+	form.AddField(components.FormField{
+		Label:       "Title",
+		Key:         "title",
+		Type:        components.FieldTypeText,
+		Required:    true,
+		Placeholder: "Enter task title",
+	}).AddField(components.FormField{
+		Label:       "Tags",
+		Key:         "tags",
+		Type:        components.FieldTypeText,
+		Required:    false,
+		Placeholder: "tag1, tag2, tag3",
+	}).AddField(components.FormField{
+		Label:       "Schedule",
+		Key:         "schedule",
+		Type:        components.FieldTypeDate,
+		Required:    false,
+		Placeholder: "t, tm, +3d, mon, 2026-01-31",
+	}).AddField(components.FormField{
+		Label:       "Deadline",
+		Key:         "deadline",
+		Type:        components.FieldTypeDate,
+		Required:    false,
+		Placeholder: "t, tm, +3d, mon, 2026-01-31",
+	})
+
+	// Create Bubble Tea program with form
+	initialModel := taskNewFormModel{
+		form: form,
+	}
+
+	p := tea.NewProgram(initialModel)
+
+	// Run the program
+	finalModel, err := p.Run()
+	if err != nil {
+		return fmt.Errorf("failed to run form: %w", err)
+	}
+
+	m := finalModel.(taskNewFormModel)
+	if m.err != nil {
+		return m.err
+	}
+
+	if m.result == nil {
+		// Form was cancelled
+		return nil
+	}
+
+	// Process form result
+	return createTaskFromForm(m.result)
+}
+
+// createTaskFromForm creates a task from the form result
+func createTaskFromForm(result *components.FormResult) error {
+	title := strings.TrimSpace(result.Values["title"])
+	if title == "" {
+		return fmt.Errorf("task title is required")
+	}
+
+	// Parse tags from comma-separated string
+	var tags []string
+	if tagsStr := strings.TrimSpace(result.Values["tags"]); tagsStr != "" {
+		for _, tag := range strings.Split(tagsStr, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	// Create the task
+	err := journalTaskService.AddTask(title, tags)
+	if err != nil {
+		return fmt.Errorf("failed to create task: %w", err)
+	}
+
+	// Find the newly created task to get its ID
+	tasks, err := journalTaskService.GetAllTasks()
+	if err != nil {
+		return fmt.Errorf("failed to get tasks: %w", err)
+	}
+
+	var taskID string
+	for i := len(tasks) - 1; i >= 0; i-- {
+		if tasks[i].Text == title {
+			taskID = tasks[i].ID
+			break
+		}
+	}
+
+	if taskID == "" {
+		return fmt.Errorf("failed to find newly created task")
+	}
+
+	// Set schedule if provided
+	scheduleStr := strings.TrimSpace(result.Values["schedule"])
+	if scheduleStr != "" {
+		parsedDate, err := components.ParseRelativeDate(scheduleStr)
+		if err != nil {
+			return fmt.Errorf("invalid schedule date: %w", err)
+		}
+		formattedDate := components.FormatDate(parsedDate)
+		if err := journalTaskService.ScheduleTask(taskID, formattedDate); err != nil {
+			return fmt.Errorf("failed to set schedule: %w", err)
+		}
+	}
+
+	// Set deadline if provided
+	deadlineStr := strings.TrimSpace(result.Values["deadline"])
+	if deadlineStr != "" {
+		parsedDate, err := components.ParseRelativeDate(deadlineStr)
+		if err != nil {
+			return fmt.Errorf("invalid deadline date: %w", err)
+		}
+		formattedDate := components.FormatDate(parsedDate)
+		if err := journalTaskService.SetTaskDeadline(taskID, formattedDate); err != nil {
+			return fmt.Errorf("failed to set deadline: %w", err)
+		}
+	}
+
+	// Print success message
+	if !quietFlag {
+		fmt.Printf("✓ Created task: %s\n", title)
+		if len(tags) > 0 {
+			fmt.Printf("  Tags: %s\n", strings.Join(tags, ", "))
+		}
+		if scheduleStr != "" {
+			parsedDate, _ := components.ParseRelativeDate(scheduleStr)
+			desc := components.GetDateDescription(parsedDate)
+			fmt.Printf("  Scheduled: %s (%s)\n", components.FormatDate(parsedDate), desc)
+		}
+		if deadlineStr != "" {
+			parsedDate, _ := components.ParseRelativeDate(deadlineStr)
+			desc := components.GetDateDescription(parsedDate)
+			fmt.Printf("  Deadline: %s (%s)\n", components.FormatDate(parsedDate), desc)
+		}
+	}
+
+	return nil
+}
+
 func init() {
 	// Add subcommands
 	taskCmd.AddCommand(taskNewCmd)
@@ -990,6 +1242,8 @@ func init() {
 
 	// Flags
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
+	taskNewCmd.Flags().StringVar(&taskNewScheduleFlag, "schedule", "", "Schedule date (t, tm, +3d, mon, YYYY-MM-DD)")
+	taskNewCmd.Flags().StringVar(&taskNewDeadlineFlag, "deadline", "", "Deadline date (t, tm, +3d, mon, YYYY-MM-DD)")
 	taskListCmd.Flags().StringVar(&taskStatusFlag, "status", "", "Filter by status (open, active, done)")
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
 	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact single-line output")
