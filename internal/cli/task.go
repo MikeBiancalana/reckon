@@ -1390,9 +1390,8 @@ type taskDeadlineModel struct {
 	taskPicker   *components.TaskPicker
 	datePicker   *components.DatePicker
 	selectedTask *journal.Task
+	error        error
 	canceled     bool
-	width        int
-	height       int
 }
 
 type deadlineState int
@@ -1410,8 +1409,6 @@ func (m taskDeadlineModel) Init() tea.Cmd {
 func (m taskDeadlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
 		m.taskPicker.SetWidth(msg.Width)
 		m.datePicker.SetWidth(msg.Width)
 		return m, nil
@@ -1439,10 +1436,13 @@ func (m taskDeadlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Set the deadline
 			formattedDate := components.FormatDate(parsedDate)
-			if err := journalTaskService.SetTaskDeadline(m.selectedTask.ID, formattedDate); err == nil {
+			if err := journalTaskService.SetTaskDeadline(m.selectedTask.ID, formattedDate); err != nil {
+				m.error = fmt.Errorf("failed to set deadline: %w", err)
 				m.state = deadlineStateDone
 				return m, tea.Quit
 			}
+			m.state = deadlineStateDone
+			return m, tea.Quit
 		}
 
 		if m.state == deadlineStateDatePicker && msg.Type == tea.KeyEsc {
@@ -1452,7 +1452,12 @@ func (m taskDeadlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case components.TaskPickerSelectMsg:
 		// Task selected, move to date picker
-		tasks, _ := journalTaskService.GetAllTasks()
+		tasks, err := journalTaskService.GetAllTasks()
+		if err != nil {
+			m.error = fmt.Errorf("failed to fetch task details: %w", err)
+			m.canceled = true
+			return m, tea.Quit
+		}
 		for _, t := range tasks {
 			if t.ID == msg.TaskID {
 				m.selectedTask = &t
@@ -1482,6 +1487,14 @@ func (m taskDeadlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m taskDeadlineModel) View() string {
 	if m.state == deadlineStateDone || m.canceled {
 		return ""
+	}
+
+	// Display error if present
+	if m.error != nil {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")).
+			Bold(true)
+		return errorStyle.Render(fmt.Sprintf("✗ %s\n", m.error.Error()))
 	}
 
 	switch m.state {
@@ -1526,8 +1539,6 @@ func launchTaskDeadlineMiniTUI() error {
 		state:      deadlineStateTaskPicker,
 		taskPicker: taskPicker,
 		datePicker: datePicker,
-		width:      80,
-		height:     24,
 	}
 
 	// Run the program
@@ -1543,6 +1554,10 @@ func launchTaskDeadlineMiniTUI() error {
 		return fmt.Errorf("unexpected model type returned")
 	}
 
+	if result.error != nil {
+		return result.error
+	}
+
 	if result.canceled {
 		return nil
 	}
@@ -1554,6 +1569,8 @@ func launchTaskDeadlineMiniTUI() error {
 	// Print success message
 	if !quietFlag {
 		dateStr := result.datePicker.GetValue()
+		// Error is safely ignored here because the date was already validated
+		// during form submission in the Update method, so ParseRelativeDate cannot fail
 		parsedDate, _ := components.ParseRelativeDate(dateStr)
 		formattedDate := components.FormatDate(parsedDate)
 		desc := components.GetDateDescription(parsedDate)

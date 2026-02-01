@@ -99,3 +99,28 @@ func TestTaskScheduleModel_StateTransitions(t *testing.T) {
 	assert.NotEqual(t, scheduleStateDatePicker, scheduleStateDone)
 	assert.NotEqual(t, scheduleStateTaskPicker, scheduleStateDone)
 }
+
+func TestTaskDeadlineModel_Structure(t *testing.T) {
+	// Verify the taskDeadlineModel structure is correct
+	m := taskDeadlineModel{
+		state:    deadlineStateTaskPicker,
+		canceled: false,
+	}
+
+	assert.Equal(t, deadlineStateTaskPicker, m.state)
+	assert.False(t, m.canceled)
+	assert.Nil(t, m.error)
+	assert.Nil(t, m.selectedTask)
+}
+
+func TestTaskDeadlineModel_StateTransitions(t *testing.T) {
+	// Test state constants exist and are distinct
+	assert.Equal(t, deadlineState(0), deadlineStateTaskPicker)
+	assert.Equal(t, deadlineState(1), deadlineStateDatePicker)
+	assert.Equal(t, deadlineState(2), deadlineStateDone)
+
+	// Verify states are different values
+	assert.NotEqual(t, deadlineStateTaskPicker, deadlineStateDatePicker)
+	assert.NotEqual(t, deadlineStateDatePicker, deadlineStateDone)
+	assert.NotEqual(t, deadlineStateTaskPicker, deadlineStateDone)
+}
