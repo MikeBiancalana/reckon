@@ -247,7 +247,7 @@ func (m *Model) submitTextEntry() tea.Cmd {
 			// Add task
 			if capturedTaskService != nil {
 				taskText, tags := parseTaskTags(inputText)
-				err = capturedTaskService.AddTask(taskText, tags)
+				_, err = capturedTaskService.AddTask(taskText, tags)
 				if err != nil {
 					return errMsg{err}
 				}

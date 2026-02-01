@@ -291,8 +291,8 @@ func validateTags(tags []string) []string {
 	return validTags
 }
 
-// AddTask creates a new task and persists it
-func (s *TaskService) AddTask(text string, tags []string) error {
+// AddTask creates a new task and persists it, returning the task ID
+func (s *TaskService) AddTask(text string, tags []string) (string, error) {
 	logger.Debug("AddTask", "task_text", text, "tags", tags)
 
 	// Validate and sanitize tags
@@ -302,7 +302,7 @@ func (s *TaskService) AddTask(text string, tags []string) error {
 	tasks, err := s.GetAllTasks()
 	if err != nil {
 		logger.Error("AddTask", "error", err, "operation", "load_tasks")
-		return fmt.Errorf("failed to load tasks: %w", err)
+		return "", fmt.Errorf("failed to load tasks: %w", err)
 	}
 
 	// Create new task with position at end
@@ -312,10 +312,10 @@ func (s *TaskService) AddTask(text string, tags []string) error {
 	// Save to both file and DB
 	if err := s.save(tasks); err != nil {
 		logger.Error("AddTask", "error", err, "task_id", newTask.ID)
-		return fmt.Errorf("failed to save task: %w", err)
+		return "", fmt.Errorf("failed to save task: %w", err)
 	}
 
-	return nil
+	return newTask.ID, nil
 }
 
 // ToggleTask toggles a task's status between open and done

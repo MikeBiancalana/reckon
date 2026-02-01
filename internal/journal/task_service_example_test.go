@@ -35,14 +35,14 @@ func Example_taskService() {
 	store := storage.NewFileStore()
 
 	// Create service
-	service := journal.NewTaskService(repo, store, nil)
+	service := journal.NewTaskService(repo, store)
 
 	// Add some tasks
-	if err := service.AddTask("Complete project documentation", []string{}); err != nil {
+	if _, err := service.AddTask("Complete project documentation", []string{}); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := service.AddTask("Review pull requests", []string{}); err != nil {
+	if _, err := service.AddTask("Review pull requests", []string{}); err != nil {
 		log.Fatal(err)
 	}
 
