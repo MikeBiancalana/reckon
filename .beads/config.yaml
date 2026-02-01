@@ -26,7 +26,7 @@ no-daemon: true
 # json: false
 
 # Default actor for audit trails (overridden by BD_ACTOR or --actor)
-actor: "Opencode"
+# actor: "Opencode"
 
 # Path to database (overridden by BEADS_DB or --db)
 # db: ""
