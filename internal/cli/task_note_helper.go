@@ -2,10 +2,18 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
+)
+
+var (
+	errorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")).
+			Bold(true)
 )
 
 // taskNoteStage represents the current stage in the note entry flow
@@ -22,10 +30,13 @@ type taskNoteModel struct {
 	stage      taskNoteStage
 	picker     *components.TaskPicker
 	editor     *components.TextEditor
+	tasks      []journal.Task
 	taskID     string
 	noteText   string
 	canceled   bool
 	err        error
+	width      int
+	height     int
 }
 
 func (m taskNoteModel) Init() tea.Cmd {
@@ -41,9 +52,38 @@ func (m taskNoteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
+	case tea.WindowSizeMsg:
+		// Handle window resize
+		m.width = msg.Width
+		m.height = msg.Height
+
+		// Update component sizes
+		if m.picker != nil {
+			m.picker.SetWidth(msg.Width)
+		}
+		if m.editor != nil {
+			m.editor.SetSize(msg.Width, msg.Height)
+		}
+
 	case components.TaskPickerSelectMsg:
-		// User selected a task, move to note entry stage
+		// User selected a task, validate it exists
 		m.taskID = msg.TaskID
+
+		// Validate task ID exists in our task list
+		taskFound := false
+		for _, t := range m.tasks {
+			if t.ID == m.taskID {
+				taskFound = true
+				break
+			}
+		}
+
+		if !taskFound {
+			m.err = fmt.Errorf("task not found: %s", m.taskID)
+			return m, tea.Quit
+		}
+
+		// Move to note entry stage
 		m.stage = taskNoteStageEnterNote
 		return m, m.editor.Show()
 
@@ -77,6 +117,14 @@ func (m taskNoteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m taskNoteModel) View() string {
+	// Show error if present
+	if m.err != nil {
+		var b strings.Builder
+		b.WriteString(errorStyle.Render("Error: " + m.err.Error()))
+		b.WriteString("\n\nPress any key to exit...")
+		return b.String()
+	}
+
 	switch m.stage {
 	case taskNoteStagePickTask:
 		return m.picker.View()
@@ -108,6 +156,9 @@ func PickTaskAndEnterNote(tasks []journal.Task) (taskID string, noteText string,
 		stage:  taskNoteStagePickTask,
 		picker: picker,
 		editor: editor,
+		tasks:  tasks,
+		width:  80,
+		height: 24,
 	}
 
 	// Run the program
