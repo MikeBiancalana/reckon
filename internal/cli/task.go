@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	"github.com/sahilm/fuzzy"
@@ -1189,9 +1190,8 @@ type taskScheduleModel struct {
 	taskPicker   *components.TaskPicker
 	datePicker   *components.DatePicker
 	selectedTask *journal.Task
+	error        error
 	canceled     bool
-	width        int
-	height       int
 }
 
 type scheduleState int
@@ -1209,8 +1209,6 @@ func (m taskScheduleModel) Init() tea.Cmd {
 func (m taskScheduleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
 		m.taskPicker.SetWidth(msg.Width)
 		m.datePicker.SetWidth(msg.Width)
 		return m, nil
@@ -1238,10 +1236,13 @@ func (m taskScheduleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Schedule the task
 			formattedDate := components.FormatDate(parsedDate)
-			if err := journalTaskService.ScheduleTask(m.selectedTask.ID, formattedDate); err == nil {
+			if err := journalTaskService.ScheduleTask(m.selectedTask.ID, formattedDate); err != nil {
+				m.error = fmt.Errorf("failed to schedule task: %w", err)
 				m.state = scheduleStateDone
 				return m, tea.Quit
 			}
+			m.state = scheduleStateDone
+			return m, tea.Quit
 		}
 
 		if m.state == scheduleStateDatePicker && msg.Type == tea.KeyEsc {
@@ -1251,7 +1252,12 @@ func (m taskScheduleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case components.TaskPickerSelectMsg:
 		// Task selected, move to date picker
-		tasks, _ := journalTaskService.GetAllTasks()
+		tasks, err := journalTaskService.GetAllTasks()
+		if err != nil {
+			m.error = fmt.Errorf("failed to fetch task details: %w", err)
+			m.canceled = true
+			return m, tea.Quit
+		}
 		for _, t := range tasks {
 			if t.ID == msg.TaskID {
 				m.selectedTask = &t
@@ -1281,6 +1287,14 @@ func (m taskScheduleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m taskScheduleModel) View() string {
 	if m.state == scheduleStateDone || m.canceled {
 		return ""
+	}
+
+	// Display error if present
+	if m.error != nil {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")).
+			Bold(true)
+		return errorStyle.Render(fmt.Sprintf("✗ %s\n", m.error.Error()))
 	}
 
 	switch m.state {
@@ -1325,8 +1339,6 @@ func launchTaskScheduleMiniTUI() error {
 		state:      scheduleStateTaskPicker,
 		taskPicker: taskPicker,
 		datePicker: datePicker,
-		width:      80,
-		height:     24,
 	}
 
 	// Run the program
@@ -1342,6 +1354,10 @@ func launchTaskScheduleMiniTUI() error {
 		return fmt.Errorf("unexpected model type returned")
 	}
 
+	if result.error != nil {
+		return result.error
+	}
+
 	if result.canceled {
 		return nil
 	}
@@ -1353,6 +1369,8 @@ func launchTaskScheduleMiniTUI() error {
 	// Print success message
 	if !quietFlag {
 		dateStr := result.datePicker.GetValue()
+		// Error is safely ignored here because the date was already validated
+		// during form submission in the Update method, so ParseRelativeDate cannot fail
 		parsedDate, _ := components.ParseRelativeDate(dateStr)
 		formattedDate := components.FormatDate(parsedDate)
 		desc := components.GetDateDescription(parsedDate)
