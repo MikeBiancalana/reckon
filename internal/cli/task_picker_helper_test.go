@@ -80,3 +80,22 @@ func TestTaskPickerModel_Structure(t *testing.T) {
 	assert.Equal(t, "test-id", m.taskID)
 	assert.False(t, m.canceled)
 }
+
+func TestTaskScheduleModel_Structure(t *testing.T) {
+	// Verify the task schedule model structure is correct
+	m := taskScheduleModel{
+		state:    scheduleStateTaskPicker,
+		canceled: false,
+	}
+
+	assert.Equal(t, scheduleStateTaskPicker, m.state)
+	assert.False(t, m.canceled)
+	assert.Nil(t, m.selectedTask)
+}
+
+func TestTaskScheduleModel_StateTransitions(t *testing.T) {
+	// Test state constants exist and are distinct
+	assert.NotEqual(t, scheduleStateTaskPicker, scheduleStateDatePicker)
+	assert.NotEqual(t, scheduleStateDatePicker, scheduleStateDone)
+	assert.NotEqual(t, scheduleStateTaskPicker, scheduleStateDone)
+}

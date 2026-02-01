@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	"github.com/sahilm/fuzzy"
@@ -791,12 +792,13 @@ Examples:
 
 // taskScheduleCmd sets a task's scheduled date
 var taskScheduleCmd = &cobra.Command{
-	Use:   "schedule [task-id|--match <pattern>] <date>",
+	Use:   "schedule [task-id|--match <pattern>] [date]",
 	Short: "Set a task's scheduled date",
 	Long: `Set a task's scheduled date.
 
 Use task index (1, 2, 3...) or exact task ID.
 Or use --match to fuzzy-match by task title.
+Or launch interactive mini-TUI when no arguments provided.
 
 Supported date formats:
   - YYYY-MM-DD (e.g., 2025-01-15)
@@ -809,11 +811,12 @@ Supported date formats:
 Use --clear to remove the scheduled date.
 
 Examples:
-  rk task schedule 1 2025-01-15
-  rk task schedule abc123 tomorrow
-  rk task schedule --match auth +3d
-  rk task schedule 1 --clear`,
-	Args: cobra.MinimumNArgs(1),
+  rk task schedule                            # Launch interactive picker
+  rk task schedule 1 2025-01-15               # CLI mode
+  rk task schedule abc123 tomorrow            # CLI mode
+  rk task schedule --match auth +3d           # CLI mode with fuzzy matching
+  rk task schedule 1 --clear                  # Clear scheduled date`,
+	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
@@ -825,6 +828,11 @@ Examples:
 
 		if journalTaskService == nil {
 			return fmt.Errorf("task service not initialized")
+		}
+
+		// Launch interactive mini-TUI if no arguments provided
+		if len(args) == 0 && tmpMatch == "" && !clearFlag {
+			return launchTaskScheduleMiniTUI()
 		}
 
 		var taskID, dateStr string
@@ -842,32 +850,29 @@ Examples:
 			if len(args) == 1 {
 				taskID = args[0]
 			}
-		} else {
-			if len(args) < 2 {
-				return fmt.Errorf("missing date; provide a date or use --clear")
-			}
-			if len(args) > 2 {
-				return fmt.Errorf("too many arguments; use quotes for dates with spaces")
-			}
-
-			if tmpMatch != "" && len(args) > 1 {
-				return fmt.Errorf("cannot use both task-id and --match; use one or the other")
-			}
-			if tmpMatch == "" && len(args) < 2 {
-				return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
-			}
-
 			if tmpMatch != "" {
+				taskID = tmpMatch
+			}
+		} else {
+			// Not clearing - need to set a schedule date
+			if tmpMatch != "" {
+				// Using --match flag: args should be [date]
+				if len(args) != 1 {
+					return fmt.Errorf("expected date argument with --match flag")
+				}
 				taskID = tmpMatch
 				dateStr = args[0]
 			} else {
+				// Using positional args: args should be [task-id, date]
+				if len(args) < 2 {
+					return fmt.Errorf("missing date; provide a date or use --clear")
+				}
+				if len(args) > 2 {
+					return fmt.Errorf("too many arguments; use quotes for dates with spaces")
+				}
 				taskID = args[0]
 				dateStr = args[1]
 			}
-		}
-
-		if tmpMatch != "" {
-			taskID = tmpMatch
 		}
 
 		if taskID == "" {
@@ -1174,6 +1179,202 @@ func createTaskFromForm(result *components.FormResult) error {
 			desc := components.GetDateDescription(parsedDate)
 			fmt.Printf("  Deadline: %s (%s)\n", components.FormatDate(parsedDate), desc)
 		}
+	}
+
+	return nil
+}
+
+// taskScheduleModel is the Bubble Tea model for the task schedule mini-TUI
+type taskScheduleModel struct {
+	state        scheduleState
+	taskPicker   *components.TaskPicker
+	datePicker   *components.DatePicker
+	selectedTask *journal.Task
+	error        error
+	canceled     bool
+}
+
+type scheduleState int
+
+const (
+	scheduleStateTaskPicker scheduleState = iota
+	scheduleStateDatePicker
+	scheduleStateDone
+)
+
+func (m taskScheduleModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m taskScheduleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.taskPicker.SetWidth(msg.Width)
+		m.datePicker.SetWidth(msg.Width)
+		return m, nil
+
+	case tea.KeyMsg:
+		if msg.Type == tea.KeyCtrlC {
+			m.canceled = true
+			return m, tea.Quit
+		}
+
+		// In date picker state, check for enter to submit
+		if m.state == scheduleStateDatePicker && msg.Type == tea.KeyEnter {
+			// Validate date
+			dateStr := m.datePicker.GetValue()
+			if dateStr == "" {
+				// Let date picker handle the error
+				break
+			}
+
+			parsedDate, err := components.ParseRelativeDate(dateStr)
+			if err != nil {
+				// Let date picker handle the error
+				break
+			}
+
+			// Schedule the task
+			formattedDate := components.FormatDate(parsedDate)
+			if err := journalTaskService.ScheduleTask(m.selectedTask.ID, formattedDate); err != nil {
+				m.error = fmt.Errorf("failed to schedule task: %w", err)
+				m.state = scheduleStateDone
+				return m, tea.Quit
+			}
+			m.state = scheduleStateDone
+			return m, tea.Quit
+		}
+
+		if m.state == scheduleStateDatePicker && msg.Type == tea.KeyEsc {
+			m.canceled = true
+			return m, tea.Quit
+		}
+
+	case components.TaskPickerSelectMsg:
+		// Task selected, move to date picker
+		tasks, err := journalTaskService.GetAllTasks()
+		if err != nil {
+			m.error = fmt.Errorf("failed to fetch task details: %w", err)
+			m.canceled = true
+			return m, tea.Quit
+		}
+		for _, t := range tasks {
+			if t.ID == msg.TaskID {
+				m.selectedTask = &t
+				break
+			}
+		}
+		m.state = scheduleStateDatePicker
+		return m, m.datePicker.Show()
+
+	case components.TaskPickerCancelMsg:
+		m.canceled = true
+		return m, tea.Quit
+	}
+
+	// Update the appropriate component based on state
+	var cmd tea.Cmd
+	switch m.state {
+	case scheduleStateTaskPicker:
+		m.taskPicker, cmd = m.taskPicker.Update(msg)
+	case scheduleStateDatePicker:
+		m.datePicker, cmd = m.datePicker.Update(msg)
+	}
+
+	return m, cmd
+}
+
+func (m taskScheduleModel) View() string {
+	if m.state == scheduleStateDone || m.canceled {
+		return ""
+	}
+
+	// Display error if present
+	if m.error != nil {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")).
+			Bold(true)
+		return errorStyle.Render(fmt.Sprintf("✗ %s\n", m.error.Error()))
+	}
+
+	switch m.state {
+	case scheduleStateTaskPicker:
+		return m.taskPicker.View()
+	case scheduleStateDatePicker:
+		return m.datePicker.View()
+	}
+
+	return ""
+}
+
+// launchTaskScheduleMiniTUI launches the interactive mini-TUI for scheduling a task
+func launchTaskScheduleMiniTUI() error {
+	// Get all open tasks
+	allTasks, err := journalTaskService.GetAllTasks()
+	if err != nil {
+		return fmt.Errorf("failed to get tasks: %w", err)
+	}
+
+	// Filter to only open tasks
+	openTasks := make([]journal.Task, 0, len(allTasks))
+	for _, t := range allTasks {
+		if t.Status == journal.TaskOpen {
+			openTasks = append(openTasks, t)
+		}
+	}
+
+	if len(openTasks) == 0 {
+		return fmt.Errorf("no open tasks found")
+	}
+
+	// Create task picker
+	taskPicker := components.NewTaskPicker("Schedule Task")
+	taskPicker.Show(openTasks)
+
+	// Create date picker
+	datePicker := components.NewDatePicker("Select Schedule Date")
+
+	// Create model
+	m := taskScheduleModel{
+		state:      scheduleStateTaskPicker,
+		taskPicker: taskPicker,
+		datePicker: datePicker,
+	}
+
+	// Run the program
+	p := tea.NewProgram(m)
+	finalModel, err := p.Run()
+	if err != nil {
+		return fmt.Errorf("failed to run mini-TUI: %w", err)
+	}
+
+	// Check result
+	result, ok := finalModel.(taskScheduleModel)
+	if !ok {
+		return fmt.Errorf("unexpected model type returned")
+	}
+
+	if result.error != nil {
+		return result.error
+	}
+
+	if result.canceled {
+		return nil
+	}
+
+	if result.selectedTask == nil {
+		return nil
+	}
+
+	// Print success message
+	if !quietFlag {
+		dateStr := result.datePicker.GetValue()
+		// Error is safely ignored here because the date was already validated
+		// during form submission in the Update method, so ParseRelativeDate cannot fail
+		parsedDate, _ := components.ParseRelativeDate(dateStr)
+		formattedDate := components.FormatDate(parsedDate)
+		desc := components.GetDateDescription(parsedDate)
+		fmt.Printf("✓ Set scheduled date for task '%s' to %s (%s)\n", result.selectedTask.Text, formattedDate, desc)
 	}
 
 	return nil
