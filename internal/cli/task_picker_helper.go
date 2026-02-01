@@ -73,16 +73,19 @@ func PickTask(tasks []journal.Task, title string) (taskID string, canceled bool,
 		return "", false, fmt.Errorf("failed to run task picker: %w", err)
 	}
 
-	// Extract result
-	result := finalModel.(taskPickerModel)
+	// Extract result with panic protection
+	result, ok := finalModel.(taskPickerModel)
+	if !ok {
+		return "", false, fmt.Errorf("unexpected model type returned from picker")
+	}
 	return result.taskID, result.canceled, nil
 }
 
 // PickOpenTask is a convenience function that filters tasks to only open tasks
 // and launches the picker. This is commonly used in commands.
 func PickOpenTask(allTasks []journal.Task, title string) (taskID string, canceled bool, err error) {
-	// Filter to only open tasks
-	openTasks := make([]journal.Task, 0)
+	// Filter to only open tasks (pre-allocate capacity to avoid reallocations)
+	openTasks := make([]journal.Task, 0, len(allTasks))
 	for _, t := range allTasks {
 		if t.Status == journal.TaskOpen {
 			openTasks = append(openTasks, t)

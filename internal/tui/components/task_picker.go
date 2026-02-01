@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sahilm/fuzzy"
 )
 
 var (
@@ -127,6 +128,25 @@ type TaskPicker struct {
 	width        int
 }
 
+// fuzzyFilter implements fuzzy matching for task picker items
+func fuzzyFilter(term string, targets []string) []list.Rank {
+	if term == "" {
+		return nil
+	}
+
+	matches := fuzzy.Find(term, targets)
+	ranks := make([]list.Rank, len(matches))
+
+	for i, match := range matches {
+		ranks[i] = list.Rank{
+			Index:          match.Index,
+			MatchedIndexes: match.MatchedIndexes,
+		}
+	}
+
+	return ranks
+}
+
 // NewTaskPicker creates a new task picker component
 func NewTaskPicker(title string) *TaskPicker {
 	delegate := taskPickerDelegate{}
@@ -134,8 +154,12 @@ func NewTaskPicker(title string) *TaskPicker {
 	l.Title = title
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
+	l.FilterInput.Prompt = "Filter: "
 	l.Styles.Title = taskPickerTitleStyle
 	l.SetShowHelp(false)
+
+	// Configure fuzzy matching filter
+	l.Filter = fuzzyFilter
 
 	return &TaskPicker{
 		list:    l,
@@ -146,7 +170,7 @@ func NewTaskPicker(title string) *TaskPicker {
 }
 
 // Show displays the task picker with the given tasks
-func (tp *TaskPicker) Show(tasks []journal.Task) {
+func (tp *TaskPicker) Show(tasks []journal.Task) tea.Cmd {
 	tp.visible = true
 	tp.tasks = tasks
 	tp.selectedTask = nil
@@ -159,6 +183,7 @@ func (tp *TaskPicker) Show(tasks []journal.Task) {
 
 	tp.list.SetItems(items)
 	tp.list.ResetFilter()
+	return nil
 }
 
 // Hide hides the task picker

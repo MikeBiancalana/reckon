@@ -24,18 +24,20 @@ func TestTaskPicker_Show(t *testing.T) {
 	}
 
 	picker := NewTaskPicker("Select a task")
-	picker.Show(tasks)
+	cmd := picker.Show(tasks)
 
 	assert.True(t, picker.visible)
 	assert.Len(t, picker.tasks, 2)
+	assert.Nil(t, cmd) // Show returns nil cmd for now
 }
 
 func TestTaskPicker_ShowWithEmptyTasks(t *testing.T) {
 	picker := NewTaskPicker("Select a task")
-	picker.Show([]journal.Task{})
+	cmd := picker.Show([]journal.Task{})
 
 	assert.True(t, picker.visible)
 	assert.Len(t, picker.tasks, 0)
+	assert.Nil(t, cmd)
 }
 
 func TestTaskPicker_Hide(t *testing.T) {
@@ -75,7 +77,7 @@ func TestTaskPicker_UpdateWithEscapeKey(t *testing.T) {
 	}
 
 	picker := NewTaskPicker("Select a task")
-	picker.Show(tasks)
+	_ = picker.Show(tasks)
 
 	msg := tea.KeyMsg{Type: tea.KeyEsc}
 	_, cmd := picker.Update(msg)
@@ -96,7 +98,7 @@ func TestTaskPicker_UpdateWithEnterKey(t *testing.T) {
 	}
 
 	picker := NewTaskPicker("Select a task")
-	picker.Show(tasks)
+	_ = picker.Show(tasks)
 
 	// Simulate selecting first item (list initialized with tasks)
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
@@ -163,9 +165,9 @@ func TestTaskPicker_FuzzyFiltering(t *testing.T) {
 	}
 
 	picker := NewTaskPicker("Select a task")
-	picker.Show(tasks)
+	_ = picker.Show(tasks)
 
-	// The list component handles filtering internally
+	// The list component handles fuzzy filtering internally using sahilm/fuzzy
 	// We just verify that all tasks are loaded
 	assert.Len(t, picker.tasks, 3)
 }
@@ -190,7 +192,7 @@ func TestTaskPicker_ViewWhenVisible(t *testing.T) {
 	}
 
 	picker := NewTaskPicker("Select a task")
-	picker.Show(tasks)
+	_ = picker.Show(tasks)
 	view := picker.View()
 
 	assert.NotEmpty(t, view)

@@ -54,21 +54,20 @@ func TestPickOpenTask_NoOpenTasks(t *testing.T) {
 		},
 	}
 
-	// Verify filtering returns empty for all done tasks
-	openTasks := make([]journal.Task, 0)
-	for _, t := range tasks {
-		if t.Status == journal.TaskOpen {
-			openTasks = append(openTasks, t)
-		}
-	}
+	// Test that PickOpenTask returns an error when no open tasks exist
+	_, _, err := PickOpenTask(tasks, "Select a task")
 
-	assert.Len(t, openTasks, 0)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no open tasks found")
 }
 
 func TestPickTask_EmptyTaskList(t *testing.T) {
-	// Verify behavior with empty task list
+	// Test that PickTask returns an error with empty task list
 	tasks := []journal.Task{}
-	assert.Len(t, tasks, 0)
+	_, _, err := PickTask(tasks, "Select a task")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no tasks available")
 }
 
 func TestTaskPickerModel_Structure(t *testing.T) {
