@@ -649,14 +649,18 @@ var taskNoteCmd = &cobra.Command{
 	Short: "Add a note to a task",
 	Long: `Add a note to a task.
 
+When called without arguments, launches an interactive picker to select a task
+and a multiline editor to enter the note text.
+
 Use task index (1, 2, 3...) or exact task ID.
 Or use --match to fuzzy-match by task title.
 
 Examples:
+  rk task note                             (launches mini-TUI)
   rk task note 1 "Some note"
   rk task note abc123 "Another note"
   rk task note --match auth "Auth-related note"`,
-	Args: cobra.MinimumNArgs(2),
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tmpMatch := taskMatchFlag
 		taskMatchFlag = ""
@@ -666,12 +670,22 @@ Examples:
 			return fmt.Errorf("task service not initialized")
 		}
 
+		// Launch mini-TUI if no arguments provided
+		if len(args) == 0 && tmpMatch == "" {
+			return launchTaskNoteMiniTUI()
+		}
+
 		// Validate mutually exclusive options
 		if tmpMatch != "" && len(args) > 0 {
 			return fmt.Errorf("cannot use both task-id and --match; use one or the other")
 		}
 		if tmpMatch == "" && len(args) == 0 {
 			return fmt.Errorf("missing task identifier; use task index, ID, or --match <pattern>")
+		}
+
+		// CLI mode: require both task ID and note text
+		if len(args) < 2 {
+			return fmt.Errorf("missing note text; provide both task-id and note-text, or use no arguments for interactive mode")
 		}
 
 		// Resolve task ID (supports numeric indices, IDs, or --match for fuzzy matching)
@@ -692,6 +706,42 @@ Examples:
 		}
 		return nil
 	},
+}
+
+// launchTaskNoteMiniTUI launches the interactive task note entry workflow
+func launchTaskNoteMiniTUI() error {
+	// Get all tasks
+	tasks, err := journalTaskService.GetAllTasks()
+	if err != nil {
+		return fmt.Errorf("failed to get tasks: %w", err)
+	}
+
+	// Launch picker + editor workflow
+	taskID, noteText, canceled, err := PickOpenTaskAndEnterNote(tasks)
+	if err != nil {
+		return err
+	}
+
+	if canceled {
+		// User cancelled the workflow
+		return nil
+	}
+
+	// Validate note text is not empty
+	if noteText == "" {
+		return fmt.Errorf("note text cannot be empty")
+	}
+
+	// Add the note
+	if err := journalTaskService.AddTaskNote(taskID, noteText); err != nil {
+		return fmt.Errorf("failed to add note: %w", err)
+	}
+
+	if !quietFlag {
+		fmt.Printf("✓ Added note to task %s\n", taskID)
+	}
+
+	return nil
 }
 
 // taskDeleteCmd deletes a task
