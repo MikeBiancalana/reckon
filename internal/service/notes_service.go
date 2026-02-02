@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/MikeBiancalana/reckon/internal/models"
@@ -43,13 +45,28 @@ func (s *NotesService) GetNoteBySlug(slug string) (*models.Note, error) {
 // 3. Deletes old wiki links for this note
 // 4. Creates new link records with resolved target_note_id when possible
 // 5. Commits everything in a transaction
-func (s *NotesService) UpdateNoteLinks(note *models.Note) error {
+//
+// Parameters:
+//   - note: The note whose links should be updated (note.FilePath must be relative to notesDir)
+//   - notesDir: The root directory where notes are stored
+func (s *NotesService) UpdateNoteLinks(note *models.Note, notesDir string) error {
 	logger.Info("UpdateNoteLinks", "note_id", note.ID, "slug", note.Slug, "file_path", note.FilePath)
 
+	// Construct and validate the file path
+	filePath := filepath.Join(notesDir, note.FilePath)
+
+	// Security: Verify the path is within notesDir to prevent path traversal
+	cleanPath := filepath.Clean(filePath)
+	cleanNotesDir := filepath.Clean(notesDir)
+	if !strings.HasPrefix(cleanPath, cleanNotesDir+string(filepath.Separator)) {
+		logger.Error("UpdateNoteLinks", "error", "path traversal attempt", "note_id", note.ID, "file_path", note.FilePath)
+		return fmt.Errorf("invalid note path: %s", note.FilePath)
+	}
+
 	// Read the note's content from file
-	content, err := os.ReadFile(note.FilePath)
+	content, err := os.ReadFile(cleanPath)
 	if err != nil {
-		logger.Error("UpdateNoteLinks", "error", err, "note_id", note.ID, "file_path", note.FilePath)
+		logger.Error("UpdateNoteLinks", "error", err, "note_id", note.ID, "file_path", cleanPath)
 		return fmt.Errorf("failed to read note file: %w", err)
 	}
 
@@ -144,4 +161,9 @@ func (s *NotesService) ResolveOrphanedBacklinks(note *models.Note) error {
 // GetLinksBySourceNote retrieves all links from a source note.
 func (s *NotesService) GetLinksBySourceNote(sourceNoteID string) ([]models.NoteLink, error) {
 	return s.repo.GetLinksBySourceNote(sourceNoteID)
+}
+
+// GetBacklinks retrieves all links that point to a given note (backlinks).
+func (s *NotesService) GetBacklinks(noteID string) ([]models.NoteLink, error) {
+	return s.repo.GetBacklinks(noteID)
 }

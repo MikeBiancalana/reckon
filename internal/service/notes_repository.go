@@ -239,5 +239,54 @@ func (r *NotesRepository) GetLinksBySourceNote(sourceNoteID string) ([]models.No
 		links = append(links, link)
 	}
 
+	if err := rows.Err(); err != nil {
+		logger.Error("GetLinksBySourceNote iteration error", "error", err, "source_note_id", sourceNoteID)
+		return nil, fmt.Errorf("failed to iterate links for note %s: %w", sourceNoteID, err)
+	}
+
+	return links, nil
+}
+
+// GetBacklinks retrieves all links that point to a given note (backlinks).
+func (r *NotesRepository) GetBacklinks(noteID string) ([]models.NoteLink, error) {
+	logger.Debug("GetBacklinks", "note_id", noteID)
+
+	rows, err := r.db.DB().Query(
+		`SELECT id, source_note_id, target_slug, target_note_id, link_type, created_at
+		 FROM note_links WHERE target_note_id = ?`,
+		noteID,
+	)
+	if err != nil {
+		logger.Error("GetBacklinks", "error", err, "note_id", noteID)
+		return nil, fmt.Errorf("failed to query backlinks for note %s: %w", noteID, err)
+	}
+	defer rows.Close()
+
+	var links []models.NoteLink
+	for rows.Next() {
+		var link models.NoteLink
+		var linkTypeStr string
+		var createdUnix int64
+		var targetNoteID sql.NullString
+
+		err := rows.Scan(&link.ID, &link.SourceNoteID, &link.TargetSlug, &targetNoteID, &linkTypeStr, &createdUnix)
+		if err != nil {
+			logger.Error("GetBacklinks", "error", err)
+			return nil, fmt.Errorf("failed to scan backlink: %w", err)
+		}
+
+		if targetNoteID.Valid {
+			link.TargetNoteID = targetNoteID.String
+		}
+		link.LinkType = models.LinkType(linkTypeStr)
+		link.CreatedAt = time.Unix(createdUnix, 0)
+		links = append(links, link)
+	}
+
+	if err := rows.Err(); err != nil {
+		logger.Error("GetBacklinks iteration error", "error", err, "note_id", noteID)
+		return nil, fmt.Errorf("failed to iterate backlinks for note %s: %w", noteID, err)
+	}
+
 	return links, nil
 }
