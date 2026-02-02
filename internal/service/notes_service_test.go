@@ -114,15 +114,15 @@ This note references [[other-note]] and [[another-note|Another Note]].
 
 See also [[third-note]].`
 
-	filePath := createTestNoteFile(t, notesDir, "my-note.md", content)
+	createTestNoteFile(t, notesDir, "my-note.md", content)
 
-	// Create the source note
-	note := models.NewNote("My Note", "my-note", filePath, nil)
+	// Create the source note with relative path
+	note := models.NewNote("My Note", "my-note", "my-note.md", nil)
 	err := service.SaveNote(note)
 	require.NoError(t, err)
 
 	// Update links
-	err = service.UpdateNoteLinks(note)
+	err = service.UpdateNoteLinks(note, notesDir)
 	require.NoError(t, err)
 
 	// Verify links were created
@@ -166,15 +166,15 @@ Links to [[target-one]] and [[target-two]].
 
 Also references [[non-existent-note]].`
 
-	filePath := createTestNoteFile(t, notesDir, "source-note.md", content)
+	createTestNoteFile(t, notesDir, "source-note.md", content)
 
-	// Create the source note
-	sourceNote := models.NewNote("Source Note", "source-note", filePath, nil)
+	// Create the source note with relative path
+	sourceNote := models.NewNote("Source Note", "source-note", "source-note.md", nil)
 	err = service.SaveNote(sourceNote)
 	require.NoError(t, err)
 
 	// Update links
-	err = service.UpdateNoteLinks(sourceNote)
+	err = service.UpdateNoteLinks(sourceNote, notesDir)
 	require.NoError(t, err)
 
 	// Verify links
@@ -207,15 +207,15 @@ func TestUpdateNoteLinks_ExcludesCodeBlocks(t *testing.T) {
 		"Inline `[[inline-link]]` code.\n\n" +
 		"Another real [[actual-link]] here."
 
-	filePath := createTestNoteFile(t, notesDir, "code-note.md", content)
+	createTestNoteFile(t, notesDir, "code-note.md", content)
 
-	// Create the source note
-	note := models.NewNote("Code Note", "code-note", filePath, nil)
+	// Create the source note with relative path
+	note := models.NewNote("Code Note", "code-note", "code-note.md", nil)
 	err := service.SaveNote(note)
 	require.NoError(t, err)
 
 	// Update links
-	err = service.UpdateNoteLinks(note)
+	err = service.UpdateNoteLinks(note, notesDir)
 	require.NoError(t, err)
 
 	// Verify only non-code links were extracted
@@ -245,15 +245,15 @@ func TestUpdateNoteLinks_UpdateExistingLinks(t *testing.T) {
 
 Links to [[link-one]] and [[link-two]].`
 
-	filePath := createTestNoteFile(t, notesDir, "note.md", initialContent)
+	createTestNoteFile(t, notesDir, "note.md", initialContent)
 
-	// Create and save note
-	note := models.NewNote("Note", "note", filePath, nil)
+	// Create and save note with relative path
+	note := models.NewNote("Note", "note", "note.md", nil)
 	err := service.SaveNote(note)
 	require.NoError(t, err)
 
 	// Update links
-	err = service.UpdateNoteLinks(note)
+	err = service.UpdateNoteLinks(note, notesDir)
 	require.NoError(t, err)
 
 	// Verify initial links
@@ -266,7 +266,8 @@ Links to [[link-one]] and [[link-two]].`
 
 Now links to [[link-three]] and [[link-four]].`
 
-	err = os.WriteFile(filePath, []byte(updatedContent), 0644)
+	notePath := filepath.Join(notesDir, "note.md")
+	err = os.WriteFile(notePath, []byte(updatedContent), 0644)
 	require.NoError(t, err)
 
 	// Update note metadata
@@ -275,7 +276,7 @@ Now links to [[link-three]] and [[link-four]].`
 	require.NoError(t, err)
 
 	// Update links again
-	err = service.UpdateNoteLinks(note)
+	err = service.UpdateNoteLinks(note, notesDir)
 	require.NoError(t, err)
 
 	// Verify old links were replaced
@@ -305,14 +306,14 @@ func TestResolveOrphanedBacklinks(t *testing.T) {
 
 This links to [[target-note]] which doesn't exist yet.`
 
-	sourceFilePath := createTestNoteFile(t, notesDir, "source-note.md", sourceContent)
+	createTestNoteFile(t, notesDir, "source-note.md", sourceContent)
 
-	sourceNote := models.NewNote("Source Note", "source-note", sourceFilePath, nil)
+	sourceNote := models.NewNote("Source Note", "source-note", "source-note.md", nil)
 	err := service.SaveNote(sourceNote)
 	require.NoError(t, err)
 
 	// Update links (target doesn't exist, so target_note_id will be NULL)
-	err = service.UpdateNoteLinks(sourceNote)
+	err = service.UpdateNoteLinks(sourceNote, notesDir)
 	require.NoError(t, err)
 
 	// Verify link has NULL target_note_id
@@ -323,9 +324,9 @@ This links to [[target-note]] which doesn't exist yet.`
 	assert.Empty(t, links[0].TargetNoteID)
 
 	// Now create the target note
-	targetFilePath := createTestNoteFile(t, notesDir, "target-note.md", "# Target Note\n\nContent here.")
+	createTestNoteFile(t, notesDir, "target-note.md", "# Target Note\n\nContent here.")
 
-	targetNote := models.NewNote("Target Note", "target-note", targetFilePath, nil)
+	targetNote := models.NewNote("Target Note", "target-note", "target-note.md", nil)
 	err = service.SaveNote(targetNote)
 	require.NoError(t, err)
 
@@ -354,20 +355,20 @@ func TestResolveOrphanedBacklinks_MultipleOrphans(t *testing.T) {
 This links to [[shared-target]].`
 
 		filename := "source-" + string(rune('0'+i)) + ".md"
-		filePath := createTestNoteFile(t, notesDir, filename, content)
+		createTestNoteFile(t, notesDir, filename, content)
 
-		sourceNote := models.NewNote("Source Note "+string(rune('0'+i)), "source-note-"+string(rune('0'+i)), filePath, nil)
+		sourceNote := models.NewNote("Source Note "+string(rune('0'+i)), "source-note-"+string(rune('0'+i)), filename, nil)
 		err := service.SaveNote(sourceNote)
 		require.NoError(t, err)
 
-		err = service.UpdateNoteLinks(sourceNote)
+		err = service.UpdateNoteLinks(sourceNote, notesDir)
 		require.NoError(t, err)
 	}
 
 	// Create the target note
-	targetFilePath := createTestNoteFile(t, notesDir, "shared-target.md", "# Shared Target\n\nContent.")
+	createTestNoteFile(t, notesDir, "shared-target.md", "# Shared Target\n\nContent.")
 
-	targetNote := models.NewNote("Shared Target", "shared-target", targetFilePath, nil)
+	targetNote := models.NewNote("Shared Target", "shared-target", "shared-target.md", nil)
 	err := service.SaveNote(targetNote)
 	require.NoError(t, err)
 
@@ -396,14 +397,14 @@ func TestUpdateNoteLinks_EmptyFile(t *testing.T) {
 	notesDir := filepath.Join(tempDir, "notes")
 
 	// Create empty note file
-	filePath := createTestNoteFile(t, notesDir, "empty-note.md", "")
+	createTestNoteFile(t, notesDir, "empty-note.md", "")
 
-	note := models.NewNote("Empty Note", "empty-note", filePath, nil)
+	note := models.NewNote("Empty Note", "empty-note", "empty-note.md", nil)
 	err := service.SaveNote(note)
 	require.NoError(t, err)
 
 	// Update links (should succeed with no links)
-	err = service.UpdateNoteLinks(note)
+	err = service.UpdateNoteLinks(note, notesDir)
 	require.NoError(t, err)
 
 	// Verify no links were created
@@ -425,14 +426,14 @@ Multiple references to [[same-note]] and [[same-note]] again.
 
 Also [[same-note|with display text]].`
 
-	filePath := createTestNoteFile(t, notesDir, "note.md", content)
+	createTestNoteFile(t, notesDir, "note.md", content)
 
-	note := models.NewNote("Note", "note", filePath, nil)
+	note := models.NewNote("Note", "note", "note.md", nil)
 	err := service.SaveNote(note)
 	require.NoError(t, err)
 
 	// Update links
-	err = service.UpdateNoteLinks(note)
+	err = service.UpdateNoteLinks(note, notesDir)
 	require.NoError(t, err)
 
 	// Verify duplicates were deduplicated

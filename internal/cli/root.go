@@ -8,6 +8,7 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/logger"
+	notesvc "github.com/MikeBiancalana/reckon/internal/service"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/MikeBiancalana/reckon/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,7 @@ const (
 var (
 	service            *journal.Service
 	journalTaskService *journal.TaskService
+	notesService       *notesvc.NotesService
 	dateFlag           string
 	quietFlag          bool
 	logFileFlag        string
@@ -100,6 +102,7 @@ func init() {
 	// Add subcommands
 	RootCmd.AddCommand(GetLogCommand())
 	RootCmd.AddCommand(GetNoteCommand())
+	RootCmd.AddCommand(GetNotesCommand())
 	RootCmd.AddCommand(todayCmd)
 	RootCmd.AddCommand(weekCmd)
 	RootCmd.AddCommand(rebuildCmd)
@@ -144,6 +147,9 @@ func initService() {
 
 	journalTaskRepo := journal.NewTaskRepository(db)
 	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
+
+	notesRepo := notesvc.NewNotesRepository(db)
+	notesService = notesvc.NewNotesService(notesRepo)
 }
 
 // getEffectiveDate returns the date to operate on, either from --date flag or today
