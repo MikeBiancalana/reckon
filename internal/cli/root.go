@@ -8,6 +8,7 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/logger"
+	notesvc "github.com/MikeBiancalana/reckon/internal/service"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/MikeBiancalana/reckon/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,8 +28,9 @@ const (
 )
 
 var (
-	service            *journal.Service
+	journalService            *journal.Service
 	journalTaskService *journal.TaskService
+	notesService       *notesvc.NotesService
 	dateFlag           string
 	quietFlag          bool
 	logFileFlag        string
@@ -77,7 +79,7 @@ var RootCmd = &cobra.Command{
 		}
 
 		// Default behavior: launch TUI
-		model := tui.NewModel(service)
+		model := tui.NewModel(journalService)
 		if journalTaskService != nil {
 			model.SetJournalTaskService(journalTaskService)
 		}
@@ -88,7 +90,7 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
-	// Initialize logger and service
+	// Initialize logger and journalService
 	cobra.OnInitialize(initLogger, initService)
 
 	// Add global flags
@@ -123,7 +125,7 @@ func initLogger() {
 	logger.Info("reckon initialized", "version", "dev", "log_file", logger.GetLogFile(), "log_level", cfg.Level)
 }
 
-// initService initializes the journal service
+// initService initializes the journal journalService
 func initService() {
 	dbPath, err := config.DatabasePath()
 	if err != nil {
@@ -140,10 +142,13 @@ func initService() {
 	// log := logger.GetLogger()
 	repo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
-	service = journal.NewService(repo, fileStore)
+	journalService = journal.NewService(repo, fileStore)
 
 	journalTaskRepo := journal.NewTaskRepository(db)
 	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
+
+	notesRepo := notesvc.NewNotesRepository(db)
+	notesService = notesvc.NewNotesService(notesRepo)
 }
 
 // getEffectiveDate returns the date to operate on, either from --date flag or today
