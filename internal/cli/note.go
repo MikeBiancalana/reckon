@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -9,17 +10,33 @@ import (
 
 var noteCmd = &cobra.Command{
 	Use:   "note",
-	Short: "Manage standalone notes",
-	Long:  `Manage standalone notes - create, list, and delete notes.`,
+	Short: "[DEPRECATED] Manage standalone notes - use 'rk log add' instead",
+	Long: `[DEPRECATED] This command will be removed in a future version.
+
+Please use 'rk log add' instead, which provides the same functionality
+with additional interactive mode support.
+
+The 'rk note' command was confusing because it creates journal log entries,
+not zettelkasten notes (which are managed via 'rk notes').`,
 }
 
 var noteNewCmd = &cobra.Command{
 	Use:   "new [text]",
-	Short: "Create a new standalone note",
-	Long: `Creates a new standalone note.
-The note will be added to the journal as a log entry.`,
+	Short: "[DEPRECATED] Create a new standalone note - use 'rk log add' instead",
+	Long: `[DEPRECATED] This command will be removed in a future version.
+
+Please use 'rk log add [message]' instead, which provides the same functionality
+with additional interactive mode support.
+
+The 'rk note new' command was confusing because it creates journal log entries,
+not zettelkasten notes (which are managed via 'rk notes').`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Display deprecation warning
+		fmt.Fprintf(os.Stderr, "\n⚠️  WARNING: 'rk note new' is DEPRECATED and will be removed in a future version.\n")
+		fmt.Fprintf(os.Stderr, "   Please use 'rk log add' instead for the same functionality.\n")
+		fmt.Fprintf(os.Stderr, "   Example: rk log add %s\n\n", strings.Join(args, " "))
+
 		var noteText string
 
 		if len(args) == 0 {
