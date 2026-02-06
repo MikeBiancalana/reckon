@@ -23,7 +23,7 @@ var scheduleAddCmd = &cobra.Command{
 	Long:  `Add a schedule item for today. Time is optional (HH:MM format).`,
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if service == nil {
+		if journalService == nil {
 			return fmt.Errorf("journal service not initialized")
 		}
 
@@ -45,13 +45,13 @@ var scheduleAddCmd = &cobra.Command{
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
 		// Add schedule item
-		if err := service.AddScheduleItem(j, timeStr, content); err != nil {
+		if err := journalService.AddScheduleItem(j, timeStr, content); err != nil {
 			return fmt.Errorf("failed to add schedule item: %w", err)
 		}
 
@@ -72,7 +72,7 @@ var scheduleListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List schedule items",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if service == nil {
+		if journalService == nil {
 			return fmt.Errorf("journal service not initialized")
 		}
 
@@ -82,7 +82,7 @@ var scheduleListCmd = &cobra.Command{
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
@@ -132,7 +132,7 @@ var scheduleDeleteCmd = &cobra.Command{
 	Long:  "Delete a schedule item by its index number (shown in list command).",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if service == nil {
+		if journalService == nil {
 			return fmt.Errorf("journal service not initialized")
 		}
 
@@ -148,7 +148,7 @@ var scheduleDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
@@ -161,7 +161,7 @@ var scheduleDeleteCmd = &cobra.Command{
 		item := j.ScheduleItems[index-1]
 
 		// Delete by ID
-		if err := service.DeleteScheduleItem(j, item.ID); err != nil {
+		if err := journalService.DeleteScheduleItem(j, item.ID); err != nil {
 			return fmt.Errorf("failed to delete schedule item: %w", err)
 		}
 

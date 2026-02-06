@@ -32,13 +32,19 @@ For technical details, see [[architecture]] and [[implementation]].
 
 Also reference [[getting-started]] (self-reference).`
 
+	createTestNoteFile(t, notesDir, "getting-started.md", note1Content)
+	note1 := models.NewNote("Getting Started", "getting-started", "getting-started.md", []string{"intro"})
 	note1Path := createTestNoteFile(t, notesDir, "getting-started.md", note1Content)
 	note1 := models.NewNote("Getting Started", "getting-started", note1Path, []string{"intro"})
+	note1AbsPath := createTestNoteFile(t, notesDir, "getting-started.md", note1Content)
+	note1RelPath, err := filepath.Rel(notesDir, note1AbsPath)
+	require.NoError(t, err)
+	note1 := models.NewNote("Getting Started", "getting-started", note1RelPath, []string{"intro"})
 
-	err := service.SaveNote(note1)
+	err = service.SaveNote(note1)
 	require.NoError(t, err)
 
-	err = service.UpdateNoteLinks(note1)
+	err = service.UpdateNoteLinks(note1, notesDir)
 	require.NoError(t, err)
 
 	err = service.ResolveOrphanedBacklinks(note1)
@@ -66,13 +72,19 @@ See [[getting-started]] for introduction.
 
 Implementation details in [[implementation]].`
 
+	createTestNoteFile(t, notesDir, "architecture.md", note2Content)
+	note2 := models.NewNote("Architecture", "architecture", "architecture.md", []string{"technical"})
 	note2Path := createTestNoteFile(t, notesDir, "architecture.md", note2Content)
 	note2 := models.NewNote("Architecture", "architecture", note2Path, []string{"technical"})
+	note2AbsPath := createTestNoteFile(t, notesDir, "architecture.md", note2Content)
+	note2RelPath, err := filepath.Rel(notesDir, note2AbsPath)
+	require.NoError(t, err)
+	note2 := models.NewNote("Architecture", "architecture", note2RelPath, []string{"technical"})
 
 	err = service.SaveNote(note2)
 	require.NoError(t, err)
 
-	err = service.UpdateNoteLinks(note2)
+	err = service.UpdateNoteLinks(note2, notesDir)
 	require.NoError(t, err)
 
 	err = service.ResolveOrphanedBacklinks(note2)
@@ -108,13 +120,19 @@ Implementation guide.
 
 Prerequisites: [[architecture]] and [[getting-started]].`
 
+	createTestNoteFile(t, notesDir, "implementation.md", note3Content)
+	note3 := models.NewNote("Implementation", "implementation", "implementation.md", []string{"technical", "guide"})
 	note3Path := createTestNoteFile(t, notesDir, "implementation.md", note3Content)
 	note3 := models.NewNote("Implementation", "implementation", note3Path, []string{"technical", "guide"})
+	note3AbsPath := createTestNoteFile(t, notesDir, "implementation.md", note3Content)
+	note3RelPath, err := filepath.Rel(notesDir, note3AbsPath)
+	require.NoError(t, err)
+	note3 := models.NewNote("Implementation", "implementation", note3RelPath, []string{"technical", "guide"})
 
 	err = service.SaveNote(note3)
 	require.NoError(t, err)
 
-	err = service.UpdateNoteLinks(note3)
+	err = service.UpdateNoteLinks(note3, notesDir)
 	require.NoError(t, err)
 
 	err = service.ResolveOrphanedBacklinks(note3)
@@ -172,13 +190,19 @@ func TestNotesIntegration_UpdateLinks(t *testing.T) {
 
 Links to [[design]] and [[testing]].`
 
+	createTestNoteFile(t, notesDir, "project.md", initialContent)
+	note := models.NewNote("Project Notes", "project", "project.md", []string{"project"})
 	notePath := createTestNoteFile(t, notesDir, "project.md", initialContent)
 	note := models.NewNote("Project Notes", "project", notePath, []string{"project"})
+	noteAbsPath := createTestNoteFile(t, notesDir, "project.md", initialContent)
+	noteRelPath, err := filepath.Rel(notesDir, noteAbsPath)
+	require.NoError(t, err)
+	note := models.NewNote("Project Notes", "project", noteRelPath, []string{"project"})
 
-	err := service.SaveNote(note)
+	err = service.SaveNote(note)
 	require.NoError(t, err)
 
-	err = service.UpdateNoteLinks(note)
+	err = service.UpdateNoteLinks(note, notesDir)
 	require.NoError(t, err)
 
 	// Verify initial links
@@ -200,11 +224,14 @@ Updated to link to [[implementation]] and [[deployment]].
 
 Removed old links.`
 
+	projectPath := filepath.Join(notesDir, "project.md")
+	err = os.WriteFile(projectPath, []byte(updatedContent), 0644)
 	err = os.WriteFile(notePath, []byte(updatedContent), 0644)
+	err = os.WriteFile(noteAbsPath, []byte(updatedContent), 0644)
 	require.NoError(t, err)
 
 	// Update links in database
-	err = service.UpdateNoteLinks(note)
+	err = service.UpdateNoteLinks(note, notesDir)
 	require.NoError(t, err)
 
 	// Verify links were updated

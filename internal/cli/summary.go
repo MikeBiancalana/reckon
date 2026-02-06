@@ -32,7 +32,7 @@ func showTodaySummary() error {
 		return err
 	}
 
-	j, err := service.GetByDate(effectiveDate)
+	j, err := journalService.GetByDate(effectiveDate)
 	if err != nil {
 		return fmt.Errorf("error getting journal for %s: %w", effectiveDate, err)
 	}
@@ -79,7 +79,7 @@ func showWeekSummary() error {
 
 	for i := 6; i >= 0; i-- {
 		date := start.AddDate(0, 0, -i).Format("2006-01-02")
-		j, err := service.GetByDate(date)
+		j, err := journalService.GetByDate(date)
 		if err != nil {
 			continue
 		}
