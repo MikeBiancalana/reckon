@@ -625,15 +625,8 @@ func createNoteWithContent(title string, tags []string, content string) error {
 		return fmt.Errorf("failed to save note to database: %w", err)
 	}
 
-	// Temporarily update note with full file path for link extraction
-	// (UpdateNoteLinks needs to read the file)
-	// Use defer to guarantee path restoration even if panic occurs
-	originalPath := note.FilePath
-	note.FilePath = fullFilePath
-	defer func() { note.FilePath = originalPath }()
-
-	// Extract and save wiki links
-	if err := notesService.UpdateNoteLinks(note); err != nil {
+	// Extract and save wiki links (note.FilePath is relative, notesDir is absolute)
+	if err := notesService.UpdateNoteLinks(note, notesDir); err != nil {
 		return fmt.Errorf("failed to update note links: %w", err)
 	}
 

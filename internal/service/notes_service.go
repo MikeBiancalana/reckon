@@ -169,7 +169,6 @@ func (s *NotesService) ResolveOrphanedBacklinks(note *models.Note) error {
 func (s *NotesService) GetLinksBySourceNote(sourceNoteID string) ([]models.NoteLink, error) {
 	return s.repo.GetLinksBySourceNote(sourceNoteID)
 }
-<<<<<<< HEAD
 
 // GetAllNotes retrieves all notes from the database.
 func (s *NotesService) GetAllNotes() ([]*models.Note, error) {
@@ -196,9 +195,4 @@ func (s *NotesService) UpdateNoteTimestamp(note *models.Note) error {
 // GetBacklinks retrieves all links that point to a given note (backlinks).
 func (s *NotesService) GetBacklinks(noteID string) ([]models.NoteLink, error) {
 	return s.repo.GetBacklinks(noteID)
-}
-
-// GetAllNotes retrieves all notes from the database.
-func (s *NotesService) GetAllNotes() ([]*models.Note, error) {
-	return s.repo.GetAllNotes()
 }

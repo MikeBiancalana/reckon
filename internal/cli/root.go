@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	service            *journal.Service
+	journalService     *journal.Service
 	journalTaskService *journal.TaskService
 	notesService       *notessvc.NotesService
 	dateFlag           string
@@ -79,7 +79,7 @@ var RootCmd = &cobra.Command{
 		}
 
 		// Default behavior: launch TUI
-		model := tui.NewModel(service)
+		model := tui.NewModel(journalService)
 		if journalTaskService != nil {
 			model.SetJournalTaskService(journalTaskService)
 		}
@@ -143,7 +143,7 @@ func initService() {
 	// log := logger.GetLogger()
 	repo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
-	service = journal.NewService(repo, fileStore)
+	journalService = journal.NewService(repo, fileStore)
 
 	journalTaskRepo := journal.NewTaskRepository(db)
 	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
