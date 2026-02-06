@@ -8,7 +8,7 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/logger"
-	notesvc "github.com/MikeBiancalana/reckon/internal/service"
+	notessvc "github.com/MikeBiancalana/reckon/internal/service"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/MikeBiancalana/reckon/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,9 +28,9 @@ const (
 )
 
 var (
-	journalService            *journal.Service
+	service            *journal.Service
 	journalTaskService *journal.TaskService
-	notesService       *notesvc.NotesService
+	notesService       *notessvc.NotesService
 	dateFlag           string
 	quietFlag          bool
 	logFileFlag        string
@@ -79,7 +79,7 @@ var RootCmd = &cobra.Command{
 		}
 
 		// Default behavior: launch TUI
-		model := tui.NewModel(journalService)
+		model := tui.NewModel(service)
 		if journalTaskService != nil {
 			model.SetJournalTaskService(journalTaskService)
 		}
@@ -90,7 +90,7 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
-	// Initialize logger and journalService
+	// Initialize logger and service
 	cobra.OnInitialize(initLogger, initService)
 
 	// Add global flags
@@ -102,6 +102,7 @@ func init() {
 	// Add subcommands
 	RootCmd.AddCommand(GetLogCommand())
 	RootCmd.AddCommand(GetNoteCommand())
+	RootCmd.AddCommand(GetNotesCommand())
 	RootCmd.AddCommand(todayCmd)
 	RootCmd.AddCommand(weekCmd)
 	RootCmd.AddCommand(rebuildCmd)
@@ -125,7 +126,7 @@ func initLogger() {
 	logger.Info("reckon initialized", "version", "dev", "log_file", logger.GetLogFile(), "log_level", cfg.Level)
 }
 
-// initService initializes the journal journalService
+// initService initializes the journal service
 func initService() {
 	dbPath, err := config.DatabasePath()
 	if err != nil {
@@ -142,13 +143,14 @@ func initService() {
 	// log := logger.GetLogger()
 	repo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
-	journalService = journal.NewService(repo, fileStore)
+	service = journal.NewService(repo, fileStore)
 
 	journalTaskRepo := journal.NewTaskRepository(db)
 	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
 
-	notesRepo := notesvc.NewNotesRepository(db)
-	notesService = notesvc.NewNotesService(notesRepo)
+	// Initialize notes service
+	notesRepo := notessvc.NewNotesRepository(db)
+	notesService = notessvc.NewNotesService(notesRepo)
 }
 
 // getEffectiveDate returns the date to operate on, either from --date flag or today
