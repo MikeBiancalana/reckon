@@ -145,3 +145,8 @@ func (s *NotesService) ResolveOrphanedBacklinks(note *models.Note) error {
 func (s *NotesService) GetLinksBySourceNote(sourceNoteID string) ([]models.NoteLink, error) {
 	return s.repo.GetLinksBySourceNote(sourceNoteID)
 }
+
+// GetAllNotes retrieves all notes from the database.
+func (s *NotesService) GetAllNotes() ([]*models.Note, error) {
+	return s.repo.GetAllNotes()
+}

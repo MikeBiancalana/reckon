@@ -15,7 +15,7 @@ var rebuildCmd = &cobra.Command{
 			fmt.Println("Rebuilding database from markdown files...")
 		}
 
-		if err := service.Rebuild(); err != nil {
+		if err := journalService.Rebuild(); err != nil {
 			return fmt.Errorf("failed to rebuild database: %w", err)
 		}
 

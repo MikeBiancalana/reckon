@@ -14,7 +14,7 @@ var todayCmd = &cobra.Command{
 	Short: "Output today's journal to stdout",
 	Long:  `Outputs today's journal content to stdout (useful for piping to LLMs).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if service == nil {
+		if journalService == nil {
 			return fmt.Errorf("journal service not initialized")
 		}
 
@@ -30,19 +30,19 @@ var todayCmd = &cobra.Command{
 			}
 			switch format {
 			case FormatJSON:
-				j, err := service.GetByDate(today)
+				j, err := journalService.GetByDate(today)
 				if err != nil {
 					return fmt.Errorf("failed to get journal for %s: %w", today, err)
 				}
 				return formatJournalsJSON([]*journal.Journal{j})
 			case FormatTSV:
-				j, err := service.GetByDate(today)
+				j, err := journalService.GetByDate(today)
 				if err != nil {
 					return fmt.Errorf("failed to get journal for %s: %w", today, err)
 				}
 				return formatJournalTSV(j)
 			case FormatCSV:
-				j, err := service.GetByDate(today)
+				j, err := journalService.GetByDate(today)
 				if err != nil {
 					return fmt.Errorf("failed to get journal for %s: %w", today, err)
 				}
@@ -51,7 +51,7 @@ var todayCmd = &cobra.Command{
 			return nil
 		}
 
-		content, err := service.GetJournalContent(today)
+		content, err := journalService.GetJournalContent(today)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", today, err)
 		}
