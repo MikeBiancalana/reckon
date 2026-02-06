@@ -98,12 +98,12 @@ Supports interactive mode when no message is provided.`,
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
-		if err := service.AppendLog(j, message); err != nil {
+		if err := journalService.AppendLog(j, message); err != nil {
 			return fmt.Errorf("failed to append log: %w", err)
 		}
 
@@ -129,12 +129,12 @@ The log-id can be found using 'rk log list'.`,
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
-		if err := service.AddLogNote(j, logID, noteText); err != nil {
+		if err := journalService.AddLogNote(j, logID, noteText); err != nil {
 			return fmt.Errorf("failed to add note: %w", err)
 		}
 
@@ -157,12 +157,12 @@ The log-id can be found using 'rk log list'.`,
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
-		if err := service.DeleteLogEntry(j, logID); err != nil {
+		if err := journalService.DeleteLogEntry(j, logID); err != nil {
 			return fmt.Errorf("failed to delete log entry: %w", err)
 		}
 

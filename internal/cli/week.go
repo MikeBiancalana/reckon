@@ -14,7 +14,7 @@ var weekCmd = &cobra.Command{
 	Short: "Output the last 7 days of journals to stdout",
 	Long:  `Outputs the last 7 days of journal content to stdout (useful for weekly reviews).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if service == nil {
+		if journalService == nil {
 			return fmt.Errorf("journal service not initialized")
 		}
 
@@ -30,9 +30,9 @@ var weekCmd = &cobra.Command{
 			}
 			var journals []*journal.Journal
 			if dateFlag != "" {
-				journals, err = service.GetWeekJournalsFromDate(effectiveDate)
+				journals, err = journalService.GetWeekJournalsFromDate(effectiveDate)
 			} else {
-				journals, err = service.GetWeekJournals()
+				journals, err = journalService.GetWeekJournals()
 			}
 			if err != nil {
 				return fmt.Errorf("failed to get week's journals: %w", err)
@@ -50,9 +50,9 @@ var weekCmd = &cobra.Command{
 
 		var content string
 		if dateFlag != "" {
-			content, err = service.GetWeekContentFromDate(effectiveDate)
+			content, err = journalService.GetWeekContentFromDate(effectiveDate)
 		} else {
-			content, err = service.GetWeekContent()
+			content, err = journalService.GetWeekContent()
 		}
 		if err != nil {
 			return fmt.Errorf("failed to get week's journals: %w", err)
