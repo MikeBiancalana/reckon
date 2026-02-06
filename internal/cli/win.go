@@ -34,12 +34,12 @@ Examples:
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
-		if err := service.AddWin(j, text); err != nil {
+		if err := journalService.AddWin(j, text); err != nil {
 			return fmt.Errorf("failed to add win: %w", err)
 		}
 
@@ -62,7 +62,7 @@ Use --json to output as JSON array.`,
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
@@ -124,12 +124,12 @@ Examples:
 			return err
 		}
 
-		j, err := service.GetByDate(effectiveDate)
+		j, err := journalService.GetByDate(effectiveDate)
 		if err != nil {
 			return fmt.Errorf("failed to get journal for %s: %w", effectiveDate, err)
 		}
 
-		if err := service.DeleteWin(j, winID); err != nil {
+		if err := journalService.DeleteWin(j, winID); err != nil {
 			return fmt.Errorf("failed to delete win: %w", err)
 		}
 

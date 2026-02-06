@@ -167,3 +167,8 @@ func (s *NotesService) GetLinksBySourceNote(sourceNoteID string) ([]models.NoteL
 func (s *NotesService) GetBacklinks(noteID string) ([]models.NoteLink, error) {
 	return s.repo.GetBacklinks(noteID)
 }
+
+// GetAllNotes retrieves all notes from the database.
+func (s *NotesService) GetAllNotes() ([]*models.Note, error) {
+	return s.repo.GetAllNotes()
+}

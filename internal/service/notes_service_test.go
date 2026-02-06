@@ -573,3 +573,87 @@ Links to [[non-existent]].`
 	assert.Len(t, backlinks, 1)
 	assert.Equal(t, sourceNote.ID, backlinks[0].SourceNoteID)
 }
+
+func TestGetAllNotes_Empty(t *testing.T) {
+	service, _, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	notes, err := service.GetAllNotes()
+	require.NoError(t, err)
+	assert.Empty(t, notes)
+}
+
+func TestGetAllNotes(t *testing.T) {
+	service, _, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	// Create multiple notes with different timestamps
+	note1 := models.NewNote("First Note", "first-note", "/path/to/first.md", []string{"tag1", "tag2"})
+	time.Sleep(10 * time.Millisecond) // Ensure different timestamps
+	note2 := models.NewNote("Second Note", "second-note", "/path/to/second.md", []string{"tag2", "tag3"})
+	time.Sleep(10 * time.Millisecond)
+	note3 := models.NewNote("Third Note", "third-note", "/path/to/third.md", []string{"tag1"})
+
+	err := service.SaveNote(note1)
+	require.NoError(t, err)
+	err = service.SaveNote(note2)
+	require.NoError(t, err)
+	err = service.SaveNote(note3)
+	require.NoError(t, err)
+
+	// Get all notes
+	notes, err := service.GetAllNotes()
+	require.NoError(t, err)
+	assert.Len(t, notes, 3)
+
+	// Verify all three notes are present (repository doesn't enforce order)
+	slugs := make([]string, len(notes))
+	for i, note := range notes {
+		slugs[i] = note.Slug
+	}
+	assert.ElementsMatch(t, []string{"first-note", "second-note", "third-note"}, slugs)
+
+	// Verify all fields are populated correctly
+	for _, note := range notes {
+		assert.NotEmpty(t, note.ID)
+		assert.NotEmpty(t, note.Title)
+		assert.NotEmpty(t, note.Slug)
+		assert.NotEmpty(t, note.FilePath)
+		assert.NotZero(t, note.CreatedAt)
+		assert.NotZero(t, note.UpdatedAt)
+	}
+}
+
+func TestGetAllNotes_WithTags(t *testing.T) {
+	service, _, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	// Create notes with various tags
+	note1 := models.NewNote("Note 1", "note-1", "/path/to/note1.md", []string{"golang", "testing"})
+	note2 := models.NewNote("Note 2", "note-2", "/path/to/note2.md", []string{"python", "django"})
+	note3 := models.NewNote("Note 3", "note-3", "/path/to/note3.md", []string{"golang", "python"})
+	note4 := models.NewNote("Note 4", "note-4", "/path/to/note4.md", nil)
+
+	for _, note := range []*models.Note{note1, note2, note3, note4} {
+		err := service.SaveNote(note)
+		require.NoError(t, err)
+	}
+
+	// Get all notes
+	notes, err := service.GetAllNotes()
+	require.NoError(t, err)
+	assert.Len(t, notes, 4)
+
+	// Verify tags are correctly retrieved
+	tagCounts := make(map[string]int)
+	for _, note := range notes {
+		for _, tag := range note.Tags {
+			tagCounts[tag]++
+		}
+	}
+
+	assert.Equal(t, 2, tagCounts["golang"])
+	assert.Equal(t, 2, tagCounts["python"])
+	assert.Equal(t, 1, tagCounts["testing"])
+	assert.Equal(t, 1, tagCounts["django"])
+}

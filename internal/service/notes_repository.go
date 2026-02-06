@@ -290,3 +290,46 @@ func (r *NotesRepository) GetBacklinks(noteID string) ([]models.NoteLink, error)
 
 	return links, nil
 }
+
+// GetAllNotes retrieves all notes from the database.
+func (r *NotesRepository) GetAllNotes() ([]*models.Note, error) {
+	logger.Debug("GetAllNotes")
+
+	rows, err := r.db.DB().Query(
+		"SELECT id, title, slug, file_path, created_at, updated_at, tags FROM notes",
+	)
+	if err != nil {
+		logger.Error("GetAllNotes", "error", err)
+		return nil, fmt.Errorf("failed to query notes: %w", err)
+	}
+	defer rows.Close()
+
+	var notes []*models.Note
+	for rows.Next() {
+		var note models.Note
+		var tagsStr sql.NullString
+		var createdUnix, updatedUnix int64
+
+		err := rows.Scan(&note.ID, &note.Title, &note.Slug, &note.FilePath, &createdUnix, &updatedUnix, &tagsStr)
+		if err != nil {
+			logger.Error("GetAllNotes", "error", err)
+			return nil, fmt.Errorf("failed to scan note: %w", err)
+		}
+
+		note.CreatedAt = time.Unix(createdUnix, 0)
+		note.UpdatedAt = time.Unix(updatedUnix, 0)
+
+		if tagsStr.Valid && tagsStr.String != "" {
+			note.Tags = strings.Split(tagsStr.String, ",")
+		}
+
+		notes = append(notes, &note)
+	}
+
+	if err := rows.Err(); err != nil {
+		logger.Error("GetAllNotes", "error", err)
+		return nil, fmt.Errorf("failed to iterate notes: %w", err)
+	}
+
+	return notes, nil
+}

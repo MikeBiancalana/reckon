@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/models"
 )
 
 type OutputFormat string
@@ -190,6 +191,35 @@ func formatJournalsCSV(journals []*journal.Journal) error {
 	}
 	for _, j := range journals {
 		record := []string{j.Date}
+		if err := w.Write(record); err != nil {
+			return err
+		}
+	}
+	w.Flush()
+	return w.Error()
+}
+
+func formatNotesJSON(notes []*models.Note) error {
+	return json.NewEncoder(os.Stdout).Encode(notes)
+}
+
+func formatNotesCSV(notes []*models.Note) error {
+	w := csv.NewWriter(os.Stdout)
+	if err := w.Write([]string{"title", "slug", "created", "updated", "tags"}); err != nil {
+		return err
+	}
+	for _, n := range notes {
+		tags := ""
+		if len(n.Tags) > 0 {
+			tags = strings.Join(n.Tags, ", ")
+		}
+		record := []string{
+			n.Title,
+			n.Slug,
+			n.CreatedAt.Format("2006-01-02"),
+			n.UpdatedAt.Format("2006-01-02"),
+			tags,
+		}
 		if err := w.Write(record); err != nil {
 			return err
 		}
