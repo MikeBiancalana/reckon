@@ -1,10 +1,12 @@
 package service
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/logger"
 	"github.com/MikeBiancalana/reckon/internal/models"
@@ -47,18 +49,19 @@ func (s *NotesService) GetNoteBySlug(slug string) (*models.Note, error) {
 // 5. Commits everything in a transaction
 //
 // Parameters:
-//   - note: The note whose links should be updated (note.FilePath must be relative to notesDir)
-//   - notesDir: The root directory where notes are stored
+//   - note: The note to update links for (FilePath should be relative to notesDir)
+//   - notesDir: The absolute path to the notes directory
 func (s *NotesService) UpdateNoteLinks(note *models.Note, notesDir string) error {
-	logger.Info("UpdateNoteLinks", "note_id", note.ID, "slug", note.Slug, "file_path", note.FilePath)
+	logger.Info("UpdateNoteLinks", "note_id", note.ID, "slug", note.Slug, "file_path", note.FilePath, "notes_dir", notesDir)
 
-	// Construct and validate the file path
+	// Construct absolute path internally
 	filePath := filepath.Join(notesDir, note.FilePath)
 
-	// Security: Verify the path is within notesDir to prevent path traversal
+	// Security: Validate path is within notesDir to prevent path traversal
 	cleanPath := filepath.Clean(filePath)
 	cleanNotesDir := filepath.Clean(notesDir)
-	if !strings.HasPrefix(cleanPath, cleanNotesDir+string(filepath.Separator)) {
+	rel, err := filepath.Rel(cleanNotesDir, cleanPath)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
 		logger.Error("UpdateNoteLinks", "error", "path traversal attempt", "note_id", note.ID, "file_path", note.FilePath)
 		return fmt.Errorf("invalid note path: %s", note.FilePath)
 	}
@@ -80,7 +83,11 @@ func (s *NotesService) UpdateNoteLinks(note *models.Note, notesDir string) error
 		logger.Error("UpdateNoteLinks", "error", err, "note_id", note.ID, "operation", "begin_transaction")
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			logger.Error("UpdateNoteLinks", "error", err, "note_id", note.ID, "operation", "rollback")
+		}
+	}()
 
 	// Delete existing wiki links for this note
 	if err := s.repo.DeleteNoteLinks(tx, note.ID, models.LinkTypeReference); err != nil {
@@ -161,6 +168,29 @@ func (s *NotesService) ResolveOrphanedBacklinks(note *models.Note) error {
 // GetLinksBySourceNote retrieves all links from a source note.
 func (s *NotesService) GetLinksBySourceNote(sourceNoteID string) ([]models.NoteLink, error) {
 	return s.repo.GetLinksBySourceNote(sourceNoteID)
+}
+<<<<<<< HEAD
+
+// GetAllNotes retrieves all notes from the database.
+func (s *NotesService) GetAllNotes() ([]*models.Note, error) {
+	return s.repo.GetAllNotes()
+}
+
+// UpdateNoteTimestamp updates the updated_at timestamp for a note.
+// This should be called after editing a note to reflect the modification.
+func (s *NotesService) UpdateNoteTimestamp(note *models.Note) error {
+	logger.Info("UpdateNoteTimestamp", "note_id", note.ID, "slug", note.Slug)
+
+	now := time.Now()
+	if err := s.repo.UpdateNoteTimestamp(note.ID, now); err != nil {
+		logger.Error("UpdateNoteTimestamp", "error", err, "note_id", note.ID)
+		return err
+	}
+
+	// Update the in-memory note object
+	note.UpdatedAt = now
+	logger.Info("UpdateNoteTimestamp", "note_id", note.ID, "updated_at", now)
+	return nil
 }
 
 // GetBacklinks retrieves all links that point to a given note (backlinks).
