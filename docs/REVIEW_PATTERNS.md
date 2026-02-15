@@ -366,6 +366,76 @@ func createTaskCmd(cmd *cobra.Command, args []string) error {
 
 ---
 
+### ✅ Consolidated State Update
+**Pattern:** When multiple operations query and update related tracking state, consolidate into a single operation with explicit success tracking.
+
+**Problem scenario:**
+```go
+// Anti-pattern: Duplicate state querying
+func UpdateItems(items []Item) {
+    // Do operation
+    list.SetItems(items)
+
+    // Later: query result and update tracking
+    selected := list.SelectedItem()
+    if selected != nil {
+        tracking.lastSelected = selected.ID
+    }
+}
+```
+
+**Good pattern:**
+```go
+// Consolidated: Update tracking during operation
+func UpdateItems(items []Item) {
+    list.SetItems(items)
+
+    // Restore state AND update tracking in one operation
+    restored := false
+    if tracking.lastSelected != "" {
+        for i, item := range list.Items() {
+            if item.ID == tracking.lastSelected {
+                list.Select(i)
+                tracking.lastSelected = item.ID
+                restored = true
+                break
+            }
+        }
+    }
+
+    // Fallback if restoration failed
+    if !restored {
+        selected := list.SelectedItem()
+        if selected != nil {
+            tracking.lastSelected = selected.ID
+        } else {
+            tracking.lastSelected = ""
+        }
+    }
+}
+```
+
+**Benefits:**
+- Eliminates duplicate queries (DRY principle)
+- Explicit success tracking makes control flow clear
+- Single source of truth for state updates
+- Minor performance improvement (fewer operations in happy path)
+- Easier to maintain and reason about
+
+**Real example:** TaskList.UpdateTasks consolidation (reckon-llr)
+- Removed duplicate cursor position querying
+- Used `restored` flag for explicit tracking
+- Fallback to current position if restoration fails
+
+**Frequency:** ✅ (1 occurrence - new pattern discovered)
+
+**When to use:**
+- Multiple operations touch the same tracking variable
+- State needs to be synchronized across operations
+- Explicit success/failure tracking improves clarity
+
+---
+
 ## Pattern Extraction Process
 
 When completing a code review:
