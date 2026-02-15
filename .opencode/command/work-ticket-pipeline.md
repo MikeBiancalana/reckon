@@ -192,12 +192,68 @@ Use the Task tool with subagent_type="code-reviewer":
 **On APPROVE or APPROVE WITH CHANGES:**
 - Proceed to completion
 
-### 8. Completion
+### 8. Feedback Loop
+
+**Purpose:** Extract patterns from review findings for continuous improvement.
+
+**See:** `docs/agents/feedback-loop.md` for complete process.
+
+**Actions:**
+
+1. **Extract patterns from review:**
+   ```bash
+   # Parse review findings
+   grep -A 3 "### Issues" .claude/work/<ticket-id>/review.md > /tmp/review-issues.txt
+   ```
+
+2. **Check pattern frequency:**
+   ```bash
+   # Count occurrences of common patterns across all reviews
+   mkdir -p .claude/metrics
+
+   for pattern in "unwrapped error" "missing defer" "closure capture" "nil check" "missing validation"; do
+     count=$(grep -ir "$pattern" .claude/work/*/review.md 2>/dev/null | wc -l)
+     echo "$pattern: $count" >> .claude/work/<ticket-id>/pattern-frequency.txt
+   done
+   ```
+
+3. **Update pattern library:**
+   - Open `docs/REVIEW_PATTERNS.md`
+   - Update frequency counts for any patterns found
+   - Add new patterns if discovered
+
+4. **Check thresholds:**
+   - **3+ occurrences:** Add warning to subsystem AGENTS.md
+   - **6+ occurrences:** Add to preflight checks
+   - **11+ occurrences:** Automate in preflight + critical section in implementer.md
+
+5. **Store metrics:**
+   ```bash
+   cat > .claude/metrics/review-<ticket-id>.json <<EOF
+   {
+     "ticket_id": "<ticket-id>",
+     "date": "$(date -I)",
+     "subsystem": "<subsystem>",
+     "verdict": "$(grep "Verdict:" .claude/work/<ticket-id>/review.md | cut -d: -f2 | tr -d ' ')",
+     "patterns_found": $(cat .claude/work/<ticket-id>/pattern-frequency.txt | jq -R -s -c 'split("\n") | map(select(length > 0))'),
+     "retry_counts": {
+       "implementer": <actual-count>,
+       "preflight": <actual-count>,
+       "reviewer": <actual-count>
+     }
+   }
+   EOF
+   ```
+
+**Outcome:** Pattern library updated, system learns from this review.
+
+### 9. Completion
 
 **Success criteria met:**
 - ✅ All tests pass
 - ✅ Preflight: PASS or PASS WITH WARNINGS
 - ✅ Review: APPROVE or APPROVE WITH CHANGES
+- ✅ Patterns extracted and tracked
 
 **Final steps:**
 
@@ -212,6 +268,8 @@ cat > .claude/work/<ticket-id>/summary.md <<EOF
 - Plan: plan.md
 - Preflight: preflight-report.md
 - Review: review.md
+- Pattern frequency: pattern-frequency.txt
+- Metrics: ../metrics/review-<ticket-id>.json
 
 ## Changed Files:
 $(git diff --name-only origin/main)
@@ -219,8 +277,14 @@ $(git diff --name-only origin/main)
 ## Review Verdict:
 $(grep "Verdict:" .claude/work/<ticket-id>/review.md)
 
+## Patterns Tracked:
+$(cat .claude/work/<ticket-id>/pattern-frequency.txt)
+
 ## Commits:
 $(git log --oneline origin/main..HEAD)
+
+## Learning:
+$(grep -A 1 "Patterns for Future" .claude/work/<ticket-id>/review.md || echo "No new patterns documented")
 EOF
 
 # Push branch
@@ -233,19 +297,27 @@ gh pr create --base main --fill
 PR_NUM=$(gh pr view --json number -q .number)
 
 # Update ticket with PR link
-bd update <ticket-id> --notes="PR #$PR_NUM: $(gh pr view --json url -q .url)"
+bd update <ticket-id> --notes="PR #$PR_NUM: $(gh pr view --json url -q .url). Artifacts: .claude/work/<ticket-id>/"
 
 # Inform user: ready to merge or wait for CI
 echo "✓ Implementation complete!"
 echo "✓ PR created: $(gh pr view --json url -q .url)"
 echo ""
-echo "Review artifacts in .claude/work/<ticket-id>/"
+echo "📊 Artifacts in .claude/work/<ticket-id>/"
+echo "   - Plan, preflight report, code review"
+echo "   - Pattern frequency tracking"
+echo "   - Metrics for analysis"
+echo ""
+echo "🔄 Feedback loop complete:"
+cat .claude/work/<ticket-id>/pattern-frequency.txt
 echo ""
 echo "Next steps:"
 echo "  - Review PR in GitHub"
 echo "  - Wait for CI checks"
 echo "  - Merge with: gh pr merge $PR_NUM --squash"
 echo "  - Close ticket with: bd close <ticket-id>"
+echo ""
+echo "📈 Check docs/REVIEW_PATTERNS.md for pattern updates"
 ```
 
 ## Error Handling

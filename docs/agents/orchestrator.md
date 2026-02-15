@@ -172,12 +172,76 @@ echo $?  # Should be 0
 **On APPROVE or APPROVE WITH CHANGES:**
 - Proceed to completion
 
-### 7. Completion
+### 7. Feedback Loop Phase
+
+**Purpose:** Extract patterns from review findings and feed back to system for continuous improvement.
+
+**See:** `docs/agents/feedback-loop.md` for detailed process.
+
+**Quick actions:**
+
+```bash
+# 1. Extract patterns from review
+grep -A 5 "### Issues" .claude/work/<ticket-id>/review.md > /tmp/issues.txt
+
+# 2. Check frequency of each pattern
+for pattern in "unwrapped error" "missing defer" "closure capture" "nil check"; do
+  count=$(grep -ir "$pattern" .claude/work/*/review.md | wc -l)
+  echo "$pattern: $count occurrences" >> .claude/work/<ticket-id>/pattern-frequency.txt
+done
+
+# 3. Update REVIEW_PATTERNS.md frequency counts
+# (Manual step - update frequency indicators)
+
+# 4. Check if any patterns hit thresholds
+# 3+ occurrences → Add to subsystem AGENTS.md
+# 6+ occurrences → Add to preflight checks
+
+# 5. Store metrics
+cat > .claude/metrics/review-<ticket-id>.json <<EOF
+{
+  "ticket_id": "<ticket-id>",
+  "date": "$(date -I)",
+  "subsystem": "<subsystem>",
+  "verdict": "$(grep "Verdict:" .claude/work/<ticket-id>/review.md | cut -d: -f2)",
+  "issues_found": [
+    $(sed -n '/### Issues/,/## Design Review/p' .claude/work/<ticket-id>/review.md | \
+      grep -oP "(?<=\*\*\[)[^]]*" | jq -R . | jq -s .)
+  ],
+  "retry_counts": {
+    "implementer": <count>,
+    "preflight": <count>,
+    "reviewer": <count>
+  }
+}
+EOF
+```
+
+**Automatic actions (if thresholds met):**
+
+```bash
+# If pattern appears 3+ times, add to guides
+if [ $pattern_count -ge 3 ]; then
+  echo "⚠️ Pattern '$pattern' hit threshold (3+)"
+  echo "Action: Add to internal/<subsystem>/AGENTS.md - Common Pitfalls section"
+fi
+
+# If pattern appears 6+ times, add to preflight
+if [ $pattern_count -ge 6 ]; then
+  echo "🚨 Pattern '$pattern' is very common (6+)"
+  echo "Action: Add automated check to docs/agents/preflight.md"
+fi
+```
+
+**Output:** Updated pattern library, metrics stored
+
+### 8. Completion
 
 **Success criteria:**
 - All tests pass
 - Preflight: PASS or PASS WITH WARNINGS
 - Review: APPROVE or APPROVE WITH CHANGES
+- Patterns extracted and tracked
 
 **Final actions:**
 ```bash
@@ -191,6 +255,8 @@ cat > .claude/work/<ticket-id>/summary.md <<EOF
 - Plan: plan.md
 - Preflight: preflight-report.md
 - Review: review.md
+- Pattern frequency: pattern-frequency.txt
+- Metrics: ../metrics/review-<ticket-id>.json
 
 ## Changed Files:
 $(git diff --name-only)
@@ -200,6 +266,9 @@ $(go test ./...)
 
 ## Review Verdict:
 $(grep "Verdict:" review.md)
+
+## Patterns Found:
+$(cat pattern-frequency.txt)
 
 ## Ready for: Merge
 EOF
