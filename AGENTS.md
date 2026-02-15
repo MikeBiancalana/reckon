@@ -131,6 +131,350 @@ bd blocked                         # Show blocked issues
 
 **For full workflow:** Run `bd prime` or see [docs/bd-usage.md](docs/bd-usage.md)
 
+### Creating Well-Structured Issues
+
+**Use ticket templates** for consistency and context:
+- `.beads/templates/task.md` - Standard tasks/features
+- `.beads/templates/bug.md` - Bug reports
+- `.beads/templates/epic.md` - Large features
+
+**Quick template usage:**
+```bash
+# Create issue
+bd create "Issue title" --type task --priority 2
+
+# Add description from template
+cat .beads/templates/task.md
+# Copy template, fill placeholders, set as description
+bd update <id> --description="[paste filled template]"
+```
+
+**What makes a good issue:**
+- Clear problem statement
+- Proposed solution (if known)
+- Files to modify listed
+- Acceptance criteria checklist
+- Relevant context and gotchas
+
+See `.beads/templates/README.md` for detailed guidance.
+
+## Testing Strategy
+
+### Philosophy
+
+**Test behavior, not implementation.** Tests should verify that the system does the right thing, not how it does it.
+
+**Key principles:**
+- Tests should be fast and reliable
+- Tests should be independent (no shared state)
+- Test one thing at a time
+- Prefer many small tests over few large tests
+- Integration tests validate multi-module workflows
+
+### Test Pyramid
+
+```
+        /\
+       /  \      5% - End-to-End (Full "day's work" validation)
+      /----\
+     /      \    25% - Integration (Multi-module workflows)
+    /--------\
+   /          \  70% - Unit (Isolated component testing)
+  /____________\
+```
+
+**Unit Tests (70%)** - Fast, isolated, mock dependencies
+- Parser/writer correctness
+- Service logic with mocked repositories
+- Model validation
+- Utility functions
+
+**Integration Tests (25%)** - Real database, multiple modules
+- Input → parsing → storage → retrieval workflows
+- File I/O + database sync
+- Service layer with real repository
+
+**End-to-End Tests (5%)** - Full system validation
+- "Day's work" simulation (create logs, tasks, notes, verify connections)
+- TUI visual/UX validation
+- CLI command chains
+
+### Unit Tests
+
+**Location:** `*_test.go` files next to implementation
+
+**What we test:**
+- **Parsers:** Markdown → models (use golden files in `testdata/`)
+- **Writers:** Models → markdown (roundtrip tests)
+- **Services:** Business logic with mocked repositories
+- **Models:** Validation, methods, state transitions
+
+**What we DON'T test:**
+- Actual file I/O (use mocks/in-memory)
+- External dependencies (git, network)
+- Bubble Tea rendering (test model updates only)
+
+**Example:**
+```go
+func TestParseIntention(t *testing.T) {
+    content := "- [ ] Review PR #123"
+    intention, err := parseIntention(content, 0)
+
+    assert.NoError(t, err)
+    assert.Equal(t, "Review PR #123", intention.Text)
+    assert.Equal(t, "open", intention.Status)
+}
+```
+
+### Integration Tests
+
+**Location:** `tests/integration_test.go` or `*_integration_test.go`
+
+**What we test:**
+- **End-to-end workflows:** User action → storage → retrieval
+- **Multi-module coordination:** Parser + Service + Repository + File I/O
+- **Data persistence:** Write to DB, read back, verify correctness
+- **Migration scenarios:** Old data format → new format
+
+**Tag:** Use build tag `//go:build integration` to separate from unit tests
+
+**Example workflow tests:**
+```go
+// Test: Create intention → Save to file → Parse back → Verify in DB
+func TestIntentionWorkflow(t *testing.T) {
+    // 1. Create intention via service
+    journal := service.GetJournal("2025-01-15")
+    service.AddIntention(journal, "Complete task X")
+
+    // 2. Verify written to file
+    content := readJournalFile("2025-01-15")
+    assert.Contains(t, content, "[ ] Complete task X")
+
+    // 3. Parse file back
+    parsed := parseJournal(content, "2025-01-15")
+
+    // 4. Verify in database
+    fromDB := repo.GetJournal("2025-01-15")
+    assert.Equal(t, parsed.Intentions, fromDB.Intentions)
+}
+```
+
+**Common integration scenarios:**
+- Create task → Log time to it → Verify task.Notes updated
+- Create note → Link to another note → Verify backlinks
+- Edit intention in file → Rebuild DB → Verify sync
+- Carry intention forward → Verify carried status + new journal entry
+
+### TUI Visual & UX Testing
+
+**Tool:** xterm.js + gotty + Playwright MCP
+
+**Purpose:** Verify TUI rendering, interactions, and user experience
+
+**Setup:**
+1. **gotty:** Serves TUI over WebSocket
+2. **xterm.js:** Renders terminal in browser
+3. **Playwright MCP:** Automates browser interactions and captures screenshots
+
+**What to test:**
+- Layout rendering (40-40-18 columns visible)
+- Color schemes and styling
+- Keyboard navigation (tab, j/k, arrows)
+- Component focus states
+- Help text visibility
+- Error message display
+- Long text truncation/wrapping
+
+**Example test scenario:**
+```javascript
+// Playwright test via MCP
+test('Task list shows completed tasks with strikethrough', async () => {
+    // 1. Launch TUI via gotty
+    // 2. Navigate to tasks section (tab key)
+    // 3. Create task and mark done (space key)
+    // 4. Screenshot and verify strikethrough styling
+    // 5. Verify task appears in done state
+});
+```
+
+**When to use:**
+- Visual regression testing (before/after screenshots)
+- UX flow validation (multi-step interactions)
+- Accessibility checks (focus indicators, contrast)
+- Cross-terminal compatibility
+
+**Note:** This is manual or semi-automated. Not part of regular CI (too slow/complex).
+
+### End-to-End "Day's Work" Validation
+
+**Concept:** Simulate a full day of productivity work and verify all connections.
+
+**Scenario:**
+```go
+func TestFullDayWorkflow(t *testing.T) {
+    day := "2025-01-15"
+
+    // Morning: Set intentions
+    service.AddIntention(journal, "Review PRs")
+    service.AddIntention(journal, "Work on feature X")
+
+    // Create task for multi-day work
+    task := taskService.CreateTask("Implement auth system")
+    taskService.AddTag(task, "backend")
+
+    // Log work throughout day
+    service.AddLog(journal, "09:00", "Started reviewing PRs")
+    service.AddLog(journal, "10:30", fmt.Sprintf("[task:%s] Working on auth", task.ID))
+    service.AddLog(journal, "12:00", "[break] Lunch")
+
+    // Create zettelkasten note
+    note := notesService.CreateNote("OAuth Flow Patterns", []string{"auth", "backend"})
+
+    // Link note to task (future feature)
+    // taskService.LinkNote(task.ID, note.Slug)
+
+    // Afternoon: More work
+    service.AddLog(journal, "14:00", fmt.Sprintf("[task:%s] Implemented token refresh", task.ID))
+    taskService.AddNote(task, "Need to handle edge case: expired refresh token")
+
+    // End of day: Mark intention done, add win
+    service.ToggleIntention(journal, intentionID)
+    service.AddWin(journal, "Completed PR reviews, made good progress on auth")
+
+    // VERIFY EVERYTHING:
+    // 1. Journal file has all entries
+    content := readJournalFile(day)
+    assert.Contains(t, content, "Review PRs")
+    assert.Contains(t, content, "[break] Lunch")
+
+    // 2. Task has notes
+    loadedTask := taskService.GetTask(task.ID)
+    assert.Len(t, loadedTask.Notes, 1)
+
+    // 3. Task appears in log entries
+    logs := service.GetLogEntries(day)
+    taskLogs := filterByTaskID(logs, task.ID)
+    assert.Len(t, taskLogs, 2)
+
+    // 4. Note is findable by tag
+    authNotes := notesService.GetNotesByTag("auth")
+    assert.Contains(t, authNotes, note)
+
+    // 5. Database and files are in sync
+    dbJournal := repo.GetJournal(day)
+    fileJournal := parseJournalFile(day)
+    assert.Equal(t, dbJournal, fileJournal)
+}
+```
+
+**Value:**
+- Catches integration bugs missed by unit tests
+- Validates real-world usage patterns
+- Ensures data consistency across modules
+- Documents expected system behavior
+
+**Status:** 🎂 **Icing on the cake** - Nice to have, not implemented yet. This test would live in `tests/e2e_test.go` and serve as both validation and living documentation of how the system should work.
+
+### Running Tests
+
+```bash
+# All tests (unit only)
+go test ./...
+
+# Specific package
+go test ./internal/journal/...
+
+# Single test
+go test -run TestParseIntention ./internal/journal/
+
+# With coverage
+go test -cover ./...
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out  # View in browser
+
+# Integration tests only
+go test -tags integration ./tests/
+
+# Verbose output
+go test -v ./...
+
+# Parallel execution (default)
+go test -p 4 ./...
+
+# Specific test file
+go test ./internal/journal/parser_test.go
+
+# Run until failure (stress test)
+go test -count=100 ./internal/journal/
+```
+
+### Coverage Goals
+
+**Target coverage by subsystem:**
+- **Parsers/Writers:** >90% (critical for data correctness)
+- **Service layer:** >80% (business logic must be solid)
+- **Repository:** >70% (mostly CRUD, but important)
+- **TUI models:** >60% (harder to test, focus on critical paths)
+- **Overall project:** >70%
+
+**Coverage is a guide, not a goal.** Don't test for coverage's sake. Focus on:
+- Critical paths (data flow, user actions)
+- Edge cases (empty input, invalid data)
+- Error handling (what happens when things fail)
+
+### Test Data
+
+**Golden files:** Use `testdata/` directories for expected outputs
+```
+internal/journal/testdata/
+├── journal-basic.md          # Simple journal file
+├── journal-with-tasks.md     # Journal with task references
+├── journal-empty.md          # Empty journal
+└── intention-formats.md      # Various intention formats
+```
+
+**In-memory database:** Use `:memory:` for fast, isolated DB tests
+```go
+db, _ := storage.NewDatabase(":memory:")
+```
+
+**Test helpers:** Create reusable setup/teardown
+```go
+func setupTestDB(t *testing.T) *storage.Database {
+    db, _ := storage.NewDatabase(":memory:")
+    t.Cleanup(func() { db.Close() })
+    return db
+}
+```
+
+### Writing Good Tests
+
+**DO:**
+- ✅ Test one thing at a time
+- ✅ Use descriptive test names: `TestParseIntention_WithCarriedStatus`
+- ✅ Use table-driven tests for multiple cases
+- ✅ Check both success and error paths
+- ✅ Clean up resources (use `t.Cleanup()`)
+
+**DON'T:**
+- ❌ Test implementation details (internal state)
+- ❌ Share state between tests (use fresh fixtures)
+- ❌ Make tests depend on order (they run in parallel)
+- ❌ Mock everything (test real collaborators when simple)
+- ❌ Write tests that depend on timing (flaky tests)
+
+### CI/CD Integration
+
+**Currently:** Tests run locally before pushing
+
+**Future:** GitHub Actions workflow
+```yaml
+- Run unit tests on every push
+- Run integration tests on PRs
+- Generate coverage reports
+- Fail PR if coverage drops below threshold
+```
+
 ## Code Style Guidelines
 
 - **Formatting**: Use `go fmt` (standard Go formatting)
