@@ -3,8 +3,8 @@ package components_test
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // ExampleTextEditor_integration demonstrates the basic usage of the TextEditor component

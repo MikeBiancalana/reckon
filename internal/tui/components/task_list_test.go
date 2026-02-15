@@ -224,6 +224,162 @@ func TestTaskList_UpdateTasks(t *testing.T) {
 	}
 }
 
+func TestTaskList_UpdateTasks_CursorRestoration(t *testing.T) {
+	t.Run("preserves cursor on same task after update", func(t *testing.T) {
+		initialTasks := []journal.Task{
+			{ID: "task1", Text: "Task 1", Status: journal.TaskOpen, Position: 0, CreatedAt: time.Now()},
+			{ID: "task2", Text: "Task 2", Status: journal.TaskOpen, Position: 1, CreatedAt: time.Now()},
+			{ID: "task3", Text: "Task 3", Status: journal.TaskOpen, Position: 2, CreatedAt: time.Now()},
+		}
+
+		tl := NewTaskList(initialTasks)
+
+		// Select task2 (index 1)
+		tl.list.Select(1)
+
+		// Verify task2 is selected
+		selectedItem := tl.list.SelectedItem()
+		if taskItem, ok := selectedItem.(TaskItem); ok {
+			if taskItem.task.ID != "task2" {
+				t.Fatalf("expected task2 to be selected, got %s", taskItem.task.ID)
+			}
+		}
+
+		// Update with modified tasks (task2 text changed)
+		updatedTasks := []journal.Task{
+			{ID: "task1", Text: "Task 1", Status: journal.TaskOpen, Position: 0, CreatedAt: time.Now()},
+			{ID: "task2", Text: "Task 2 MODIFIED", Status: journal.TaskOpen, Position: 1, CreatedAt: time.Now()},
+			{ID: "task3", Text: "Task 3", Status: journal.TaskOpen, Position: 2, CreatedAt: time.Now()},
+		}
+		tl.UpdateTasks(updatedTasks)
+
+		// Verify cursor stayed on task2
+		selectedItem = tl.list.SelectedItem()
+		if taskItem, ok := selectedItem.(TaskItem); ok {
+			if taskItem.task.ID != "task2" {
+				t.Errorf("expected cursor to remain on task2, got %s", taskItem.task.ID)
+			}
+		} else {
+			t.Error("expected selected item to be a TaskItem")
+		}
+
+		// Verify lastSelectedTaskID is updated correctly
+		if tl.lastSelectedTaskID != "task2" {
+			t.Errorf("expected lastSelectedTaskID to be task2, got %s", tl.lastSelectedTaskID)
+		}
+	})
+
+	t.Run("handles task removal - lastSelectedTaskID updates to cursor position", func(t *testing.T) {
+		initialTasks := []journal.Task{
+			{ID: "task1", Text: "Task 1", Status: journal.TaskOpen, Position: 0, CreatedAt: time.Now()},
+			{ID: "task2", Text: "Task 2", Status: journal.TaskOpen, Position: 1, CreatedAt: time.Now()},
+			{ID: "task3", Text: "Task 3", Status: journal.TaskOpen, Position: 2, CreatedAt: time.Now()},
+		}
+
+		tl := NewTaskList(initialTasks)
+
+		// Select task2
+		tl.list.Select(1)
+		tl.lastSelectedTaskID = "task2" // Simulate it was tracked
+
+		// Update with task2 removed
+		updatedTasks := []journal.Task{
+			{ID: "task1", Text: "Task 1", Status: journal.TaskOpen, Position: 0, CreatedAt: time.Now()},
+			{ID: "task3", Text: "Task 3", Status: journal.TaskOpen, Position: 1, CreatedAt: time.Now()},
+		}
+		tl.UpdateTasks(updatedTasks)
+
+		// When task2 is removed, cursor will be on some valid task
+		// Verify lastSelectedTaskID matches whatever task is now selected
+		selectedItem := tl.list.SelectedItem()
+		if selectedItem != nil {
+			if taskItem, ok := selectedItem.(TaskItem); ok && !taskItem.isNote {
+				if tl.lastSelectedTaskID != taskItem.task.ID {
+					t.Errorf("expected lastSelectedTaskID to match cursor position %s, got %s", taskItem.task.ID, tl.lastSelectedTaskID)
+				}
+			}
+		} else {
+			// If no tasks, lastSelectedTaskID should be empty
+			if tl.lastSelectedTaskID != "" {
+				t.Errorf("expected lastSelectedTaskID to be empty when no tasks, got %s", tl.lastSelectedTaskID)
+			}
+		}
+	})
+
+	t.Run("handles empty task list", func(t *testing.T) {
+		initialTasks := []journal.Task{
+			{ID: "task1", Text: "Task 1", Status: journal.TaskOpen, Position: 0, CreatedAt: time.Now()},
+		}
+
+		tl := NewTaskList(initialTasks)
+		tl.list.Select(0)
+
+		// Update to empty list
+		tl.UpdateTasks([]journal.Task{})
+
+		// Verify lastSelectedTaskID is cleared
+		if tl.lastSelectedTaskID != "" {
+			t.Errorf("expected lastSelectedTaskID to be empty after clearing tasks, got %s", tl.lastSelectedTaskID)
+		}
+	})
+
+	t.Run("preserves cursor with notes present", func(t *testing.T) {
+		initialTasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Task 1",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+				},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
+			{ID: "task2", Text: "Task 2", Status: journal.TaskOpen, Position: 1, CreatedAt: time.Now()},
+		}
+
+		tl := NewTaskList(initialTasks)
+
+		// Select task2 (should be at index 2: task1, note1, task2)
+		tl.list.Select(2)
+
+		// Update tasks (task1 adds another note)
+		updatedTasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Task 1",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+					{ID: "note2", Text: "Note 2", Position: 1},
+				},
+				Position:  0,
+				CreatedAt: time.Now(),
+			},
+			{ID: "task2", Text: "Task 2", Status: journal.TaskOpen, Position: 1, CreatedAt: time.Now()},
+		}
+		tl.UpdateTasks(updatedTasks)
+
+		// Verify cursor stayed on task2 (now at index 3: task1, note1, note2, task2)
+		selectedItem := tl.list.SelectedItem()
+		if taskItem, ok := selectedItem.(TaskItem); ok {
+			if taskItem.isNote {
+				t.Error("expected selected item to be a task, not a note")
+			}
+			if taskItem.task.ID != "task2" {
+				t.Errorf("expected cursor to remain on task2, got %s", taskItem.task.ID)
+			}
+		} else {
+			t.Error("expected selected item to be a TaskItem")
+		}
+
+		// Verify lastSelectedTaskID
+		if tl.lastSelectedTaskID != "task2" {
+			t.Errorf("expected lastSelectedTaskID to be task2, got %s", tl.lastSelectedTaskID)
+		}
+	})
+}
+
 func TestTaskList_SetSize(t *testing.T) {
 	tl := NewTaskList([]journal.Task{})
 	// Should not panic

@@ -489,28 +489,33 @@ func (tl *TaskList) UpdateTasks(tasks []journal.Task) {
 	items := buildTaskItems(tasks, tl.collapsedMap)
 	tl.list.SetItems(items)
 
-	// Restore cursor to the previously selected task
+	// Update delegate with current collapsed map
+	delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
+	tl.list.SetDelegate(delegate)
+
+	// Restore cursor to the previously selected task and update lastSelectedTaskID
+	restored := false
 	if selectedTaskID != "" {
 		for i, item := range tl.list.Items() {
 			if taskItem, ok := item.(TaskItem); ok && !taskItem.isNote && taskItem.task.ID == selectedTaskID {
 				tl.list.Select(i)
+				tl.lastSelectedTaskID = taskItem.task.ID
+				restored = true
 				break
 			}
 		}
 	}
 
-	// Update delegate with current collapsed map
-	delegate := TaskDelegate{collapsedMap: tl.collapsedMap}
-	tl.list.SetDelegate(delegate)
-
-	// Update lastSelectedTaskID to match restored cursor position
-	selectedItem = tl.list.SelectedItem()
-	if selectedItem != nil {
-		if taskItem, ok := selectedItem.(TaskItem); ok && !taskItem.isNote {
-			tl.lastSelectedTaskID = taskItem.task.ID
+	// If restoration failed or no task was selected, update lastSelectedTaskID to current cursor position
+	if !restored {
+		selectedItem = tl.list.SelectedItem()
+		if selectedItem != nil {
+			if taskItem, ok := selectedItem.(TaskItem); ok && !taskItem.isNote {
+				tl.lastSelectedTaskID = taskItem.task.ID
+			}
+		} else {
+			tl.lastSelectedTaskID = ""
 		}
-	} else {
-		tl.lastSelectedTaskID = ""
 	}
 }
 
