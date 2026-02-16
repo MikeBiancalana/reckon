@@ -608,3 +608,269 @@ This is a **living document**. As the project evolves:
 - System learns → Fewer repeated mistakes
 
 **Goal:** Eventually, common mistakes become impossible to make because the system prevents them proactively.
+
+---
+
+### TUI Patterns
+
+#### ❌ Anti-Pattern: Nil Pointer Dereference Before Check
+**Issue:** Accessing struct fields before checking if pointer is nil.
+
+```go
+// BAD - Will panic if SourceNote is nil
+displayText := link.SourceNote.Slug
+isResolved := link.SourceNoteID != ""
+if isResolved && link.SourceNote != nil {
+    displayText = link.SourceNote.Title
+}
+```
+
+**Fix:**
+```go
+// GOOD - Check nil first, use safe fallback
+displayText := link.TargetSlug  // Safe fallback
+isResolved := link.SourceNoteID != "" && link.SourceNote != nil
+if isResolved {
+    displayText = link.SourceNote.Title
+}
+```
+
+**Frequency:** 🔵 (New - 1 occurrence in reckon-5dh)
+
+**Context:** Common when using LEFT JOIN queries where related objects may be nil.
+
+**Prevention:**
+- Always check pointer != nil before dereferencing
+- Use safe fallback values
+- Consider using Get methods that return (value, exists) tuples
+
+**Ticket:** reckon-5dh (commands.go:442)
+
+---
+
+#### ❌ Anti-Pattern: Missing Keyboard Handler for New Section
+**Issue:** Adding new focusable section but forgetting to route keyboard events.
+
+```go
+// BAD - handleEnterKey has cases for Tasks, Logs, but not Notes
+func handleEnterKey(m *Model, msg tea.KeyMsg) (*Model, tea.Cmd) {
+    if m.focusedSection == SectionTasks { ... }
+    if m.focusedSection == SectionLogs { ... }
+    // Oops! SectionNotes falls through to nil
+    return m, nil
+}
+```
+
+**Fix:**
+```go
+// GOOD - Add handler for new section
+func handleEnterKey(m *Model, msg tea.KeyMsg) (*Model, tea.Cmd) {
+    if m.focusedSection == SectionTasks { ... }
+    if m.focusedSection == SectionLogs { ... }
+    if m.focusedSection == SectionNotes && m.notesPane != nil {
+        var cmd tea.Cmd
+        m.notesPane, cmd = m.notesPane.Update(msg)
+        return m, cmd
+    }
+    return m, nil
+}
+```
+
+**Frequency:** 🔵 (New - 1 occurrence in reckon-5dh)
+
+**Checklist for New Focusable Sections:**
+- [ ] Add Section enum value
+- [ ] Update sectionName() function
+- [ ] Add case in handleEnterKey()
+- [ ] Add case in handleComponentKeys()
+- [ ] Add case in handleKeyString() if needed
+- [ ] Consider Space, Escape, other special keys
+- [ ] Test tab cycling includes new section
+
+**Recommendation:** Consider extracting keyboard routing to a dispatch table/map to make this less error-prone.
+
+**Ticket:** reckon-5dh (keyboard.go:149-173)
+
+---
+
+#### ❌ Anti-Pattern: Key Binding Conflicts
+**Issue:** Component wants to use a key that's already handled globally.
+
+**Example:** Component wants Tab for collapse toggle, but TUI uses Tab for section cycling.
+
+**Solutions:**
+1. **Use a different key** (simplest, follows KISS)
+   - Use Space instead of Tab
+   - Use Ctrl+modifier instead of bare key
+
+2. **Conditional routing** (more complex)
+   - Route key to component only when specific section is focused
+   - May surprise users expecting consistent global behavior
+
+3. **Document and pick one** (pragmatic)
+   - Choose the more important behavior
+   - Document in help text
+
+**Frequency:** 🔵 (New - 1 occurrence in reckon-5dh)
+
+**Best Practice:** Use Space for component-specific toggles, Tab for global navigation.
+
+**Ticket:** reckon-5dh (keyboard.go:184-185)
+
+---
+
+#### ❌ Anti-Pattern: Stale Data Not Rejected in Async Updates
+**Issue:** Component accepts late-arriving async data that no longer matches current context.
+
+```go
+// BAD - Accepts any update regardless of context
+func (np *NotesPane) UpdateLinks(noteID string, outgoing, backlinks []LinkDisplayItem) {
+    np.outgoingLinks = outgoing
+    np.backlinks = backlinks
+    // What if user switched notes and this is stale?
+}
+```
+
+**Fix:**
+```go
+// GOOD - Reject stale updates
+func (np *NotesPane) UpdateLinks(noteID string, outgoing, backlinks []LinkDisplayItem) {
+    // Ignore stale updates
+    if np.currentNoteID != "" && noteID != np.currentNoteID {
+        return
+    }
+    np.outgoingLinks = outgoing
+    np.backlinks = backlinks
+}
+```
+
+**Frequency:** 🔵 (New - 1 occurrence in reckon-5dh)
+
+**Pattern:** When async loading, track current context ID and reject updates for old contexts.
+
+**Ticket:** reckon-5dh (notes_pane.go:240-253)
+
+---
+
+#### ❌ Anti-Pattern: Computed Offset Not Applied
+**Issue:** Calculating scroll offset or position but not using it in rendering.
+
+```go
+// BAD - Computes scrollOffset but never applies it
+func (np *NotesPane) View() string {
+    np.adjustScrollOffset()  // Computes offset
+    // Renders everything without clipping
+    return allLines  // Oops! Content overflows
+}
+```
+
+**Fix:**
+```go
+// GOOD - Apply offset to clip viewport
+func (np *NotesPane) View() string {
+    np.adjustScrollOffset()
+    lines := strings.Split(content, "\n")
+    if np.scrollOffset > 0 && np.scrollOffset < len(lines) {
+        lines = lines[np.scrollOffset:]
+    }
+    if len(lines) > np.height-2 {
+        lines = lines[:np.height-2]
+    }
+    return strings.Join(lines, "\n")
+}
+```
+
+**Frequency:** 🔵 (New - 1 occurrence in reckon-5dh)
+
+**Pattern:** If you compute a position/offset, actually use it.
+
+**Ticket:** reckon-5dh (notes_pane.go:126-152)
+
+---
+
+### ✅ Good Pattern: Exemplary Implementation Plans
+**Pattern:** Detailed design document before coding.
+
+**What makes a plan "exemplary":**
+- Design decisions explicitly documented with rationale
+- Trade-offs analyzed (considered alternatives, chose one, explained why)
+- Edge cases enumerated with handling strategy
+- Test scenarios planned upfront
+- File structure and integration approach mapped out
+- Estimated complexity and risks identified
+
+**Example from reckon-5dh:**
+- 21KB plan document
+- 6 design decisions with alternatives considered
+- 10 edge cases explicitly listed
+- 4-phase implementation strategy
+- Test scenarios defined before coding
+- Risk analysis included
+
+**Frequency:** ✅✅✅ (Excellent - 3+ occurrences)
+
+**Benefit:** Prevents implementation churn, catches issues early, enables better code review.
+
+**Added to guides:**
+- ✅ docs/agents/README.md - Pipeline example
+- ✅ Referenced in plan phase documentation
+
+**Ticket:** reckon-5dh (plan.md)
+
+---
+
+### ✅ Good Pattern: Test-First Development
+**Pattern:** Write comprehensive tests before implementation.
+
+**Process:**
+1. Write tests that describe desired behavior
+2. Tests compile but fail (RED state)
+3. Implement feature to make tests pass (GREEN state)
+4. Refactor if needed (REFACTOR state)
+
+**Benefits:**
+- Tests guide implementation
+- Ensures testability
+- Catches design issues early
+- Excellent coverage from start
+
+**Example from reckon-5dh:**
+- 914 lines of tests written first
+- 39 test scenarios covering all requirements
+- Tests passed 100% after implementation
+- No rework needed for coverage
+
+**Frequency:** ✅✅✅ (Excellent)
+
+**Ticket:** reckon-5dh (notes_pane_test.go)
+
+---
+
+## Pattern Frequency Summary
+
+**Updated:** 2026-02-16 (after reckon-5dh review)
+
+### Critical Patterns (Frequency >= 11)
+- Missing edge case tests: 🔴🔴🔴🔴 (11)
+
+### Common Patterns (Frequency >= 6)
+- Unwrapped errors: 🔴🔴🔴🔴🔴 (15)
+- Tests don't match name: 🔴🔴🔴 (9)
+- Ignoring --quiet flag: 🔴🔴 (5)
+
+### New Patterns (Frequency = 1, watch for recurrence)
+- Nil pointer dereference before check: 🔵 (1)
+- Missing keyboard handler for section: 🔵 (1)
+- Key binding conflict: 🔵 (1)
+- Stale data not rejected: 🔵 (1)
+- Computed offset not applied: 🔵 (1)
+
+### Good Patterns (Continue)
+- Exemplary implementation plans: ✅✅✅ (3+)
+- Test-first development: ✅✅✅ (3+)
+- Table-driven tests: ✅✅✅✅ (5+)
+- Async closure capture pattern: ✅✅✅ (4+)
+
+---
+
+**Next Review:** Watch for recurrence of TUI patterns. If any reach 3 occurrences, add to docs/agents/tui.md as warnings.
