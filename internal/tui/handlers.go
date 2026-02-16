@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/logger"
@@ -155,7 +156,8 @@ func (m *Model) handleTaskToggle(msg components.TaskToggleMsg) (tea.Model, tea.C
 func (m *Model) handleTaskSelectionChanged(msg components.TaskSelectionChangedMsg) (tea.Model, tea.Cmd) {
 	m.updateNotesForSelectedTask()
 	m.calculateDetailPanePosition()
-	return m, nil
+	cmd := m.updateLinksForSelectedItem()
+	return m, cmd
 }
 
 // handleTaskToggled handles task toggled confirmation
@@ -300,4 +302,23 @@ func (m *Model) handleTaskDateCleared(msg taskDateClearedMsg) (tea.Model, tea.Cm
 	}
 	// Reload tasks to reflect the change
 	return m, m.loadTasks()
+}
+
+// handleLinksLoaded handles links loaded message
+func (m *Model) handleLinksLoaded(msg linksLoadedMsg) (tea.Model, tea.Cmd) {
+	if m.notesPane != nil {
+		m.notesPane.UpdateLinks(msg.noteID, msg.outgoing, msg.backlinks)
+	}
+	return m, nil
+}
+
+// handleLinkSelected handles link selection from notes pane
+func (m *Model) handleLinkSelected(msg components.LinkSelectedMsg) (tea.Model, tea.Cmd) {
+	// Stub implementation for now - reckon-edr will implement full navigation
+	m.successMessage = fmt.Sprintf("Navigate to: %s", msg.NoteSlug)
+
+	// Clear success message after 2 seconds
+	return m, tea.Tick(2*stdtime.Second, func(t stdtime.Time) tea.Msg {
+		return clearSuccessMsg{}
+	})
 }

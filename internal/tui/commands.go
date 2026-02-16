@@ -396,3 +396,66 @@ func parseTaskTags(input string) (string, []string) {
 
 	return strings.Join(filteredWords, " "), tags
 }
+
+// loadLinksForNote loads outgoing links and backlinks for a note
+func (m *Model) loadLinksForNote(noteID string) tea.Cmd {
+	// Capture values before creating closure
+	capturedNoteID := noteID
+	capturedNotesService := m.notesService
+
+	return func() tea.Msg {
+		if capturedNotesService == nil {
+			return errMsg{fmt.Errorf("notes service not available")}
+		}
+
+		// Load outgoing links
+		outgoingLinks, err := capturedNotesService.GetOutgoingLinksWithNotes(capturedNoteID)
+		if err != nil {
+			logger.Debug("tui: failed to load outgoing links", "noteID", capturedNoteID, "error", err)
+			return errMsg{err}
+		}
+
+		// Load backlinks
+		backlinks, err := capturedNotesService.GetBacklinksWithNotes(capturedNoteID)
+		if err != nil {
+			logger.Debug("tui: failed to load backlinks", "noteID", capturedNoteID, "error", err)
+			return errMsg{err}
+		}
+
+		// Convert to display items
+		outgoingItems := make([]components.LinkDisplayItem, len(outgoingLinks))
+		for i, link := range outgoingLinks {
+			displayText := link.TargetSlug
+			isResolved := link.TargetNoteID != ""
+			if isResolved && link.TargetNote != nil {
+				displayText = link.TargetNote.Title
+			}
+			outgoingItems[i] = components.LinkDisplayItem{
+				NoteLink:    link,
+				DisplayText: displayText,
+				IsResolved:  isResolved,
+			}
+		}
+
+		backlinkItems := make([]components.LinkDisplayItem, len(backlinks))
+		for i, link := range backlinks {
+			// Use TargetSlug as fallback (the current note being viewed)
+			displayText := link.TargetSlug
+			isResolved := link.SourceNoteID != "" && link.SourceNote != nil
+			if isResolved {
+				displayText = link.SourceNote.Title
+			}
+			backlinkItems[i] = components.LinkDisplayItem{
+				NoteLink:    link,
+				DisplayText: displayText,
+				IsResolved:  isResolved,
+			}
+		}
+
+		return linksLoadedMsg{
+			noteID:    capturedNoteID,
+			outgoing:  outgoingItems,
+			backlinks: backlinkItems,
+		}
+	}
+}

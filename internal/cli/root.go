@@ -83,6 +83,9 @@ var RootCmd = &cobra.Command{
 		if journalTaskService != nil {
 			model.SetJournalTaskService(journalTaskService)
 		}
+		if notesService != nil {
+			model.SetNotesService(notesService)
+		}
 		p := tea.NewProgram(model, tea.WithAltScreen())
 		_, err := p.Run()
 		return err

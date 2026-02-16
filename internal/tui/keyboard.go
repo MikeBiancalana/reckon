@@ -169,6 +169,13 @@ func (m *Model) handleEnterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Handle enter key for notes pane (follow link)
+	if m.focusedSection == SectionNotes && m.notesPane != nil {
+		var cmd tea.Cmd
+		m.notesPane, cmd = m.notesPane.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
@@ -608,6 +615,13 @@ func (m *Model) handleComponentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.taskList != nil {
 			var cmd tea.Cmd
 			m.taskList, cmd = m.taskList.Update(msg)
+			return m, cmd
+		}
+
+	case SectionNotes:
+		if m.notesPane != nil {
+			var cmd tea.Cmd
+			m.notesPane, cmd = m.notesPane.Update(msg)
 			return m, cmd
 		}
 

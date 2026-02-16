@@ -6,6 +6,7 @@ import (
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	"github.com/MikeBiancalana/reckon/internal/service"
 	"github.com/MikeBiancalana/reckon/internal/sync"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
@@ -64,6 +65,7 @@ const (
 	SectionWins
 	SectionLogs
 	SectionTasks
+	SectionNotes
 	SectionSchedule
 	SectionCount // Keep this last to get the count
 )
@@ -73,6 +75,7 @@ const (
 	SectionNameWins       = "Wins"
 	SectionNameLogs       = "Logs"
 	SectionNameTasks      = "Tasks"
+	SectionNameNotes      = "Notes"
 	SectionNameSchedule   = "Schedule"
 )
 
@@ -87,6 +90,8 @@ func sectionName(s Section) string {
 		return SectionNameLogs
 	case SectionTasks:
 		return SectionNameTasks
+	case SectionNotes:
+		return SectionNameNotes
 	case SectionSchedule:
 		return SectionNameSchedule
 	default:
@@ -110,6 +115,7 @@ const (
 type Model struct {
 	service        *journal.Service
 	taskService    *journal.TaskService
+	notesService   *service.NotesService
 	watcher        *sync.Watcher
 	currentDate    string
 	currentJournal *journal.Journal
@@ -174,14 +180,31 @@ func (m *Model) updateNotesForSelectedTask() {
 	selectedTask := m.taskList.SelectedTask()
 	if selectedTask == nil {
 		m.selectedTaskID = ""
-		m.notesPane.UpdateNotes("", []journal.TaskNote{})
 		return
 	}
 	if selectedTask.ID == m.selectedTaskID {
 		return // No change
 	}
 	m.selectedTaskID = selectedTask.ID
-	m.notesPane.UpdateNotes(selectedTask.ID, selectedTask.Notes)
+}
+
+// updateLinksForSelectedItem loads links for the currently selected item
+// This is a stub for now - full implementation will come when tasks are linked to notes
+func (m *Model) updateLinksForSelectedItem() tea.Cmd {
+	// For now, this is a stub since tasks don't yet have associated zettelkasten notes
+	// Once reckon-edr implements note navigation, this will be fully wired up
+	// The infrastructure is ready - just need the task<->note association
+
+	if m.notesService == nil || m.notesPane == nil {
+		return nil
+	}
+
+	// TODO: Get note ID from current context (task, note picker, etc.)
+	// For now, return nil since tasks don't have associated notes yet
+	// When implemented, this would be:
+	// return m.loadLinksForNote(noteID)
+
+	return nil
 }
 
 // TaskSection represents which time-based section a task belongs to
@@ -406,6 +429,11 @@ func (m *Model) SetJournalTaskService(taskService *journal.TaskService) {
 	m.taskService = taskService
 }
 
+// SetNotesService sets the notes service
+func (m *Model) SetNotesService(svc *service.NotesService) {
+	m.notesService = svc
+}
+
 // Init initializes the model
 func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.loadJournal()}
@@ -489,6 +517,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearSuccessMsg:
 		m.successMessage = ""
 		return m, nil
+
+	case linksLoadedMsg:
+		return m.handleLinksLoaded(msg)
+
+	case components.LinkSelectedMsg:
+		return m.handleLinkSelected(msg)
 
 	case fileChangedMsg:
 		return m.handleFileChanged(msg)
@@ -716,7 +750,7 @@ func (m *Model) renderNewLayout() string {
 	}
 	if m.notesPane != nil {
 		m.notesPane.SetSize(dims.NotesWidth-BorderWidth, dims.NotesHeight-BorderHeight)
-		// Notes pane is not focusable, so no SetFocused
+		m.notesPane.SetFocused(m.focusedSection == SectionNotes)
 	}
 	if m.scheduleView != nil {
 		m.scheduleView.SetSize(dims.RightWidth-BorderWidth, dims.ScheduleHeight-BorderHeight)
@@ -869,9 +903,16 @@ General:
 Sections:
   - Logs: Activity log with stdtimestamps
   - Tasks: General todo list with collapsible notes
+  - Notes: Linked notes and backlinks (wiki-style navigation)
   - Schedule: Upcoming items for the day
   - Intentions: 1-3 focus tasks for today
   - Wins: Daily accomplishments
+
+Notes Section (when focused):
+  - j/k: Navigate links
+  - enter: Follow link
+  - tab: Toggle section collapse
+  - g/G: Jump to top/bottom
 
 Press ? to exit help.`
 
@@ -956,3 +997,9 @@ type taskDateClearedMsg struct {
 }
 
 type clearSuccessMsg struct{}
+
+type linksLoadedMsg struct {
+	noteID    string
+	outgoing  []components.LinkDisplayItem
+	backlinks []components.LinkDisplayItem
+}
