@@ -196,3 +196,15 @@ func (s *NotesService) UpdateNoteTimestamp(note *models.Note) error {
 func (s *NotesService) GetBacklinks(noteID string) ([]models.NoteLink, error) {
 	return s.repo.GetBacklinks(noteID)
 }
+
+// GetOutgoingLinksWithNotes retrieves outgoing links with enriched TargetNote data.
+// This is for reckon-5dh: Notes Pane with Linked Notes and Backlinks
+func (s *NotesService) GetOutgoingLinksWithNotes(sourceNoteID string) ([]models.NoteLink, error) {
+	return s.repo.GetOutgoingLinksWithNotes(sourceNoteID)
+}
+
+// GetBacklinksWithNotes retrieves backlinks with enriched SourceNote data.
+// This is for reckon-5dh: Notes Pane with Linked Notes and Backlinks
+func (s *NotesService) GetBacklinksWithNotes(noteID string) ([]models.NoteLink, error) {
+	return s.repo.GetBacklinksWithNotes(noteID)
+}

@@ -724,3 +724,264 @@ func TestGetAllNotes_WithTags(t *testing.T) {
 	assert.Equal(t, 1, tagCounts["testing"])
 	assert.Equal(t, 1, tagCounts["django"])
 }
+
+// Test for reckon-5dh: GetOutgoingLinksWithNotes enriched query
+func TestGetOutgoingLinksWithNotes(t *testing.T) {
+	service, repo, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	notesDir := filepath.Join(tempDir, "notes")
+
+	// Create target notes first
+	targetNote1 := models.NewNote("Target One", "target-one", "/path/to/target1.md", nil)
+	err := service.SaveNote(targetNote1)
+	require.NoError(t, err)
+
+	targetNote2 := models.NewNote("Target Two", "target-two", "/path/to/target2.md", nil)
+	err = service.SaveNote(targetNote2)
+	require.NoError(t, err)
+
+	// Create a note file with links (both resolved and unresolved)
+	content := `# Source Note
+
+Links to [[target-one]] and [[target-two]].
+
+Also references [[unresolved-note]].`
+
+	absFilePath := createTestNoteFile(t, notesDir, "source-note.md", content)
+	relFilePath, err := filepath.Rel(notesDir, absFilePath)
+	require.NoError(t, err)
+
+	sourceNote := models.NewNote("Source Note", "source-note", relFilePath, nil)
+	err = service.SaveNote(sourceNote)
+	require.NoError(t, err)
+
+	// Update links
+	err = service.UpdateNoteLinks(sourceNote, notesDir)
+	require.NoError(t, err)
+
+	// Test: GetOutgoingLinksWithNotes should populate TargetNote for resolved links
+	links, err := repo.GetOutgoingLinksWithNotes(sourceNote.ID)
+	require.NoError(t, err)
+	assert.Len(t, links, 3)
+
+	// Verify enriched data
+	for _, link := range links {
+		if link.TargetSlug == "target-one" {
+			assert.NotNil(t, link.TargetNote, "resolved link should have TargetNote populated")
+			assert.Equal(t, "Target One", link.TargetNote.Title)
+			assert.Equal(t, targetNote1.ID, link.TargetNoteID)
+		} else if link.TargetSlug == "target-two" {
+			assert.NotNil(t, link.TargetNote, "resolved link should have TargetNote populated")
+			assert.Equal(t, "Target Two", link.TargetNote.Title)
+			assert.Equal(t, targetNote2.ID, link.TargetNoteID)
+		} else if link.TargetSlug == "unresolved-note" {
+			assert.Nil(t, link.TargetNote, "unresolved link should have nil TargetNote")
+			assert.Empty(t, link.TargetNoteID, "unresolved link should have empty TargetNoteID")
+		} else {
+			t.Errorf("unexpected link: %s", link.TargetSlug)
+		}
+	}
+}
+
+// Test for reckon-5dh: GetOutgoingLinksWithNotes with empty results
+func TestGetOutgoingLinksWithNotes_Empty(t *testing.T) {
+	service, repo, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	// Create a note with no outgoing links
+	note := models.NewNote("Lonely Note", "lonely-note", "/path/to/lonely.md", nil)
+	err := service.SaveNote(note)
+	require.NoError(t, err)
+
+	// Test: Should return empty slice, not error
+	links, err := repo.GetOutgoingLinksWithNotes(note.ID)
+	require.NoError(t, err)
+	assert.Empty(t, links)
+}
+
+// Test for reckon-5dh: GetBacklinksWithNotes enriched query
+func TestGetBacklinksWithNotes(t *testing.T) {
+	service, repo, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	notesDir := filepath.Join(tempDir, "notes")
+
+	// Create a target note
+	targetNote := models.NewNote("Target Note", "target-note", "/path/to/target.md", nil)
+	err := service.SaveNote(targetNote)
+	require.NoError(t, err)
+
+	// Create multiple source notes that link to the target
+	sourceNote1Content := `# Source One
+
+This links to [[target-note]].`
+	sourceNote1AbsPath := createTestNoteFile(t, notesDir, "source-one.md", sourceNote1Content)
+	sourceNote1RelPath, err := filepath.Rel(notesDir, sourceNote1AbsPath)
+	require.NoError(t, err)
+	sourceNote1 := models.NewNote("Source One", "source-one", sourceNote1RelPath, nil)
+	err = service.SaveNote(sourceNote1)
+	require.NoError(t, err)
+	err = service.UpdateNoteLinks(sourceNote1, notesDir)
+	require.NoError(t, err)
+
+	sourceNote2Content := `# Source Two
+
+Also references [[target-note]].`
+	sourceNote2AbsPath := createTestNoteFile(t, notesDir, "source-two.md", sourceNote2Content)
+	sourceNote2RelPath, err := filepath.Rel(notesDir, sourceNote2AbsPath)
+	require.NoError(t, err)
+	sourceNote2 := models.NewNote("Source Two", "source-two", sourceNote2RelPath, nil)
+	err = service.SaveNote(sourceNote2)
+	require.NoError(t, err)
+	err = service.UpdateNoteLinks(sourceNote2, notesDir)
+	require.NoError(t, err)
+
+	// Test: GetBacklinksWithNotes should populate SourceNote
+	backlinks, err := repo.GetBacklinksWithNotes(targetNote.ID)
+	require.NoError(t, err)
+	assert.Len(t, backlinks, 2)
+
+	// Verify enriched data
+	for _, backlink := range backlinks {
+		assert.NotNil(t, backlink.SourceNote, "backlink should have SourceNote populated")
+		assert.NotEmpty(t, backlink.SourceNote.Title)
+		assert.NotEmpty(t, backlink.SourceNote.Slug)
+
+		if backlink.SourceNote.Slug == "source-one" {
+			assert.Equal(t, "Source One", backlink.SourceNote.Title)
+			assert.Equal(t, sourceNote1.ID, backlink.SourceNoteID)
+		} else if backlink.SourceNote.Slug == "source-two" {
+			assert.Equal(t, "Source Two", backlink.SourceNote.Title)
+			assert.Equal(t, sourceNote2.ID, backlink.SourceNoteID)
+		} else {
+			t.Errorf("unexpected backlink source: %s", backlink.SourceNote.Slug)
+		}
+	}
+}
+
+// Test for reckon-5dh: GetBacklinksWithNotes with empty results
+func TestGetBacklinksWithNotes_Empty(t *testing.T) {
+	service, repo, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	// Create a note with no backlinks
+	note := models.NewNote("Lonely Note", "lonely-note", "/path/to/lonely.md", nil)
+	err := service.SaveNote(note)
+	require.NoError(t, err)
+
+	// Test: Should return empty slice, not error
+	backlinks, err := repo.GetBacklinksWithNotes(note.ID)
+	require.NoError(t, err)
+	assert.Empty(t, backlinks)
+}
+
+// Test for reckon-5dh: Service layer wrapper for GetOutgoingLinksWithNotes
+func TestNotesService_GetOutgoingLinksWithNotes(t *testing.T) {
+	service, _, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	notesDir := filepath.Join(tempDir, "notes")
+
+	// Create target note
+	targetNote := models.NewNote("Target", "target", "/path/to/target.md", nil)
+	err := service.SaveNote(targetNote)
+	require.NoError(t, err)
+
+	// Create source note with link
+	content := `# Source
+
+Links to [[target]].`
+	absPath := createTestNoteFile(t, notesDir, "source.md", content)
+	relPath, err := filepath.Rel(notesDir, absPath)
+	require.NoError(t, err)
+	sourceNote := models.NewNote("Source", "source", relPath, nil)
+	err = service.SaveNote(sourceNote)
+	require.NoError(t, err)
+	err = service.UpdateNoteLinks(sourceNote, notesDir)
+	require.NoError(t, err)
+
+	// Test service method
+	links, err := service.GetOutgoingLinksWithNotes(sourceNote.ID)
+	require.NoError(t, err)
+	assert.Len(t, links, 1)
+	assert.NotNil(t, links[0].TargetNote)
+	assert.Equal(t, "Target", links[0].TargetNote.Title)
+}
+
+// Test for reckon-5dh: Service layer wrapper for GetBacklinksWithNotes
+func TestNotesService_GetBacklinksWithNotes(t *testing.T) {
+	service, _, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	notesDir := filepath.Join(tempDir, "notes")
+
+	// Create target note
+	targetNote := models.NewNote("Target", "target", "/path/to/target.md", nil)
+	err := service.SaveNote(targetNote)
+	require.NoError(t, err)
+
+	// Create source note with link
+	content := `# Source
+
+Links to [[target]].`
+	absPath := createTestNoteFile(t, notesDir, "source.md", content)
+	relPath, err := filepath.Rel(notesDir, absPath)
+	require.NoError(t, err)
+	sourceNote := models.NewNote("Source", "source", relPath, nil)
+	err = service.SaveNote(sourceNote)
+	require.NoError(t, err)
+	err = service.UpdateNoteLinks(sourceNote, notesDir)
+	require.NoError(t, err)
+
+	// Test service method
+	backlinks, err := service.GetBacklinksWithNotes(targetNote.ID)
+	require.NoError(t, err)
+	assert.Len(t, backlinks, 1)
+	assert.NotNil(t, backlinks[0].SourceNote)
+	assert.Equal(t, "Source", backlinks[0].SourceNote.Title)
+}
+
+// Test for reckon-5dh: Edge case - deleted source note for backlink
+func TestGetBacklinksWithNotes_DeletedSourceNote(t *testing.T) {
+	service, repo, tempDir := setupNotesTestService(t)
+	defer cleanupNotesTestService(t, tempDir)
+
+	notesDir := filepath.Join(tempDir, "notes")
+
+	// Create target note
+	targetNote := models.NewNote("Target", "target", "/path/to/target.md", nil)
+	err := service.SaveNote(targetNote)
+	require.NoError(t, err)
+
+	// Create source note with link
+	content := `# Source
+
+Links to [[target]].`
+	absPath := createTestNoteFile(t, notesDir, "source.md", content)
+	relPath, err := filepath.Rel(notesDir, absPath)
+	require.NoError(t, err)
+	sourceNote := models.NewNote("Source", "source", relPath, nil)
+	err = service.SaveNote(sourceNote)
+	require.NoError(t, err)
+	err = service.UpdateNoteLinks(sourceNote, notesDir)
+	require.NoError(t, err)
+
+	// Delete the source note from database (but link record remains)
+	// Note: This simulates orphaned link data
+	err = repo.db.DB().Exec("DELETE FROM notes WHERE id = ?", sourceNote.ID)
+	require.NoError(t, err)
+
+	// Test: GetBacklinksWithNotes should handle missing source note gracefully
+	// The link should still appear, but SourceNote may be nil
+	backlinks, err := repo.GetBacklinksWithNotes(targetNote.ID)
+	require.NoError(t, err)
+
+	// Implementation decision: either filter out orphaned backlinks,
+	// or return them with nil SourceNote
+	// Test will verify whichever approach is implemented
+	if len(backlinks) > 0 {
+		// If orphaned links are included, SourceNote should be nil
+		assert.Nil(t, backlinks[0].SourceNote, "deleted source note should result in nil SourceNote")
+	}
+}

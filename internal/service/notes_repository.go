@@ -353,3 +353,150 @@ func (r *NotesRepository) GetBacklinks(noteID string) ([]models.NoteLink, error)
 	return links, nil
 }
 
+// GetOutgoingLinksWithNotes retrieves outgoing links for a note with enriched TargetNote data.
+// This is for reckon-5dh: Notes Pane with Linked Notes and Backlinks
+// The method JOINs note_links with notes to populate the TargetNote field for resolved links.
+func (r *NotesRepository) GetOutgoingLinksWithNotes(sourceNoteID string) ([]models.NoteLink, error) {
+	logger.Debug("GetOutgoingLinksWithNotes", "source_note_id", sourceNoteID)
+
+	rows, err := r.db.DB().Query(
+		`SELECT nl.id, nl.source_note_id, nl.target_slug, nl.target_note_id, nl.link_type, nl.created_at,
+		        n.id, n.title, n.slug, n.file_path, n.created_at, n.updated_at, n.tags
+		 FROM note_links nl
+		 LEFT JOIN notes n ON nl.target_note_id = n.id
+		 WHERE nl.source_note_id = ?`,
+		sourceNoteID,
+	)
+	if err != nil {
+		logger.Error("GetOutgoingLinksWithNotes", "error", err, "source_note_id", sourceNoteID)
+		return nil, fmt.Errorf("failed to query outgoing links with notes: %w", err)
+	}
+	defer rows.Close()
+
+	var links []models.NoteLink
+	for rows.Next() {
+		var link models.NoteLink
+		var linkTypeStr string
+		var createdUnix int64
+		var targetNoteID sql.NullString
+
+		// Target note fields (nullable)
+		var targetID, targetTitle, targetSlug, targetFilePath sql.NullString
+		var targetCreatedUnix, targetUpdatedUnix sql.NullInt64
+		var targetTags sql.NullString
+
+		err := rows.Scan(
+			&link.ID, &link.SourceNoteID, &link.TargetSlug, &targetNoteID, &linkTypeStr, &createdUnix,
+			&targetID, &targetTitle, &targetSlug, &targetFilePath, &targetCreatedUnix, &targetUpdatedUnix, &targetTags,
+		)
+		if err != nil {
+			logger.Error("GetOutgoingLinksWithNotes", "error", err, "source_note_id", sourceNoteID)
+			return nil, fmt.Errorf("failed to scan outgoing link: %w", err)
+		}
+
+		if targetNoteID.Valid {
+			link.TargetNoteID = targetNoteID.String
+		}
+		link.LinkType = models.LinkType(linkTypeStr)
+		link.CreatedAt = time.Unix(createdUnix, 0)
+
+		// Populate TargetNote if joined data is present
+		if targetID.Valid {
+			targetNote := &models.Note{
+				ID:        targetID.String,
+				Title:     targetTitle.String,
+				Slug:      targetSlug.String,
+				FilePath:  targetFilePath.String,
+				CreatedAt: time.Unix(targetCreatedUnix.Int64, 0),
+				UpdatedAt: time.Unix(targetUpdatedUnix.Int64, 0),
+			}
+			if targetTags.Valid && targetTags.String != "" {
+				targetNote.Tags = strings.Split(targetTags.String, ",")
+			}
+			link.TargetNote = targetNote
+		}
+
+		links = append(links, link)
+	}
+
+	if err := rows.Err(); err != nil {
+		logger.Error("GetOutgoingLinksWithNotes iteration error", "error", err, "source_note_id", sourceNoteID)
+		return nil, fmt.Errorf("failed to iterate outgoing links for note %s: %w", sourceNoteID, err)
+	}
+
+	return links, nil
+}
+
+// GetBacklinksWithNotes retrieves backlinks for a note with enriched SourceNote data.
+// This is for reckon-5dh: Notes Pane with Linked Notes and Backlinks
+// The method JOINs note_links with notes to populate the SourceNote field.
+func (r *NotesRepository) GetBacklinksWithNotes(noteID string) ([]models.NoteLink, error) {
+	logger.Debug("GetBacklinksWithNotes", "note_id", noteID)
+
+	rows, err := r.db.DB().Query(
+		`SELECT nl.id, nl.source_note_id, nl.target_slug, nl.target_note_id, nl.link_type, nl.created_at,
+		        n.id, n.title, n.slug, n.file_path, n.created_at, n.updated_at, n.tags
+		 FROM note_links nl
+		 LEFT JOIN notes n ON nl.source_note_id = n.id
+		 WHERE nl.target_note_id = ?`,
+		noteID,
+	)
+	if err != nil {
+		logger.Error("GetBacklinksWithNotes", "error", err, "note_id", noteID)
+		return nil, fmt.Errorf("failed to query backlinks with notes: %w", err)
+	}
+	defer rows.Close()
+
+	var links []models.NoteLink
+	for rows.Next() {
+		var link models.NoteLink
+		var linkTypeStr string
+		var createdUnix int64
+		var targetNoteID sql.NullString
+
+		// Source note fields (nullable)
+		var sourceID, sourceTitle, sourceSlug, sourceFilePath sql.NullString
+		var sourceCreatedUnix, sourceUpdatedUnix sql.NullInt64
+		var sourceTags sql.NullString
+
+		err := rows.Scan(
+			&link.ID, &link.SourceNoteID, &link.TargetSlug, &targetNoteID, &linkTypeStr, &createdUnix,
+			&sourceID, &sourceTitle, &sourceSlug, &sourceFilePath, &sourceCreatedUnix, &sourceUpdatedUnix, &sourceTags,
+		)
+		if err != nil {
+			logger.Error("GetBacklinksWithNotes", "error", err, "note_id", noteID)
+			return nil, fmt.Errorf("failed to scan backlink: %w", err)
+		}
+
+		if targetNoteID.Valid {
+			link.TargetNoteID = targetNoteID.String
+		}
+		link.LinkType = models.LinkType(linkTypeStr)
+		link.CreatedAt = time.Unix(createdUnix, 0)
+
+		// Populate SourceNote if joined data is present
+		if sourceID.Valid {
+			sourceNote := &models.Note{
+				ID:        sourceID.String,
+				Title:     sourceTitle.String,
+				Slug:      sourceSlug.String,
+				FilePath:  sourceFilePath.String,
+				CreatedAt: time.Unix(sourceCreatedUnix.Int64, 0),
+				UpdatedAt: time.Unix(sourceUpdatedUnix.Int64, 0),
+			}
+			if sourceTags.Valid && sourceTags.String != "" {
+				sourceNote.Tags = strings.Split(sourceTags.String, ",")
+			}
+			link.SourceNote = sourceNote
+		}
+
+		links = append(links, link)
+	}
+
+	if err := rows.Err(); err != nil {
+		logger.Error("GetBacklinksWithNotes iteration error", "error", err, "note_id", noteID)
+		return nil, fmt.Errorf("failed to iterate backlinks for note %s: %w", noteID, err)
+	}
+
+	return links, nil
+}
