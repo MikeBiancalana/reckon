@@ -787,15 +787,44 @@ func (m *Model) renderNewLayout() string {
 		centerView(logsInnerWidth, logsInnerHeight, logsView),
 	)
 
-	// Render center column with three-section task view and detail pane
-	centerContent := ""
-	if m.taskList != nil {
-		centerContent = m.renderTasksWithDetailPane()
-	}
+	// Render center column with tasks and optional notes pane
+	var tasksBox string
+	if m.notesPaneVisible && m.notesPane != nil {
+		// Split vertically: Tasks (top) and Notes (bottom)
+		tasksContent := ""
+		if m.taskList != nil {
+			tasksContent = m.renderTasksWithDetailPane()
+		}
 
-	// Center and box the center column
-	tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, centerContent)
-	tasksBox := m.getBorderStyle(SectionTasks).Render(tasksCentered)
+		// Ensure non-negative dimensions
+		tasksInner := dims.TasksHeight - BorderHeight
+		if tasksInner < 0 {
+			tasksInner = 0
+		}
+		notesInner := dims.NotesHeight - BorderHeight
+		if notesInner < 0 {
+			notesInner = 0
+		}
+
+		tasksCentered := centerView(tasksInnerWidth, tasksInner, tasksContent)
+		tasksBoxed := m.getBorderStyle(SectionTasks).Render(tasksCentered)
+
+		notesView := m.notesPane.View()
+		notesCentered := centerView(tasksInnerWidth, notesInner, notesView)
+		notesBoxed := m.getBorderStyle(SectionNotes).Render(notesCentered)
+
+		// Join tasks and notes vertically
+		centerContent := lipgloss.JoinVertical(lipgloss.Left, tasksBoxed, notesBoxed)
+		tasksBox = centerContent
+	} else {
+		// Just tasks, full height
+		centerContent := ""
+		if m.taskList != nil {
+			centerContent = m.renderTasksWithDetailPane()
+		}
+		tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, centerContent)
+		tasksBox = m.getBorderStyle(SectionTasks).Render(tasksCentered)
+	}
 
 	// Build right sidebar with centered, boxed components
 	rightSidebar := m.buildRightSidebar(dims, rightInnerWidth, BorderHeight)
