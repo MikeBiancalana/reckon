@@ -41,3 +41,7 @@ reckon-kwi/
 reckon-125/
 # bd worktree
 reckon-39e-task-scheduling-shortcuts/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
