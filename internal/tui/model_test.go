@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/journal"
+	rtime "github.com/MikeBiancalana/reckon/internal/time"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 )
 
@@ -597,14 +598,8 @@ func TestRenderNewLayout_LineCount(t *testing.T) {
 			m.successMessage = tc.successMessage
 
 			if tc.summaryVisible {
-				// summaryView.View() returns "" unless visible AND summary != nil;
-				// we toggle visibility only — without a real TimeSummary the view
-				// still returns "", so we use a raw string to force a non-empty summary.
-				// That is fine: we only need to observe the join behaviour.
 				m.summaryView.SetVisible(true)
-				// Without a real TimeSummary, View() still returns "". To exercise the
-				// summary-present path we rely on successMessage tests instead.
-				// The summaryVisible=true + no TimeSummary path still tests no double-blank.
+				m.summaryView.SetSummary(&rtime.TimeSummary{Meetings: 30, Tasks: 60})
 			}
 
 			view := m.renderNewLayout()
