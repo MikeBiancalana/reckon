@@ -314,6 +314,30 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 			return tl, cmd
 		}
 		switch msg.String() {
+		case "j", "down":
+			// Skip note items: find the next task (non-note) below the cursor.
+			// Notes are not rendered by renderTaskSection so landing on one
+			// produces no visible selection change — the selection appears frozen.
+			items := tl.list.Items()
+			for i := tl.list.Index() + 1; i < len(items); i++ {
+				if ti, ok := items[i].(TaskItem); ok && !ti.isNote {
+					tl.list.Select(i)
+					break
+				}
+			}
+			return tl, tl.selectionChangedCmd()
+
+		case "k", "up":
+			// Skip note items: find the previous task (non-note) above the cursor.
+			items := tl.list.Items()
+			for i := tl.list.Index() - 1; i >= 0; i-- {
+				if ti, ok := items[i].(TaskItem); ok && !ti.isNote {
+					tl.list.Select(i)
+					break
+				}
+			}
+			return tl, tl.selectionChangedCmd()
+
 		case " ":
 			selectedItem := tl.list.SelectedItem()
 			if selectedItem == nil {
@@ -416,6 +440,28 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 	}
 
 	return tl, cmd
+}
+
+// selectionChangedCmd returns a TaskSelectionChangedMsg command if the current
+// selection differs from the last known selection. Used by custom j/k handlers
+// that bypass the default list.Update path.
+func (tl *TaskList) selectionChangedCmd() tea.Cmd {
+	item := tl.list.SelectedItem()
+	if item == nil {
+		return nil
+	}
+	taskItem, ok := item.(TaskItem)
+	if !ok || taskItem.isNote {
+		return nil
+	}
+	if taskItem.task.ID == tl.lastSelectedTaskID {
+		return nil
+	}
+	tl.lastSelectedTaskID = taskItem.task.ID
+	id := taskItem.task.ID
+	return func() tea.Msg {
+		return TaskSelectionChangedMsg{TaskID: id}
+	}
 }
 
 // View renders the task list
@@ -667,14 +713,6 @@ func (tgl *TimeGroupedTaskList) currentSectionTasks() []journal.Task {
 	return nil
 }
 
-func (tgl *TimeGroupedTaskList) currentSectionLength() int {
-	tasks := tgl.currentSectionTasks()
-	if tasks == nil {
-		return 0
-	}
-	return len(tasks)
-}
-
 func (tgl *TimeGroupedTaskList) findNextNonEmptySection(startIdx, direction int) int {
 	sections := []func() []journal.Task{
 		func() []journal.Task { return tgl.groupedTasks.Today },
@@ -700,7 +738,7 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 		}
 		switch msg.String() {
 		case "j", "down":
-			currentLen := tgl.currentSectionLength()
+			currentLen := len(tgl.list.Items())
 			if currentLen == 0 {
 				nextIdx := tgl.findNextNonEmptySection(tgl.sectionIndex, 1)
 				if nextIdx != -1 {
@@ -716,19 +754,20 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 					tgl.updateListForSection()
 					tgl.list.Select(0)
 				}
+				return tgl, nil
 			} else {
 				var cmd tea.Cmd
 				tgl.list, cmd = tgl.list.Update(msg)
 				return tgl, cmd
 			}
 		case "k", "up":
-			currentLen := tgl.currentSectionLength()
+			currentLen := len(tgl.list.Items())
 			if currentLen == 0 {
 				prevIdx := tgl.findNextNonEmptySection(tgl.sectionIndex, -1)
 				if prevIdx != -1 {
 					tgl.sectionIndex = prevIdx
 					tgl.updateListForSection()
-					tgl.list.Select(len(tgl.currentSectionTasks()) - 1)
+					tgl.list.Select(len(tgl.list.Items()) - 1)
 				}
 				return tgl, nil
 			}
@@ -737,8 +776,9 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 				if prevIdx != -1 {
 					tgl.sectionIndex = prevIdx
 					tgl.updateListForSection()
-					tgl.list.Select(len(tgl.currentSectionTasks()) - 1)
+					tgl.list.Select(len(tgl.list.Items()) - 1)
 				}
+				return tgl, nil
 			} else {
 				var cmd tea.Cmd
 				tgl.list, cmd = tgl.list.Update(msg)
@@ -767,7 +807,13 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 			}
 			tgl.collapsedMap[taskItem.task.ID] = !tgl.collapsedMap[taskItem.task.ID]
 			tgl.updateListForSection()
-			tgl.list.Select(0)
+			for i, item := range tgl.list.Items() {
+				if ti, ok := item.(TaskItem); ok && !ti.isNote && ti.task.ID == taskItem.task.ID {
+					tgl.list.Select(i)
+					break
+				}
+			}
+			return tgl, nil
 		}
 	}
 	var cmd tea.Cmd
