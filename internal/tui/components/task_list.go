@@ -667,14 +667,6 @@ func (tgl *TimeGroupedTaskList) currentSectionTasks() []journal.Task {
 	return nil
 }
 
-func (tgl *TimeGroupedTaskList) currentSectionLength() int {
-	tasks := tgl.currentSectionTasks()
-	if tasks == nil {
-		return 0
-	}
-	return len(tasks)
-}
-
 func (tgl *TimeGroupedTaskList) findNextNonEmptySection(startIdx, direction int) int {
 	sections := []func() []journal.Task{
 		func() []journal.Task { return tgl.groupedTasks.Today },
@@ -775,6 +767,7 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 					break
 				}
 			}
+			return tgl, nil
 		}
 	}
 	var cmd tea.Cmd
