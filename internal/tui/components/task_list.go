@@ -700,7 +700,7 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 		}
 		switch msg.String() {
 		case "j", "down":
-			currentLen := tgl.currentSectionLength()
+			currentLen := len(tgl.list.Items())
 			if currentLen == 0 {
 				nextIdx := tgl.findNextNonEmptySection(tgl.sectionIndex, 1)
 				if nextIdx != -1 {
@@ -716,19 +716,20 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 					tgl.updateListForSection()
 					tgl.list.Select(0)
 				}
+				return tgl, nil
 			} else {
 				var cmd tea.Cmd
 				tgl.list, cmd = tgl.list.Update(msg)
 				return tgl, cmd
 			}
 		case "k", "up":
-			currentLen := tgl.currentSectionLength()
+			currentLen := len(tgl.list.Items())
 			if currentLen == 0 {
 				prevIdx := tgl.findNextNonEmptySection(tgl.sectionIndex, -1)
 				if prevIdx != -1 {
 					tgl.sectionIndex = prevIdx
 					tgl.updateListForSection()
-					tgl.list.Select(len(tgl.currentSectionTasks()) - 1)
+					tgl.list.Select(len(tgl.list.Items()) - 1)
 				}
 				return tgl, nil
 			}
@@ -737,8 +738,9 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 				if prevIdx != -1 {
 					tgl.sectionIndex = prevIdx
 					tgl.updateListForSection()
-					tgl.list.Select(len(tgl.currentSectionTasks()) - 1)
+					tgl.list.Select(len(tgl.list.Items()) - 1)
 				}
+				return tgl, nil
 			} else {
 				var cmd tea.Cmd
 				tgl.list, cmd = tgl.list.Update(msg)
@@ -767,7 +769,12 @@ func (tgl *TimeGroupedTaskList) Update(msg tea.Msg) (*TimeGroupedTaskList, tea.C
 			}
 			tgl.collapsedMap[taskItem.task.ID] = !tgl.collapsedMap[taskItem.task.ID]
 			tgl.updateListForSection()
-			tgl.list.Select(0)
+			for i, item := range tgl.list.Items() {
+				if ti, ok := item.(TaskItem); ok && !ti.isNote && ti.task.ID == taskItem.task.ID {
+					tgl.list.Select(i)
+					break
+				}
+			}
 		}
 	}
 	var cmd tea.Cmd
