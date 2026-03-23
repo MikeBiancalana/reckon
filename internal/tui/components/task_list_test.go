@@ -1366,3 +1366,124 @@ func TestTimeGroupedTaskList_CollapsePreservesCursor(t *testing.T) {
 		}
 	})
 }
+
+// TestTaskList_NavigationSkipsNotes is a regression test for reckon-sa8l.
+//
+// Context: The TUI renders tasks via renderTasksWithDetailPane → renderTaskSection,
+// which renders only task rows (no note rows). The TaskList's underlying list.Model,
+// however, contains both task items and note items (when notes are expanded).
+// Pressing j/k navigates through the full flat list including notes, so the visual
+// selection appears "frozen" while the cursor silently steps through invisible note
+// items, then jumps to the next task. This test proves that j/k must skip note items
+// so every keypress produces a visible selection change.
+func TestTaskList_NavigationSkipsNotes(t *testing.T) {
+	tasks := []journal.Task{
+		{
+			ID:     "taskA",
+			Text:   "Task A",
+			Status: journal.TaskOpen,
+			Notes: []journal.TaskNote{
+				{ID: "noteA1", Text: "Note A1", Position: 0},
+				{ID: "noteA2", Text: "Note A2", Position: 1},
+			},
+		},
+		{
+			ID:     "taskB",
+			Text:   "Task B",
+			Status: journal.TaskOpen,
+		},
+		{
+			ID:     "taskC",
+			Text:   "Task C",
+			Status: journal.TaskOpen,
+			Notes: []journal.TaskNote{
+				{ID: "noteC1", Text: "Note C1", Position: 0},
+			},
+		},
+	}
+
+	t.Run("j from task with notes moves to next task, not first note", func(t *testing.T) {
+		tl := NewTaskList(tasks)
+		tl.focused = true
+
+		// Visible list items: [taskA, noteA1, noteA2, taskB, taskC, noteC1]
+		// Cursor starts at index 0 (taskA)
+		if tl.list.Index() != 0 {
+			t.Fatalf("expected cursor at index 0, got %d", tl.list.Index())
+		}
+
+		// Press j — should land on taskB (index 3), skipping notes
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		tl, _ = tl.Update(msg)
+
+		selected := tl.SelectedTask()
+		if selected == nil {
+			t.Fatal("expected a selected task after j, got nil")
+		}
+		if selected.ID != "taskB" {
+			t.Errorf("j from taskA should select taskB, got %q (cursor at index %d)", selected.ID, tl.list.Index())
+		}
+	})
+
+	t.Run("k from task jumps back over notes to previous task", func(t *testing.T) {
+		tl := NewTaskList(tasks)
+		tl.focused = true
+
+		// Navigate forward to taskB using j (which must skip notes)
+		tl, _ = tl.Update(tea.KeyMsg{Type: tea.KeyDown})
+		selected := tl.SelectedTask()
+		if selected == nil || selected.ID != "taskB" {
+			t.Fatalf("setup: j from taskA should land on taskB, got %v (cursor %d)", selected, tl.list.Index())
+		}
+
+		// Press k — should land on taskA (index 0), skipping back over notes
+		tl, _ = tl.Update(tea.KeyMsg{Type: tea.KeyUp})
+
+		selected = tl.SelectedTask()
+		if selected == nil {
+			t.Fatal("expected a selected task after k, got nil")
+		}
+		if selected.ID != "taskA" {
+			t.Errorf("k from taskB should select taskA, got %q (cursor at index %d)", selected.ID, tl.list.Index())
+		}
+	})
+
+	t.Run("every j/k press changes the selected task", func(t *testing.T) {
+		tl := NewTaskList(tasks)
+		tl.focused = true
+
+		// Each navigation step should land on a different task (never a note)
+		steps := []struct {
+			key    tea.KeyType
+			wantID string
+		}{
+			{tea.KeyDown, "taskB"}, // taskA → taskB (skips noteA1, noteA2)
+			{tea.KeyDown, "taskC"}, // taskB → taskC
+			{tea.KeyUp, "taskB"},   // taskC → taskB
+			{tea.KeyUp, "taskA"},   // taskB → taskA (skips noteA2, noteA1 backwards)
+		}
+		for i, step := range steps {
+			tl, _ = tl.Update(tea.KeyMsg{Type: step.key})
+			selected := tl.SelectedTask()
+			if selected == nil {
+				t.Fatalf("step %d: expected selected task, got nil", i)
+			}
+			if selected.ID != step.wantID {
+				t.Errorf("step %d: expected %q, got %q (cursor index %d)", i, step.wantID, selected.ID, tl.list.Index())
+			}
+		}
+	})
+
+	t.Run("SelectedTask never returns nil while navigating", func(t *testing.T) {
+		tl := NewTaskList(tasks)
+		tl.focused = true
+
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		for i := 0; i < 10; i++ {
+			tl, _ = tl.Update(msg)
+			if tl.SelectedTask() == nil {
+				t.Errorf("step %d: SelectedTask returned nil", i)
+			}
+		}
+	})
+}

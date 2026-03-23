@@ -314,6 +314,30 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 			return tl, cmd
 		}
 		switch msg.String() {
+		case "j", "down":
+			// Skip note items: find the next task (non-note) below the cursor.
+			// Notes are not rendered by renderTaskSection so landing on one
+			// produces no visible selection change — the selection appears frozen.
+			items := tl.list.Items()
+			for i := tl.list.Index() + 1; i < len(items); i++ {
+				if ti, ok := items[i].(TaskItem); ok && !ti.isNote {
+					tl.list.Select(i)
+					break
+				}
+			}
+			return tl, tl.selectionChangedCmd()
+
+		case "k", "up":
+			// Skip note items: find the previous task (non-note) above the cursor.
+			items := tl.list.Items()
+			for i := tl.list.Index() - 1; i >= 0; i-- {
+				if ti, ok := items[i].(TaskItem); ok && !ti.isNote {
+					tl.list.Select(i)
+					break
+				}
+			}
+			return tl, tl.selectionChangedCmd()
+
 		case " ":
 			selectedItem := tl.list.SelectedItem()
 			if selectedItem == nil {
@@ -416,6 +440,28 @@ func (tl *TaskList) Update(msg tea.Msg) (*TaskList, tea.Cmd) {
 	}
 
 	return tl, cmd
+}
+
+// selectionChangedCmd returns a TaskSelectionChangedMsg command if the current
+// selection differs from the last known selection. Used by custom j/k handlers
+// that bypass the default list.Update path.
+func (tl *TaskList) selectionChangedCmd() tea.Cmd {
+	item := tl.list.SelectedItem()
+	if item == nil {
+		return nil
+	}
+	taskItem, ok := item.(TaskItem)
+	if !ok || taskItem.isNote {
+		return nil
+	}
+	if taskItem.task.ID == tl.lastSelectedTaskID {
+		return nil
+	}
+	tl.lastSelectedTaskID = taskItem.task.ID
+	id := taskItem.task.ID
+	return func() tea.Msg {
+		return TaskSelectionChangedMsg{TaskID: id}
+	}
 }
 
 // View renders the task list
