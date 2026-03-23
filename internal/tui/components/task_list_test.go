@@ -1085,3 +1085,284 @@ func TestTimeGroupedTaskList_SelectedTask(t *testing.T) {
 		}
 	})
 }
+
+// TestTimeGroupedTaskList_NavigationWithExpandedNotes tests reckon-sa8l:
+// cursor should not navigate through hidden tasks.
+func TestTimeGroupedTaskList_NavigationWithExpandedNotes(t *testing.T) {
+	t.Run("j does not cross section boundary when notes are expanded", func(t *testing.T) {
+		// Regression test for reckon-sa8l: currentSectionLength() returned raw task
+		// count, not visible item count. With 2 tasks and 2 expanded notes (4 visible
+		// items), pressing j at index 1 (note) incorrectly wrapped to next section.
+		today := time.Now().Format("2006-01-02")
+		nextWeek := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Today task with notes",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+					{ID: "note2", Text: "Note 2", Position: 1},
+				},
+				ScheduledDate: &today,
+			},
+			{ID: "task2", Text: "Today task 2", Status: journal.TaskOpen, ScheduledDate: &today},
+			{ID: "task3", Text: "Week task", Status: journal.TaskOpen, ScheduledDate: &nextWeek},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// TODAY section has 4 visible items: task1, note1, note2, task2
+		// Verify we start in TODAY
+		if tgl.sectionIndex != 0 {
+			t.Fatalf("expected sectionIndex 0, got %d", tgl.sectionIndex)
+		}
+
+		visibleItems := len(tgl.list.Items())
+		if visibleItems != 4 {
+			t.Fatalf("expected 4 visible items (task1 + 2 notes + task2), got %d", visibleItems)
+		}
+
+		// Position cursor at note1 (index 1, which is >= raw task count of 2 minus 1)
+		tgl.list.Select(1)
+
+		// Press j — should move to note2 (index 2), NOT cross to THIS WEEK
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		tgl, _ = tgl.Update(msg)
+
+		if tgl.sectionIndex != 0 {
+			t.Errorf("j from note1 should stay in TODAY section, but moved to section %d", tgl.sectionIndex)
+		}
+		if tgl.list.Index() != 2 {
+			t.Errorf("expected cursor at index 2 (note2), got %d", tgl.list.Index())
+		}
+	})
+
+	t.Run("j at actual end of section (last visible item) crosses to next section", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		nextWeek := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Today task with notes",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+				},
+				ScheduledDate: &today,
+			},
+			{ID: "task2", Text: "Today task 2", Status: journal.TaskOpen, ScheduledDate: &today},
+			{ID: "task3", Text: "Week task", Status: journal.TaskOpen, ScheduledDate: &nextWeek},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// TODAY has 3 visible items: task1, note1, task2
+		// Select last item (task2 at index 2)
+		tgl.list.Select(2)
+
+		// Press j — should cross to THIS WEEK
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		tgl, _ = tgl.Update(msg)
+
+		if tgl.sectionIndex != 1 {
+			t.Errorf("j from last visible item should move to THIS WEEK (section 1), got section %d", tgl.sectionIndex)
+		}
+	})
+
+	t.Run("k does not cross section boundary when notes are expanded", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		nextWeek := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+		tasks := []journal.Task{
+			{ID: "task1", Text: "Today task", Status: journal.TaskOpen, ScheduledDate: &today},
+			{
+				ID:     "task2",
+				Text:   "Week task with notes",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+					{ID: "note2", Text: "Note 2", Position: 1},
+				},
+				ScheduledDate: &nextWeek,
+			},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// Move to THIS WEEK section which has: task2, note1, note2 (3 visible items)
+		tgl.sectionIndex = 1
+		tgl.updateListForSection()
+
+		// Position at note2 (index 2)
+		tgl.list.Select(2)
+
+		// Press k — should move to note1 (index 1), NOT cross back to TODAY
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		tgl, _ = tgl.Update(msg)
+
+		if tgl.sectionIndex != 1 {
+			t.Errorf("k from note2 should stay in THIS WEEK section, but moved to section %d", tgl.sectionIndex)
+		}
+		if tgl.list.Index() != 1 {
+			t.Errorf("expected cursor at index 1 (note1), got %d", tgl.list.Index())
+		}
+	})
+
+	t.Run("k backward transition selects last visible item including notes", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		nextWeek := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "Today task with notes",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+					{ID: "note2", Text: "Note 2", Position: 1},
+				},
+				ScheduledDate: &today,
+			},
+			{ID: "task2", Text: "Week task", Status: journal.TaskOpen, ScheduledDate: &nextWeek},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// Move to THIS WEEK section, cursor at first item
+		tgl.sectionIndex = 1
+		tgl.updateListForSection()
+		tgl.list.Select(0)
+
+		// Press k — should cross back to TODAY, selecting last visible item (note2 at index 2)
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		tgl, _ = tgl.Update(msg)
+
+		if tgl.sectionIndex != 0 {
+			t.Errorf("k from top of THIS WEEK should move to TODAY section, got section %d", tgl.sectionIndex)
+		}
+		// TODAY has 3 items: task1, note1, note2
+		// Should land on index 2 (note2), not index 0 (raw task count - 1 = 0)
+		if tgl.list.Index() != 2 {
+			t.Errorf("k backward transition should land on last visible item (index 2), got index %d", tgl.list.Index())
+		}
+	})
+}
+
+// TestTimeGroupedTaskList_CollapsePreservesCursor tests that after collapsing/expanding
+// a task, the cursor stays on the toggled task (not reset to index 0).
+func TestTimeGroupedTaskList_CollapsePreservesCursor(t *testing.T) {
+	t.Run("collapse preserves cursor on toggled task", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "First task",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+				},
+				ScheduledDate: &today,
+			},
+			{
+				ID:     "task2",
+				Text:   "Second task with notes",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note2", Text: "Note 2", Position: 0},
+				},
+				ScheduledDate: &today,
+			},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// Visible items: task1, note1, task2, note2 (4 items)
+		// Move cursor to task2 (index 2)
+		tgl.list.Select(2)
+
+		selectedItem := tgl.list.SelectedItem()
+		if ti, ok := selectedItem.(TaskItem); !ok || ti.task.ID != "task2" {
+			t.Fatalf("setup: expected cursor on task2")
+		}
+
+		// Press enter on task2 — should collapse its notes
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		tgl, _ = tgl.Update(msg)
+
+		// After collapse, visible items: task1, note1, task2 (3 items)
+		// Cursor should be on task2 (index 2), not reset to index 0 (task1)
+		selectedAfter := tgl.list.SelectedItem()
+		if selectedAfter == nil {
+			t.Fatal("expected a selected item after collapse")
+		}
+		ti, ok := selectedAfter.(TaskItem)
+		if !ok {
+			t.Fatal("expected TaskItem after collapse")
+		}
+		if ti.task.ID != "task2" {
+			t.Errorf("after collapse, cursor should stay on task2, got %s", ti.task.ID)
+		}
+	})
+
+	t.Run("expand preserves cursor on toggled task", func(t *testing.T) {
+		today := time.Now().Format("2006-01-02")
+		tasks := []journal.Task{
+			{
+				ID:     "task1",
+				Text:   "First task",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note1", Text: "Note 1", Position: 0},
+				},
+				ScheduledDate: &today,
+			},
+			{
+				ID:     "task2",
+				Text:   "Second task",
+				Status: journal.TaskOpen,
+				Notes: []journal.TaskNote{
+					{ID: "note2", Text: "Note 2", Position: 0},
+				},
+				ScheduledDate: &today,
+			},
+		}
+
+		tgl := NewTimeGroupedTaskList(tasks)
+		tgl.focused = true
+
+		// Collapse task1 first
+		tgl.collapsedMap["task1"] = true
+		tgl.updateListForSection()
+
+		// Visible items: task1 (collapsed), task2, note2 (3 items)
+		// Move cursor to task2 (index 1)
+		tgl.list.Select(1)
+
+		selectedItem := tgl.list.SelectedItem()
+		if ti, ok := selectedItem.(TaskItem); !ok || ti.task.ID != "task2" {
+			t.Fatalf("setup: expected cursor on task2, got %v", selectedItem)
+		}
+
+		// Press enter on task2 — already expanded, so collapse it
+		// (task2 is expanded by default, enter toggles to collapsed)
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		tgl, _ = tgl.Update(msg)
+
+		// After collapsing task2, cursor should remain on task2
+		selectedAfter := tgl.list.SelectedItem()
+		if selectedAfter == nil {
+			t.Fatal("expected a selected item after toggle")
+		}
+		ti, ok := selectedAfter.(TaskItem)
+		if !ok {
+			t.Fatal("expected TaskItem after toggle")
+		}
+		if ti.task.ID != "task2" {
+			t.Errorf("after toggle, cursor should stay on task2, got %s", ti.task.ID)
+		}
+	})
+}
