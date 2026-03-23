@@ -864,6 +864,7 @@ func (np *NotesPane) View() string {
 - Key binding conflict: 🔵 (1)
 - Stale data not rejected: 🔵 (1)
 - Computed offset not applied: 🔵 (1)
+- Bare type assertion (no ok check): 🔵 (1) — reckon-5yk8
 
 ### Good Patterns (Continue)
 - Exemplary implementation plans: ✅✅✅ (3+)

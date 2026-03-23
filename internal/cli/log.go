@@ -4,56 +4,91 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
-// logInputModel handles the Bubble Tea model for interactive log input.
-type logInputModel struct {
-	textInput textinput.Model
-	done      bool
-	cancelled bool
+var logHintStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+// logMultilineModel handles the Bubble Tea model for interactive multiline log input.
+type logMultilineModel struct {
+	editor   *components.TextEditor
+	message  string
+	canceled bool
+	width    int
+	height   int
 }
 
-func initialLogModel() logInputModel {
-	ti := textinput.New()
-	ti.Placeholder = "Type your log entry..."
-	ti.Focus()
-	return logInputModel{
-		textInput: ti,
-		done:      false,
-		cancelled: false,
-	}
+func (m logMultilineModel) Init() tea.Cmd {
+	return m.editor.Show()
 }
 
-func (m logInputModel) Init() tea.Cmd {
-	return textinput.Blink
-}
-
-func (m logInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m logMultilineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter:
-			m.done = true
-			return m, tea.Quit
-		case tea.KeyEsc:
-			m.cancelled = true
+		if msg.String() == "ctrl+c" {
+			m.canceled = true
 			return m, tea.Quit
 		}
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.editor.SetSize(msg.Width, msg.Height)
+		return m, nil
+
+	case components.TextEditorSubmitMsg:
+		m.message = joinLogLines(msg.Text)
+		return m, tea.Quit
+
+	case components.TextEditorCancelMsg:
+		m.canceled = true
+		return m, tea.Quit
 	}
 
 	var cmd tea.Cmd
-	m.textInput, cmd = m.textInput.Update(msg)
+	m.editor, cmd = m.editor.Update(msg)
 	return m, cmd
 }
 
-func (m logInputModel) View() string {
-	if m.done || m.cancelled {
+func (m logMultilineModel) View() string {
+	if m.message != "" || m.canceled {
 		return ""
 	}
-	return fmt.Sprintf("Add log entry: %s\n\nEnter to submit, Esc to cancel", m.textInput.View())
+	editorView := m.editor.View()
+	if editorView == "" {
+		return ""
+	}
+	hint := logHintStyle.Render("Syntax: [meeting:name]  [task:id]  30m  [break]")
+	return editorView + "\n" + hint
+}
+
+// joinLogLines joins multiline editor content into a single log line.
+func joinLogLines(text string) string {
+	return strings.TrimSpace(strings.ReplaceAll(text, "\n", " "))
+}
+
+// runLogMultilineEditor launches the multiline editor and returns the entered message.
+func runLogMultilineEditor() (message string, canceled bool, err error) {
+	editor := components.NewTextEditor("Add Log Entry")
+	editor.SetSize(80, 15)
+	m := logMultilineModel{
+		editor: editor,
+		width:  80,
+		height: 24,
+	}
+	p := tea.NewProgram(m)
+	finalModel, err := p.Run()
+	if err != nil {
+		return "", false, fmt.Errorf("interactive input failed: %w", err)
+	}
+	result, ok := finalModel.(logMultilineModel)
+	if !ok {
+		return "", false, fmt.Errorf("unexpected model type returned")
+	}
+	return result.message, result.canceled, nil
 }
 
 var logCmd = &cobra.Command{
@@ -72,19 +107,16 @@ Supports interactive mode when no message is provided.`,
 		var message string
 
 		if len(args) == 0 {
-			// Interactive mode - uses TUI, so reconfigure logger
-			// Note: The logger has already been initialized in PersistentPreRunE,
-			// but this is a lightweight TUI that doesn't need full redirection
-			p := tea.NewProgram(initialLogModel())
-			model, err := p.Run()
-			if err != nil {
-				return fmt.Errorf("interactive input failed: %w", err)
+			// Interactive mode - multiline editor
+			var canceled bool
+			var interactiveErr error
+			message, canceled, interactiveErr = runLogMultilineEditor()
+			if interactiveErr != nil {
+				return interactiveErr
 			}
-			m := model.(logInputModel)
-			if m.cancelled {
+			if canceled {
 				return nil
 			}
-			message = strings.TrimSpace(m.textInput.Value())
 		} else {
 			message = strings.TrimSpace(strings.Join(args, " "))
 		}
