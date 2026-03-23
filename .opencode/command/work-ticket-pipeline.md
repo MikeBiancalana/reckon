@@ -30,7 +30,10 @@ If user provided a ticket ID, use that. Otherwise, show `bd ready` output and as
 ### 2. Initialize Workspace
 
 ```bash
-# Create work directory
+# Create isolated branch + worktree
+git worktree add .worktrees/<ticket-id> -b <ticket-id>
+
+# Create work directory (in main repo, not worktree)
 mkdir -p .claude/work/<ticket-id>
 
 # Get ticket details
@@ -40,6 +43,9 @@ bd show <ticket-id>
 # Look at description, title, or ask user if unclear
 # Options: cli, tui, journal, storage
 ```
+
+**All subsequent file edits and git commits happen inside `.worktrees/<ticket-id>`.**
+The `.claude/work/<ticket-id>/` artifact directory stays in the main repo.
 
 ### 3. Planning Phase
 
@@ -113,8 +119,9 @@ go test ./...
 - Re-read implementation guide
 - Max 3 attempts, then escalate to user
 
-**Commit incrementally:**
+**Commit incrementally (from inside `.worktrees/<ticket-id>`):**
 ```bash
+cd .worktrees/<ticket-id>
 git add <files>
 git commit -m "feat: Implement <feature> for <ticket-id>"
 ```
@@ -160,8 +167,9 @@ Manual pattern checks:
 - Re-run preflight
 - Max 2 fix cycles, then escalate
 
-**Commit fixes:**
+**Commit fixes (from inside `.worktrees/<ticket-id>`):**
 ```bash
+cd .worktrees/<ticket-id>
 git add <files>
 git commit -m "fix: Address preflight issues for <ticket-id>"
 ```
@@ -287,11 +295,12 @@ $(git log --oneline origin/main..HEAD)
 $(grep -A 1 "Patterns for Future" .claude/work/<ticket-id>/review.md || echo "No new patterns documented")
 EOF
 
-# Push branch
+# Push branch from worktree
+cd .worktrees/<ticket-id>
 git push -u origin HEAD
 
 # Create PR
-gh pr create --base main --fill
+gh pr create --base main --title "<ticket-id>: <short description>" --body "Closes <ticket-id>"
 
 # Get PR number
 PR_NUM=$(gh pr view --json number -q .number)

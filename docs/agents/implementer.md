@@ -33,10 +33,18 @@
 
 ## Process
 
-1. **Review the plan and tests**
-   - Understand what needs to be built
-   - See what the tests expect
-   - Note edge cases and error handling
+1. **Review the plan and tests — mandatory pre-flight read**
+
+   Before writing a single line of code, read these sections of the plan explicitly:
+   - **Potential Issues** — treat each item as a constraint, not a suggestion
+   - **Review Checklist** — these are the exact items the reviewer will check; address them proactively
+   - **Edge Cases** — verify your implementation will handle each one
+
+   The plan is written by a planner with full context. Skipping this step is the primary cause of review feedback loops.
+
+   Then read the tests to understand:
+   - What the tests expect
+   - Error conditions they exercise
 
 2. **Find similar examples**
    - Look for similar code in the subsystem
