@@ -874,3 +874,27 @@ func (np *NotesPane) View() string {
 ---
 
 **Next Review:** Watch for recurrence of TUI patterns. If any reach 3 occurrences, add to docs/agents/tui.md as warnings.
+
+## Pattern: Unconditional Newline Join with Optional Strings (reckon-qxem)
+
+**Frequency:** 1
+
+**Description:** Using string concatenation with unconditional `"\n"` separators between sections where some sections may be empty strings. `a + "\n" + "" + "\n" + b` creates a phantom blank line.
+
+**Bad:**
+```go
+mainView := content + "\n" + optionalMsg + "\n" + summary + "\n" + status
+```
+
+**Good:**
+```go
+parts := []string{content}
+if optionalMsg != "" { parts = append(parts, optionalMsg) }
+if summary != "" { parts = append(parts, summary) }
+parts = append(parts, status)
+mainView := strings.Join(parts, "\n")
+```
+
+**Why it matters:** In terminal UIs, every extra newline consumes a row. Even a single phantom line causes height overflow, clipping the top of the layout. The bug is invisible until you see the rendered output — exactly why tmux visual testing is valuable.
+
+**When to apply:** Any time you join view strings where some may be empty, especially in TUI `View()` methods.
