@@ -867,7 +867,15 @@ func (m *Model) renderNewLayout() string {
 		status = m.statusBar.View()
 	}
 
-	mainView := content + "\n" + textEntry + "\n" + successMsg + "\n" + summary + "\n" + status
+	parts := []string{content, textEntry}
+	if successMsg != "" {
+		parts = append(parts, successMsg)
+	}
+	if summary != "" {
+		parts = append(parts, summary)
+	}
+	parts = append(parts, status)
+	mainView := strings.Join(parts, "\n")
 
 	// Overlay date picker if visible
 	if m.datePickerVisible && m.datePicker != nil {

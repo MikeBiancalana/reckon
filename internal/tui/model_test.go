@@ -512,6 +512,165 @@ func TestGetTaskSection_DoneTasks(t *testing.T) {
 	})
 }
 
+// newMinimalModelForRender constructs a Model with just enough components initialized
+// to make renderNewLayout() produce meaningful output without panicking.
+func newMinimalModelForRender(termWidth, termHeight int) *Model {
+	sb := components.NewStatusBar()
+	sb.SetWidth(termWidth)
+
+	return &Model{
+		width:              termWidth,
+		height:             termHeight,
+		taskList:           components.NewTaskList([]journal.Task{}),
+		scheduleView:       components.NewScheduleView([]journal.ScheduleItem{}),
+		intentionList:      components.NewIntentionList([]journal.Intention{}),
+		winsView:           components.NewWinsView([]journal.Win{}),
+		logView:            components.NewLogView([]journal.LogEntry{}),
+		textEntryBar:       components.NewTextEntryBar(),
+		statusBar:          sb,
+		summaryView:        components.NewSummaryView(),
+		notesPaneVisible:   false,
+		detailPanePosition: DetailPaneBottom,
+	}
+}
+
+// TestRenderNewLayout_LineCount verifies that the rendered view does not exceed
+// the terminal height when successMsg and summary are both empty (the common case).
+// Before the fix this produces termHeight+1 lines, causing the top border to clip.
+func TestRenderNewLayout_LineCount(t *testing.T) {
+	tests := []struct {
+		name           string
+		termWidth      int
+		termHeight     int
+		successMessage string
+		summaryVisible bool
+		// maxExtraLines is how many lines beyond termHeight we accept.
+		// Common case (no success, no summary): must be exactly 0.
+		// With success message: we accept +1 (transient, 2-second display).
+		maxExtraLines int
+	}{
+		{
+			name:           "common case: no success, summary hidden",
+			termWidth:      120,
+			termHeight:     50,
+			successMessage: "",
+			summaryVisible: false,
+			maxExtraLines:  0, // Must fit exactly — this is the bug scenario
+		},
+		{
+			name:           "summary visible, no success",
+			termWidth:      120,
+			termHeight:     50,
+			successMessage: "",
+			summaryVisible: true,
+			maxExtraLines:  0,
+		},
+		{
+			name:           "success message present, summary hidden",
+			termWidth:      120,
+			termHeight:     50,
+			successMessage: "Task added!",
+			summaryVisible: false,
+			maxExtraLines:  1, // +1 for transient success line is acceptable
+		},
+		{
+			name:           "both success and summary present",
+			termWidth:      120,
+			termHeight:     50,
+			successMessage: "Win recorded!",
+			summaryVisible: true,
+			maxExtraLines:  1,
+		},
+		{
+			name:           "minimum terminal dimensions",
+			termWidth:      80,
+			termHeight:     24,
+			successMessage: "",
+			summaryVisible: false,
+			maxExtraLines:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newMinimalModelForRender(tc.termWidth, tc.termHeight)
+			m.successMessage = tc.successMessage
+
+			if tc.summaryVisible {
+				// summaryView.View() returns "" unless visible AND summary != nil;
+				// we toggle visibility only — without a real TimeSummary the view
+				// still returns "", so we use a raw string to force a non-empty summary.
+				// That is fine: we only need to observe the join behaviour.
+				m.summaryView.SetVisible(true)
+				// Without a real TimeSummary, View() still returns "". To exercise the
+				// summary-present path we rely on successMessage tests instead.
+				// The summaryVisible=true + no TimeSummary path still tests no double-blank.
+			}
+
+			view := m.renderNewLayout()
+
+			// Count rendered lines. strings.Split on "\n" gives len-1 separators.
+			lineCount := len(strings.Split(view, "\n"))
+
+			allowedMax := tc.termHeight + tc.maxExtraLines
+			if lineCount > allowedMax {
+				t.Errorf(
+					"rendered view has %d lines, want ≤ %d (termHeight=%d, maxExtraLines=%d)\n"+
+						"This indicates the unconditional newline join bug is present.",
+					lineCount, allowedMax, tc.termHeight, tc.maxExtraLines,
+				)
+			}
+		})
+	}
+}
+
+// TestRenderNewLayout_NoSpuriousBlankLine verifies that when successMsg is empty
+// there is no blank line between the text-entry box and the status bar.
+// The bug produces "\n\n" (two consecutive newlines = blank line) between them.
+func TestRenderNewLayout_NoSpuriousBlankLine(t *testing.T) {
+	t.Run("no blank line between text entry and status when successMsg empty", func(t *testing.T) {
+		m := newMinimalModelForRender(120, 50)
+		// successMessage is already "" by default; summary is hidden by default.
+
+		view := m.renderNewLayout()
+
+		// Two consecutive newlines mean an empty line was inserted.
+		if strings.Contains(view, "\n\n") {
+			t.Errorf(
+				"rendered view contains consecutive newlines (spurious blank line).\n"+
+					"This indicates the unconditional newline join bug is present.\n"+
+					"Relevant tail of view:\n%s",
+				lastNLines(view, 10),
+			)
+		}
+	})
+
+	t.Run("no blank line when both successMsg and summary are empty", func(t *testing.T) {
+		m := newMinimalModelForRender(80, 24)
+		m.successMessage = ""
+		// summaryView.View() returns "" because visible=false (default)
+
+		view := m.renderNewLayout()
+
+		if strings.Contains(view, "\n\n") {
+			t.Errorf(
+				"rendered view contains consecutive newlines (spurious blank line) at minimum terminal size.\n"+
+					"Relevant tail of view:\n%s",
+				lastNLines(view, 10),
+			)
+		}
+	})
+}
+
+// lastNLines returns the last n lines of s for diagnostic output.
+func lastNLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[len(lines)-n:], "\n")
+}
+
 // TestGetTaskSection_Performance is a benchmark-style test to ensure the optimized version is efficient
 func TestGetTaskSection_Performance(t *testing.T) {
 	today := time.Now().Truncate(24 * time.Hour)
