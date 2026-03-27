@@ -700,12 +700,9 @@ func TestHelpViewContainsSchedulingShortcuts(t *testing.T) {
 	view := model.helpView()
 
 	expectedEntries := []string{
-		"s",
-		"Schedule",
-		"D",
-		"deadline",
-		"c",
-		"Clear",
+		"s          Schedule task",
+		"D          Set deadline",
+		"c          Clear date submenu",
 	}
 
 	for _, entry := range expectedEntries {
