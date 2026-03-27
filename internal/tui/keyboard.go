@@ -262,6 +262,7 @@ func (m *Model) handleNextSection() (tea.Model, tea.Cmd) {
 
 	if m.statusBar != nil {
 		m.statusBar.SetSection(sectionName(m.focusedSection))
+		m.statusBar.SetNoteSelected(false)
 	}
 
 	return m, nil
@@ -273,6 +274,7 @@ func (m *Model) handlePrevSection() (tea.Model, tea.Cmd) {
 
 	if m.statusBar != nil {
 		m.statusBar.SetSection(sectionName(m.focusedSection))
+		m.statusBar.SetNoteSelected(false)
 	}
 
 	return m, nil
@@ -615,6 +617,9 @@ func (m *Model) handleComponentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.taskList != nil {
 			var cmd tea.Cmd
 			m.taskList, cmd = m.taskList.Update(msg)
+			if m.statusBar != nil {
+				m.statusBar.SetNoteSelected(m.taskList.IsSelectedItemNote())
+			}
 			return m, cmd
 		}
 
