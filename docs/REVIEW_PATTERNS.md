@@ -899,3 +899,25 @@ mainView := strings.Join(parts, "\n")
 **Why it matters:** In terminal UIs, every extra newline consumes a row. Even a single phantom line causes height overflow, clipping the top of the layout. The bug is invisible until you see the rendered output — exactly why tmux visual testing is valuable.
 
 **When to apply:** Any time you join view strings where some may be empty, especially in TUI `View()` methods.
+
+---
+
+## Dead Code After Refactoring (reckon-pjjr)
+
+**Pattern name:** Dead code left after feature removal
+
+**Description:** When removing a feature (e.g., TUI panes), the implementer sometimes leaves behind orphaned struct fields, unreachable switch cases, or utility functions that no longer have callers. The compiler won't catch these — they compile cleanly.
+
+**Common forms:**
+- Struct fields kept "for test compatibility" that are simply never set (always nil) — remove the field and update tests
+- Switch cases for types that can no longer be set (e.g., `case "intention"` after deleting the handler that sets `confirmItemType = "intention"`)
+- Helper functions (`isRightPaneFocused()`) whose only callers were also deleted
+
+**Why it matters:** Dead code misleads future readers, inflates cognitive load, and can mask bugs (a test asserting a nil field is always trivially true).
+
+**How to catch it:**
+- After deleting a feature, grep for all identifiers related to the removed feature
+- Verify every remaining reference is still reachable via a live code path
+- If a test assertion is trivially true (e.g., `assert nil == nil`), the test is no longer meaningful — remove or replace it
+
+**When to apply:** Any ticket that removes, replaces, or consolidates features.
