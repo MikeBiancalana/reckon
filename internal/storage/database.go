@@ -157,8 +157,6 @@ CREATE INDEX IF NOT EXISTS idx_checklist_template_items_template ON checklist_te
 CREATE INDEX IF NOT EXISTS idx_checklist_runs_template ON checklist_runs(template_id);
 CREATE INDEX IF NOT EXISTS idx_checklist_runs_status ON checklist_runs(status);
 CREATE INDEX IF NOT EXISTS idx_checklist_run_items_run ON checklist_run_items(run_id);
-
--- Indices for faster queries
 CREATE INDEX IF NOT EXISTS idx_intentions_date ON intentions(journal_date);
 CREATE INDEX IF NOT EXISTS idx_intentions_status ON intentions(status);
 CREATE INDEX IF NOT EXISTS idx_log_entries_date ON log_entries(journal_date);
