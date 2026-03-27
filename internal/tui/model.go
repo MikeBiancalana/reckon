@@ -61,39 +61,27 @@ const (
 type Section int
 
 const (
-	SectionIntentions Section = iota
-	SectionWins
-	SectionLogs
-	SectionTasks
-	SectionNotes
-	SectionSchedule
-	SectionCount // Keep this last to get the count
+	SectionLogs  Section = iota // 0
+	SectionTasks                // 1
+	SectionNotes                // 2
+	SectionCount                // Keep this last to get the count
 )
 
 const (
-	SectionNameIntentions = "Intentions"
-	SectionNameWins       = "Wins"
-	SectionNameLogs       = "Logs"
-	SectionNameTasks      = "Tasks"
-	SectionNameNotes      = "Notes"
-	SectionNameSchedule   = "Schedule"
+	SectionNameLogs  = "Logs"
+	SectionNameTasks = "Tasks"
+	SectionNameNotes = "Notes"
 )
 
 // sectionName returns the display name for a section
 func sectionName(s Section) string {
 	switch s {
-	case SectionIntentions:
-		return SectionNameIntentions
-	case SectionWins:
-		return SectionNameWins
 	case SectionLogs:
 		return SectionNameLogs
 	case SectionTasks:
 		return SectionNameTasks
 	case SectionNotes:
 		return SectionNameNotes
-	case SectionSchedule:
-		return SectionNameSchedule
 	default:
 		return "Unknown"
 	}
@@ -124,17 +112,15 @@ type Model struct {
 	height         int
 
 	// Components
-	intentionList *components.IntentionList
-	winsView      *components.WinsView
+	intentionList *components.IntentionList // kept for test compatibility; not rendered
 	logView       *components.LogView
 	textEntryBar  *components.TextEntryBar
 	statusBar     *components.StatusBar
 
-	// New components for 40-40-18 layout
-	taskList     *components.TaskList
-	scheduleView *components.ScheduleView
-	summaryView  *components.SummaryView
-	notesPane    *components.NotesPane
+	// Main layout components
+	taskList    *components.TaskList
+	summaryView *components.SummaryView
+	notesPane   *components.NotesPane
 
 	// Notes pane state
 	selectedTaskID   string
@@ -407,7 +393,7 @@ func NewModel(service *journal.Service) *Model {
 	}
 
 	sb := components.NewStatusBar()
-	sb.SetSection(SectionNameIntentions)
+	sb.SetSection(SectionNameLogs)
 	sb.SetInputMode(false)
 
 	return &Model{
@@ -552,10 +538,6 @@ func (m *Model) View() string {
 	if m.confirmMode {
 		var itemType string
 		switch m.confirmItemType {
-		case "intention":
-			itemType = "intention"
-		case "win":
-			itemType = "win"
 		case "log":
 			itemType = "log entry"
 		case "log_note":
@@ -581,59 +563,13 @@ func (m *Model) View() string {
 		return m.helpView()
 	}
 
-	// Use multi-section split view when components are available and terminal is wide enough
-	if m.taskList != nil && m.scheduleView != nil && m.width >= MinTerminalWidth {
+	// Use multi-section split view when taskList is available
+	if m.taskList != nil {
 		return m.renderNewLayout()
 	}
 
-	// Three-pane mode (fallback for narrow terminals)
-	var content string
-	paneHeight := m.height - 2
-	paneWidthIntentions := int(float64(m.width) * 0.25)
-	paneWidthWins := paneWidthIntentions
-	paneWidthLogs := m.width - 2*paneWidthIntentions
-
-	// Size components to panes
-	if m.intentionList != nil {
-		m.intentionList.SetSize(paneWidthIntentions, paneHeight)
-	}
-	if m.winsView != nil {
-		m.winsView.SetSize(paneWidthWins, paneHeight)
-	}
-	if m.logView != nil {
-		m.logView.SetSize(paneWidthLogs, paneHeight)
-	}
-
-	// Get pane views
-	intentionsView := ""
-	if m.intentionList != nil {
-		intentionsView = m.intentionList.View()
-	}
-	winsView := ""
-	if m.winsView != nil {
-		winsView = m.winsView.View()
-	}
-	logsView := ""
-	if m.logView != nil {
-		logsView = m.logView.View()
-	}
-
-	// Join panes with borders
-	borderStyle := lipgloss.NewStyle().BorderRight(true).BorderStyle(lipgloss.NormalBorder())
-	content = lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		borderStyle.Render(intentionsView),
-		borderStyle.Render(winsView),
-		logsView,
-	)
-
-	status := ""
-	if m.statusBar != nil {
-		m.statusBar.SetDate(m.currentDate)
-		status = m.statusBar.View()
-	}
-
-	return content + "\n" + status
+	// Minimal fallback when journal not yet loaded
+	return "Loading..."
 }
 
 // centerView places a view within given dimensions (left-aligned, top-aligned)
@@ -648,13 +584,6 @@ func (m *Model) getBorderStyle(section Section) lipgloss.Style {
 		style = style.BorderForeground(lipgloss.Color("11")) // bright yellow color for focus
 	}
 	return style
-}
-
-// isRightPaneFocused returns true if any right pane section is focused
-func (m *Model) isRightPaneFocused() bool {
-	return m.focusedSection == SectionIntentions ||
-		m.focusedSection == SectionWins ||
-		m.focusedSection == SectionSchedule
 }
 
 // renderTasksWithDetailPane renders the center column with three task sections and optional detail pane
@@ -739,7 +668,7 @@ func (m *Model) renderTasksWithDetailPane() string {
 	return strings.Join(sections, "\n"+separator+"\n")
 }
 
-// renderNewLayout renders the 40-40-18 layout: Logs | Tasks | Schedule/Intentions/Wins
+// renderNewLayout renders the 50-50 layout: Logs | Tasks
 func (m *Model) renderNewLayout() string {
 	dims := CalculatePaneDimensions(m.width, m.height, m.notesPaneVisible)
 
@@ -751,18 +680,6 @@ func (m *Model) renderNewLayout() string {
 	if m.notesPane != nil {
 		m.notesPane.SetSize(dims.NotesWidth-BorderWidth, dims.NotesHeight-BorderHeight)
 		m.notesPane.SetFocused(m.focusedSection == SectionNotes)
-	}
-	if m.scheduleView != nil {
-		m.scheduleView.SetSize(dims.RightWidth-BorderWidth, dims.ScheduleHeight-BorderHeight)
-		m.scheduleView.SetFocused(m.focusedSection == SectionSchedule)
-	}
-	if m.intentionList != nil {
-		m.intentionList.SetSize(dims.RightWidth-BorderWidth, dims.IntentionsHeight-BorderHeight)
-		m.intentionList.SetFocused(m.focusedSection == SectionIntentions)
-	}
-	if m.winsView != nil {
-		m.winsView.SetSize(dims.RightWidth-BorderWidth, dims.WinsHeight-BorderHeight)
-		m.winsView.SetFocused(m.focusedSection == SectionWins)
 	}
 	if m.logView != nil {
 		m.logView.SetSize(dims.LogsWidth-BorderWidth, dims.LogsHeight-BorderHeight)
@@ -780,7 +697,6 @@ func (m *Model) renderNewLayout() string {
 	logsInnerHeight := dims.LogsHeight - BorderHeight
 	tasksInnerWidth := dims.TasksWidth - BorderWidth
 	tasksInnerHeight := dims.TasksHeight - BorderHeight
-	rightInnerWidth := dims.RightWidth - BorderWidth
 
 	// Center and box Logs pane
 	logsBox := m.getBorderStyle(SectionLogs).Render(
@@ -826,15 +742,11 @@ func (m *Model) renderNewLayout() string {
 		tasksBox = m.getBorderStyle(SectionTasks).Render(tasksCentered)
 	}
 
-	// Build right sidebar with centered, boxed components
-	rightSidebar := m.buildRightSidebar(dims, rightInnerWidth, BorderHeight)
-
 	// Join main panes horizontally
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		logsBox,
 		tasksBox,
-		rightSidebar,
 	)
 
 	// Add text entry bar
@@ -892,23 +804,6 @@ func (m *Model) renderNewLayout() string {
 	return mainView
 }
 
-// buildRightSidebar constructs the vertically stacked right sidebar
-func (m *Model) buildRightSidebar(dims PaneDimensions, rightInnerWidth, _ int) string {
-	if m.scheduleView == nil || m.intentionList == nil || m.winsView == nil {
-		return ""
-	}
-
-	scheduleView := centerView(rightInnerWidth, dims.ScheduleHeight-BorderHeight, m.scheduleView.View())
-	intentionsView := centerView(rightInnerWidth, dims.IntentionsHeight-BorderHeight, m.intentionList.View())
-	winsView := centerView(rightInnerWidth, dims.WinsHeight-BorderHeight, m.winsView.View())
-
-	scheduleBox := m.getBorderStyle(SectionSchedule).Render(scheduleView)
-	intentionsBox := m.getBorderStyle(SectionIntentions).Render(intentionsView)
-	winsBox := m.getBorderStyle(SectionWins).Render(winsView)
-
-	return lipgloss.JoinVertical(lipgloss.Top, scheduleBox, intentionsBox, winsBox)
-}
-
 // helpView renders the help overlay
 func (m *Model) helpView() string {
 	helpText := `Help - Key Bindings:
@@ -946,9 +841,6 @@ Sections:
   - Logs: Activity log with stdtimestamps
   - Tasks: General todo list with collapsible notes
   - Notes: Linked notes and backlinks (wiki-style navigation)
-  - Schedule: Upcoming items for the day
-  - Intentions: 1-3 focus tasks for today
-  - Wins: Daily accomplishments
 
 Notes Section (when focused):
   - j/k: Navigate links
