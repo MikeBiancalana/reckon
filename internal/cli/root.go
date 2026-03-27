@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/MikeBiancalana/reckon/internal/checklist"
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/logger"
@@ -31,6 +32,7 @@ var (
 	journalService     *journal.Service
 	journalTaskService *journal.TaskService
 	notesService       *notessvc.NotesService
+	checklistService   *checklist.Service
 	dateFlag           string
 	quietFlag          bool
 	logFileFlag        string
@@ -113,6 +115,7 @@ func init() {
 	RootCmd.AddCommand(GetScheduleCommand())
 	RootCmd.AddCommand(GetTaskCommand())
 	RootCmd.AddCommand(GetWinCommand())
+	RootCmd.AddCommand(GetChecklistCommand())
 }
 
 // initLogger initializes the logger with command-line flags
@@ -154,6 +157,10 @@ func initService() {
 	// Initialize notes service
 	notesRepo := notessvc.NewNotesRepository(db)
 	notesService = notessvc.NewNotesService(notesRepo)
+
+	// Initialize checklist service
+	checklistRepo := checklist.NewRepository(db)
+	checklistService = checklist.NewService(checklistRepo)
 }
 
 // getEffectiveDate returns the date to operate on, either from --date flag or today
