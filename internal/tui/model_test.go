@@ -693,3 +693,47 @@ func TestGetTaskSection_Performance(t *testing.T) {
 
 	t.Logf("Performance: %d iterations completed in %v", iterations, elapsed)
 }
+
+func TestHelpViewContainsSchedulingShortcuts(t *testing.T) {
+	model := &Model{}
+
+	view := model.helpView()
+
+	expectedEntries := []string{
+		"s",
+		"Schedule",
+		"D",
+		"deadline",
+		"c",
+		"Clear",
+	}
+
+	for _, entry := range expectedEntries {
+		if !strings.Contains(view, entry) {
+			t.Errorf("helpView() should contain %q for scheduling shortcuts, got:\n%s", entry, view)
+		}
+	}
+}
+
+func TestHelpViewContainsExistingShortcuts(t *testing.T) {
+	model := &Model{}
+
+	view := model.helpView()
+
+	// Ensure existing shortcuts are not broken
+	existingEntries := []string{
+		"h, ←",
+		"l, →",
+		"tab",
+		"j, k",
+		"d",
+		"q, ctrl+c",
+		"?",
+	}
+
+	for _, entry := range existingEntries {
+		if !strings.Contains(view, entry) {
+			t.Errorf("helpView() should contain existing shortcut %q, got:\n%s", entry, view)
+		}
+	}
+}
