@@ -932,6 +932,9 @@ Navigation:
     enter/space Toggle intention / Expand task (Intentions/Tasks section) / Expand log entry (Logs section)
     space      Expand log entry (Logs section)
    d          Delete selected item (with confirmation)
+   s          Schedule task (Tasks section)
+   D          Set deadline (Tasks section)
+   c          Clear date submenu (Tasks section): s/d/b clears schedule/deadline/both
 
 Text Entry:
   enter      Submit entry
