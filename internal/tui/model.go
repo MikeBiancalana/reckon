@@ -112,8 +112,7 @@ type Model struct {
 	height         int
 
 	// Components
-	intentionList *components.IntentionList // kept for test compatibility; not rendered
-	logView       *components.LogView
+	logView *components.LogView
 	textEntryBar  *components.TextEntryBar
 	statusBar     *components.StatusBar
 
