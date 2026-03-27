@@ -34,27 +34,21 @@ func TestCalculatePaneDimensions_StandardSizes(t *testing.T) {
 			}
 
 			// Verify all widths are positive
-			if dims.LogsWidth <= 0 || dims.TasksWidth <= 0 || dims.RightWidth <= 0 {
-				t.Errorf("All widths must be positive: Logs=%d, Tasks=%d, Right=%d",
-					dims.LogsWidth, dims.TasksWidth, dims.RightWidth)
+			if dims.LogsWidth <= 0 || dims.TasksWidth <= 0 {
+				t.Errorf("All widths must be positive: Logs=%d, Tasks=%d",
+					dims.LogsWidth, dims.TasksWidth)
 			}
 
 			// Verify all heights are positive
-			if dims.LogsHeight <= 0 || dims.TasksHeight <= 0 || dims.RightHeight <= 0 {
-				t.Errorf("All pane heights must be positive: Logs=%d, Tasks=%d, Right=%d",
-					dims.LogsHeight, dims.TasksHeight, dims.RightHeight)
-			}
-
-			// Verify right sidebar component heights are positive
-			if dims.ScheduleHeight <= 0 || dims.IntentionsHeight <= 0 || dims.WinsHeight <= 0 {
-				t.Errorf("All right sidebar heights must be positive: Schedule=%d, Intentions=%d, Wins=%d",
-					dims.ScheduleHeight, dims.IntentionsHeight, dims.WinsHeight)
+			if dims.LogsHeight <= 0 || dims.TasksHeight <= 0 {
+				t.Errorf("All pane heights must be positive: Logs=%d, Tasks=%d",
+					dims.LogsHeight, dims.TasksHeight)
 			}
 		})
 	}
 }
 
-// TestCalculatePaneDimensions_WidthDistribution tests the 40-40-18 split
+// TestCalculatePaneDimensions_WidthDistribution tests the 50-50 split
 func TestCalculatePaneDimensions_WidthDistribution(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -73,22 +67,18 @@ func TestCalculatePaneDimensions_WidthDistribution(t *testing.T) {
 			// Calculate percentages
 			logsPercent := float64(dims.LogsWidth) / float64(tt.termWidth)
 			tasksPercent := float64(dims.TasksWidth) / float64(tt.termWidth)
-			rightPercent := float64(dims.RightWidth) / float64(tt.termWidth)
 
-			// Verify 40-40-18 split (allow 2% tolerance for rounding)
+			// Verify 50-50 split (allow 2% tolerance for rounding)
 			tolerance := 0.02
-			if logsPercent < 0.40-tolerance || logsPercent > 0.40+tolerance {
-				t.Errorf("Expected LogsWidth ~40%%, got %.2f%%", logsPercent*100)
+			if logsPercent < 0.50-tolerance || logsPercent > 0.50+tolerance {
+				t.Errorf("Expected LogsWidth ~50%%, got %.2f%%", logsPercent*100)
 			}
-			if tasksPercent < 0.40-tolerance || tasksPercent > 0.40+tolerance {
-				t.Errorf("Expected TasksWidth ~40%%, got %.2f%%", tasksPercent*100)
-			}
-			if rightPercent < 0.18-tolerance || rightPercent > 0.20+tolerance {
-				t.Errorf("Expected RightWidth ~18-20%%, got %.2f%%", rightPercent*100)
+			if tasksPercent < 0.50-tolerance || tasksPercent > 0.50+tolerance {
+				t.Errorf("Expected TasksWidth ~50%%, got %.2f%%", tasksPercent*100)
 			}
 
 			// Verify sum equals terminal width
-			totalWidth := dims.LogsWidth + dims.TasksWidth + dims.RightWidth
+			totalWidth := dims.LogsWidth + dims.TasksWidth
 			if totalWidth != tt.termWidth {
 				t.Errorf("Sum of widths (%d) does not equal terminal width (%d)",
 					totalWidth, tt.termWidth)
@@ -121,60 +111,11 @@ func TestCalculatePaneDimensions_HeightDistribution(t *testing.T) {
 			if dims.TasksHeight != expectedAvailableHeight {
 				t.Errorf("Expected TasksHeight=%d, got %d", expectedAvailableHeight, dims.TasksHeight)
 			}
-			if dims.RightHeight != expectedAvailableHeight {
-				t.Errorf("Expected RightHeight=%d, got %d", expectedAvailableHeight, dims.RightHeight)
-			}
 
 			// Verify pane heights are consistent
-			if dims.LogsHeight != dims.TasksHeight || dims.TasksHeight != dims.RightHeight {
-				t.Errorf("All pane heights should be equal: Logs=%d, Tasks=%d, Right=%d",
-					dims.LogsHeight, dims.TasksHeight, dims.RightHeight)
-			}
-		})
-	}
-}
-
-// TestCalculatePaneDimensions_RightSidebarSplit tests the 30-35-35 vertical split
-func TestCalculatePaneDimensions_RightSidebarSplit(t *testing.T) {
-	tests := []struct {
-		name       string
-		termHeight int
-	}{
-		{"Height 24", 24},
-		{"Height 30", 30},
-		{"Height 40", 40},
-		{"Height 50", 50},
-		{"Height 100", 100},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(120, tt.termHeight, false)
-
-			// Calculate percentages
-			schedulePercent := float64(dims.ScheduleHeight) / float64(dims.RightHeight)
-			intentionsPercent := float64(dims.IntentionsHeight) / float64(dims.RightHeight)
-			winsPercent := float64(dims.WinsHeight) / float64(dims.RightHeight)
-
-			// Verify 30-35-35 split (allow larger tolerance for rounding with small heights)
-			// Wins gets the remainder, so it can vary more with small heights due to integer rounding
-			tolerance := 0.05
-			winsTolerance := 0.10 // Wins gets remainder, so allow more variance
-			if schedulePercent < 0.30-tolerance || schedulePercent > 0.30+tolerance {
-				t.Errorf("Expected ScheduleHeight ~30%%, got %.2f%%", schedulePercent*100)
-			}
-			if intentionsPercent < 0.35-tolerance || intentionsPercent > 0.35+tolerance {
-				t.Errorf("Expected IntentionsHeight ~35%%, got %.2f%%", intentionsPercent*100)
-			}
-			if winsPercent < 0.35-winsTolerance || winsPercent > 0.35+winsTolerance {
-				t.Errorf("Expected WinsHeight ~35%%, got %.2f%%", winsPercent*100)
-			}
-
-			// Verify sum equals right pane height
-			totalRightHeight := dims.ScheduleHeight + dims.IntentionsHeight + dims.WinsHeight
-			if totalRightHeight != dims.RightHeight {
-				t.Errorf("Sum of right sidebar heights (%d) does not equal RightHeight (%d)",
-					totalRightHeight, dims.RightHeight)
+			if dims.LogsHeight != dims.TasksHeight {
+				t.Errorf("All pane heights should be equal: Logs=%d, Tasks=%d",
+					dims.LogsHeight, dims.TasksHeight)
 			}
 		})
 	}
@@ -205,31 +146,16 @@ func TestCalculatePaneDimensions_MinimumSizes(t *testing.T) {
 			if dims.TasksWidth < 0 {
 				t.Errorf("TasksWidth should be non-negative, got %d", dims.TasksWidth)
 			}
-			if dims.RightWidth < 0 {
-				t.Errorf("RightWidth should be non-negative, got %d", dims.RightWidth)
-			}
 			if dims.LogsHeight < 0 {
 				t.Errorf("LogsHeight should be non-negative, got %d", dims.LogsHeight)
 			}
 			if dims.TasksHeight < 0 {
 				t.Errorf("TasksHeight should be non-negative, got %d", dims.TasksHeight)
 			}
-			if dims.RightHeight < 0 {
-				t.Errorf("RightHeight should be non-negative, got %d", dims.RightHeight)
-			}
-			if dims.ScheduleHeight < 0 {
-				t.Errorf("ScheduleHeight should be non-negative, got %d", dims.ScheduleHeight)
-			}
-			if dims.IntentionsHeight < 0 {
-				t.Errorf("IntentionsHeight should be non-negative, got %d", dims.IntentionsHeight)
-			}
-			if dims.WinsHeight < 0 {
-				t.Errorf("WinsHeight should be non-negative, got %d", dims.WinsHeight)
-			}
 
 			// Verify sum of widths equals terminal width (if width > 0)
 			if tt.termWidth > 0 {
-				totalWidth := dims.LogsWidth + dims.TasksWidth + dims.RightWidth
+				totalWidth := dims.LogsWidth + dims.TasksWidth
 				if totalWidth != tt.termWidth {
 					t.Errorf("Sum of widths (%d) does not equal terminal width (%d)",
 						totalWidth, tt.termWidth)
@@ -255,15 +181,12 @@ func TestCalculatePaneDimensions_SpecificDimensions(t *testing.T) {
 	// Test with width=100, height=30
 	dims := CalculatePaneDimensions(100, 30, false)
 
-	// Width calculations: 40% = 40, 40% = 40, remaining = 20
-	if dims.LogsWidth != 40 {
-		t.Errorf("Expected LogsWidth=40, got %d", dims.LogsWidth)
+	// Width calculations: 50% of 100 = 50 each
+	if dims.LogsWidth != 50 {
+		t.Errorf("Expected LogsWidth=50, got %d", dims.LogsWidth)
 	}
-	if dims.TasksWidth != 40 {
-		t.Errorf("Expected TasksWidth=40, got %d", dims.TasksWidth)
-	}
-	if dims.RightWidth != 20 {
-		t.Errorf("Expected RightWidth=20, got %d", dims.RightWidth)
+	if dims.TasksWidth != 50 {
+		t.Errorf("Expected TasksWidth=50, got %d", dims.TasksWidth)
 	}
 
 	// Height calculations: 30 - 3 - 1 - 1 = 25
@@ -273,16 +196,6 @@ func TestCalculatePaneDimensions_SpecificDimensions(t *testing.T) {
 	}
 	if dims.TasksHeight != expectedHeight {
 		t.Errorf("Expected TasksHeight=%d, got %d", expectedHeight, dims.TasksHeight)
-	}
-	if dims.RightHeight != expectedHeight {
-		t.Errorf("Expected RightHeight=%d, got %d", expectedHeight, dims.RightHeight)
-	}
-
-	// Right sidebar: 30% of 25 = 7.5 ≈ 7, 35% of 25 = 8.75 ≈ 8, remaining = 10
-	// (actual values may vary slightly due to rounding strategy)
-	totalRightHeight := dims.ScheduleHeight + dims.IntentionsHeight + dims.WinsHeight
-	if totalRightHeight != expectedHeight {
-		t.Errorf("Expected sum of right sidebar heights=%d, got %d", expectedHeight, totalRightHeight)
 	}
 }
 
@@ -295,28 +208,10 @@ func TestCalculatePaneDimensions_WidthRounding(t *testing.T) {
 		t.Run("Width_"+string(rune(width+'0')), func(t *testing.T) {
 			dims := CalculatePaneDimensions(width, 30, false)
 
-			totalWidth := dims.LogsWidth + dims.TasksWidth + dims.RightWidth
+			totalWidth := dims.LogsWidth + dims.TasksWidth
 			if totalWidth != width {
 				t.Errorf("Width=%d: Sum of widths (%d) does not equal terminal width",
 					width, totalWidth)
-			}
-		})
-	}
-}
-
-// TestCalculatePaneDimensions_HeightRounding tests that right sidebar heights sum correctly
-func TestCalculatePaneDimensions_HeightRounding(t *testing.T) {
-	// Test various heights that might cause rounding issues
-	heights := []int{24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 40, 50, 60}
-
-	for _, height := range heights {
-		t.Run("Height_"+string(rune(height+'0')), func(t *testing.T) {
-			dims := CalculatePaneDimensions(120, height, false)
-
-			totalRightHeight := dims.ScheduleHeight + dims.IntentionsHeight + dims.WinsHeight
-			if totalRightHeight != dims.RightHeight {
-				t.Errorf("Height=%d: Sum of right sidebar heights (%d) does not equal RightHeight (%d)",
-					height, totalRightHeight, dims.RightHeight)
 			}
 		})
 	}
@@ -334,14 +229,57 @@ func TestCalculatePaneDimensions_Consistency(t *testing.T) {
 	}
 }
 
+// TestCalculatePaneDimensions_FiftyFiftySplit verifies the 50-50 horizontal split
+func TestCalculatePaneDimensions_FiftyFiftySplit(t *testing.T) {
+	t.Run("even width 120: each pane gets 60", func(t *testing.T) {
+		dims := CalculatePaneDimensions(120, 30, false)
+
+		if dims.LogsWidth != 60 {
+			t.Errorf("Expected LogsWidth=60, got %d", dims.LogsWidth)
+		}
+		if dims.TasksWidth != 60 {
+			t.Errorf("Expected TasksWidth=60, got %d", dims.TasksWidth)
+		}
+		totalWidth := dims.LogsWidth + dims.TasksWidth
+		if totalWidth != 120 {
+			t.Errorf("Expected LogsWidth+TasksWidth=120, got %d", totalWidth)
+		}
+	})
+
+	t.Run("odd width 121: logs gets 60, tasks gets 61", func(t *testing.T) {
+		dims := CalculatePaneDimensions(121, 30, false)
+
+		if dims.LogsWidth != 60 {
+			t.Errorf("Expected LogsWidth=60, got %d", dims.LogsWidth)
+		}
+		if dims.TasksWidth != 61 {
+			t.Errorf("Expected TasksWidth=61, got %d", dims.TasksWidth)
+		}
+		totalWidth := dims.LogsWidth + dims.TasksWidth
+		if totalWidth != 121 {
+			t.Errorf("Expected LogsWidth+TasksWidth=121, got %d", totalWidth)
+		}
+	})
+
+	t.Run("widths always sum to termWidth", func(t *testing.T) {
+		for _, w := range []int{80, 100, 120, 121, 160, 200} {
+			dims := CalculatePaneDimensions(w, 30, false)
+			total := dims.LogsWidth + dims.TasksWidth
+			if total != w {
+				t.Errorf("termWidth=%d: LogsWidth+TasksWidth=%d, want %d", w, total, w)
+			}
+		}
+	})
+}
+
 // TestCalculateTaskSectionDimensions_NoDetailPane tests layout without detail pane
 func TestCalculateTaskSectionDimensions_NoDetailPane(t *testing.T) {
 	termWidth, termHeight := 120, 30
 
 	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneBottom, false)
 
-	// Center width should be 40% of terminal width
-	expectedWidth := int(float64(termWidth) * 0.40)
+	// Center width should be 50% of terminal width
+	expectedWidth := termWidth / 2
 	if dims.CenterWidth != expectedWidth {
 		t.Errorf("Expected CenterWidth=%d, got %d", expectedWidth, dims.CenterWidth)
 	}

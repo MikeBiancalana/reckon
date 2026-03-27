@@ -523,15 +523,20 @@ func newMinimalModelForRender(termWidth, termHeight int) *Model {
 		width:              termWidth,
 		height:             termHeight,
 		taskList:           components.NewTaskList([]journal.Task{}),
-		scheduleView:       components.NewScheduleView([]journal.ScheduleItem{}),
-		intentionList:      components.NewIntentionList([]journal.Intention{}),
-		winsView:           components.NewWinsView([]journal.Win{}),
 		logView:            components.NewLogView([]journal.LogEntry{}),
 		textEntryBar:       components.NewTextEntryBar(),
 		statusBar:          sb,
 		summaryView:        components.NewSummaryView(),
 		notesPaneVisible:   false,
 		detailPanePosition: DetailPaneBottom,
+	}
+}
+
+// TestSectionCount_ThreeSections asserts that the Section enum has exactly 3 sections
+// (SectionLogs, SectionTasks, SectionNotes) after removing the right-sidebar sections.
+func TestSectionCount_ThreeSections(t *testing.T) {
+	if SectionCount != 3 {
+		t.Errorf("Expected SectionCount=3 (Logs, Tasks, Notes), got %d", int(SectionCount))
 	}
 }
 
