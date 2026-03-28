@@ -386,7 +386,6 @@ func (m *Model) handleDeleteLog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-
 // handleEdit initiates editing of selected item
 func (m *Model) handleEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.confirmMode {
