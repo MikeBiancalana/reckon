@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/logger"
@@ -53,11 +52,6 @@ func (m *Model) handleJournalLoaded(msg journalLoadedMsg) (tea.Model, tea.Cmd) {
 		m.logView.UpdateLogEntries(msg.journal.LogEntries)
 	}
 
-	// Initialize taskList. Tasks are loaded via the separate tasksLoadedMsg handler.
-	if m.taskList == nil {
-		m.taskList = components.NewTaskList(nil)
-	}
-
 	// Calculate time summary
 	daySummary := time.CalculateDaySummary(&msg.journal)
 	if m.summaryView != nil {
@@ -83,15 +77,34 @@ func (m *Model) handleJournalUpdated(msg journalUpdatedMsg) (tea.Model, tea.Cmd)
 func (m *Model) handleTasksLoaded(msg tasksLoadedMsg) (tea.Model, tea.Cmd) {
 	logger.Debug("tui: handling tasksLoadedMsg", "taskCount", len(msg.tasks))
 
-	// Update or create task list
-	if m.taskList != nil {
-		m.taskList.UpdateTasks(msg.tasks)
-	} else {
-		m.taskList = components.NewTaskList(msg.tasks)
+	// Preserve selection identity across re-sorts: capture selected task ID before
+	// sorting, then restore the cursor to the same task afterward.
+	var selectedID string
+	if m.selectedIndex >= 0 && m.selectedIndex < len(m.tasks) {
+		selectedID = m.tasks[m.selectedIndex].ID
 	}
 
-	m.updateNotesForSelectedTask()
-	m.calculateDetailPanePosition()
+	m.tasks = SortTasksByPriority(msg.tasks, stdtime.Now())
+
+	// Restore cursor to the previously selected task if it still exists.
+	restored := false
+	if selectedID != "" {
+		for i, task := range m.tasks {
+			if task.ID == selectedID {
+				m.selectedIndex = i
+				restored = true
+				break
+			}
+		}
+	}
+	if !restored {
+		m.selectedIndex = clampIndex(m.selectedIndex, len(m.tasks))
+	}
+
+	// Clamp scroll offset so it can't point past the end of the (possibly smaller) list.
+	if m.taskScrollOffset >= len(m.tasks) {
+		m.taskScrollOffset = 0
+	}
 
 	// Clear success message after 2 seconds
 	if m.successMessage != "" {
@@ -112,14 +125,6 @@ func (m *Model) handleTaskToggle(msg components.TaskToggleMsg) (tea.Model, tea.C
 	}
 
 	return m, nil
-}
-
-// handleTaskSelectionChanged handles task selection change events
-func (m *Model) handleTaskSelectionChanged(msg components.TaskSelectionChangedMsg) (tea.Model, tea.Cmd) {
-	m.updateNotesForSelectedTask()
-	m.calculateDetailPanePosition()
-	cmd := m.updateLinksForSelectedItem()
-	return m, cmd
 }
 
 // handleTaskToggled handles task toggled confirmation
@@ -264,23 +269,4 @@ func (m *Model) handleTaskDateCleared(msg taskDateClearedMsg) (tea.Model, tea.Cm
 	}
 	// Reload tasks to reflect the change
 	return m, m.loadTasks()
-}
-
-// handleLinksLoaded handles links loaded message
-func (m *Model) handleLinksLoaded(msg linksLoadedMsg) (tea.Model, tea.Cmd) {
-	if m.notesPane != nil {
-		m.notesPane.UpdateLinks(msg.noteID, msg.outgoing, msg.backlinks)
-	}
-	return m, nil
-}
-
-// handleLinkSelected handles link selection from notes pane
-func (m *Model) handleLinkSelected(msg components.LinkSelectedMsg) (tea.Model, tea.Cmd) {
-	// Stub implementation for now - reckon-edr will implement full navigation
-	m.successMessage = fmt.Sprintf("Navigate to: %s", msg.NoteSlug)
-
-	// Clear success message after 2 seconds
-	return m, tea.Tick(2*stdtime.Second, func(t stdtime.Time) tea.Msg {
-		return clearSuccessMsg{}
-	})
 }

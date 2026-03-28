@@ -11,7 +11,7 @@ import (
 
 // Repository handles all database operations for journals
 type Repository struct {
-	db     *storage.Database
+	db *storage.Database
 }
 
 // NewRepository creates a new repository

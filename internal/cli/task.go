@@ -9,10 +9,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -57,20 +57,20 @@ func setTaskDates(taskID, scheduleStr, deadlineStr string) error {
 }
 
 var (
-	taskStatusFlag       string
-	taskTagsFlag         []string
-	taskCompactFlag      bool
-	taskVerboseFlag      bool
-	taskFormatFlag       string
-	taskEditTitleFlag    string
-	taskEditTagsFlag     []string
-	taskMatchFlag        string
-	taskScheduledFlag    string
-	taskDeadlineFlag     string
-	taskOverdueFlag      bool
-	taskGroupedFlag      bool
-	taskNewScheduleFlag  string
-	taskNewDeadlineFlag  string
+	taskStatusFlag      string
+	taskTagsFlag        []string
+	taskCompactFlag     bool
+	taskVerboseFlag     bool
+	taskFormatFlag      string
+	taskEditTitleFlag   string
+	taskEditTagsFlag    []string
+	taskMatchFlag       string
+	taskScheduledFlag   string
+	taskDeadlineFlag    string
+	taskOverdueFlag     bool
+	taskGroupedFlag     bool
+	taskNewScheduleFlag string
+	taskNewDeadlineFlag string
 )
 
 // taskCmd represents the task command

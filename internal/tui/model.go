@@ -13,14 +13,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// DetailPanePosition represents where the detail pane should be displayed
-type DetailPanePosition int
-
-const (
-	DetailPaneBottom DetailPanePosition = iota // Detail pane replaces bottom section (ALL TASKS)
-	DetailPaneMiddle                           // Detail pane replaces middle section (THIS WEEK)
-)
-
 // Section represents different sections of the journal
 //
 // Async Closure Capture Pattern
@@ -63,14 +55,12 @@ type Section int
 const (
 	SectionLogs  Section = iota // 0
 	SectionTasks                // 1
-	SectionNotes                // 2
 	SectionCount                // Keep this last to get the count
 )
 
 const (
 	SectionNameLogs  = "Logs"
 	SectionNameTasks = "Tasks"
-	SectionNameNotes = "Notes"
 )
 
 // sectionName returns the display name for a section
@@ -80,8 +70,6 @@ func sectionName(s Section) string {
 		return SectionNameLogs
 	case SectionTasks:
 		return SectionNameTasks
-	case SectionNotes:
-		return SectionNameNotes
 	default:
 		return "Unknown"
 	}
@@ -112,31 +100,23 @@ type Model struct {
 	height         int
 
 	// Components
-	logView *components.LogView
-	textEntryBar  *components.TextEntryBar
-	statusBar     *components.StatusBar
+	logView      *components.LogView
+	textEntryBar *components.TextEntryBar
+	statusBar    *components.StatusBar
 
 	// Main layout components
-	taskList    *components.TaskList
 	summaryView *components.SummaryView
-	notesPane   *components.NotesPane
 
-	// Notes pane state
-	selectedTaskID   string
-	notesPaneVisible bool
-
-	// Detail pane positioning
-	detailPanePosition DetailPanePosition
+	// Simple task list state (replaces taskList component)
+	tasks            []journal.Task
+	selectedIndex    int
+	taskScrollOffset int
 
 	// Date picker state
 	datePicker           *components.DatePicker
 	datePickerVisible    bool
 	datePickerMode       string // "schedule" or "deadline"
 	datePickerTargetTask string // ID of task being scheduled/deadline-set
-
-	// Clear date submenu state
-	clearDateMode       bool
-	clearDateTargetTask string // ID of task for clear submenu
 
 	// State for modes
 	helpMode          bool
@@ -155,231 +135,6 @@ type Model struct {
 
 	// Terminal size validation
 	terminalTooSmall bool
-}
-
-// updateNotesForSelectedTask updates the notes pane with notes for the currently selected task
-func (m *Model) updateNotesForSelectedTask() {
-	if m.taskList == nil || m.notesPane == nil {
-		return
-	}
-	selectedTask := m.taskList.SelectedTask()
-	if selectedTask == nil {
-		m.selectedTaskID = ""
-		return
-	}
-	if selectedTask.ID == m.selectedTaskID {
-		return // No change
-	}
-	m.selectedTaskID = selectedTask.ID
-}
-
-// updateLinksForSelectedItem loads links for the currently selected item
-// This is a stub for now - full implementation will come when tasks are linked to notes
-func (m *Model) updateLinksForSelectedItem() tea.Cmd {
-	// For now, this is a stub since tasks don't yet have associated zettelkasten notes
-	// Once reckon-edr implements note navigation, this will be fully wired up
-	// The infrastructure is ready - just need the task<->note association
-
-	if m.notesService == nil || m.notesPane == nil {
-		return nil
-	}
-
-	// TODO: Get note ID from current context (task, note picker, etc.)
-	// For now, return nil since tasks don't have associated notes yet
-	// When implemented, this would be:
-	// return m.loadLinksForNote(noteID)
-
-	return nil
-}
-
-// TaskSection represents which time-based section a task belongs to
-type TaskSection int
-
-const (
-	TaskSectionToday    TaskSection = iota // Task is scheduled/due today or overdue
-	TaskSectionThisWeek                    // Task is scheduled/due this week (but not today)
-	TaskSectionAllTasks                    // All other tasks
-)
-
-// getTaskSection determines which section a task belongs to based on its schedule and deadline
-// This function mirrors the logic from components.GroupTasksByTime but is optimized for single tasks
-// to avoid creating a single-element slice and iterating through it.
-func getTaskSection(task *journal.Task) TaskSection {
-	if task == nil {
-		return TaskSectionAllTasks
-	}
-
-	// Skip done tasks (they don't appear in any section)
-	if task.Status == journal.TaskDone {
-		return TaskSectionAllTasks
-	}
-
-	// Calculate time boundaries
-	today := stdtime.Now().Truncate(24 * stdtime.Hour)
-	now := stdtime.Now()
-	weekday := now.Weekday()
-	if weekday == stdtime.Sunday {
-		weekday = 7
-	}
-	weekStart := today.AddDate(0, 0, -int(weekday-stdtime.Monday))
-	weekEnd := weekStart.AddDate(0, 0, 7)
-
-	isToday := false
-	isThisWeek := false
-
-	// Check scheduled date
-	if task.ScheduledDate != nil && *task.ScheduledDate != "" {
-		if scheduledDate, err := stdtime.Parse("2006-01-02", *task.ScheduledDate); err == nil {
-			if scheduledDate.Equal(today) || scheduledDate.Before(today) {
-				isToday = true
-			} else if (scheduledDate.After(weekStart) || scheduledDate.Equal(weekStart)) && scheduledDate.Before(weekEnd) {
-				isThisWeek = true
-			}
-		}
-	}
-
-	// Check deadline date
-	if task.DeadlineDate != nil && *task.DeadlineDate != "" {
-		if deadlineDate, err := stdtime.Parse("2006-01-02", *task.DeadlineDate); err == nil {
-			if deadlineDate.Before(today) || deadlineDate.Equal(today) {
-				isToday = true
-			} else if (deadlineDate.After(weekStart) || deadlineDate.Equal(weekStart)) && deadlineDate.Before(weekEnd) {
-				isThisWeek = true
-			}
-		}
-	}
-
-	if isToday {
-		return TaskSectionToday
-	}
-	if isThisWeek {
-		return TaskSectionThisWeek
-	}
-	return TaskSectionAllTasks
-}
-
-// calculateDetailPanePosition determines where to show the detail pane based on the selected task's section
-// Rules:
-// - If task is in TODAY or THIS WEEK: show detail pane at bottom (replacing ALL TASKS)
-// - If task is in ALL TASKS: show detail pane in middle (replacing THIS WEEK)
-func (m *Model) calculateDetailPanePosition() {
-	if m.taskList == nil {
-		return
-	}
-
-	selectedTask := m.taskList.SelectedTask()
-	section := getTaskSection(selectedTask)
-
-	switch section {
-	case TaskSectionToday, TaskSectionThisWeek:
-		m.detailPanePosition = DetailPaneBottom
-	case TaskSectionAllTasks:
-		m.detailPanePosition = DetailPaneMiddle
-	}
-}
-
-// renderTaskSection renders a task section with a header
-func (m *Model) renderTaskSection(title string, tasks []journal.Task, width, height int) string {
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("205")).
-		Bold(true)
-
-	header := titleStyle.Render(fmt.Sprintf("━━ %s (%d) ━━", title, len(tasks)))
-
-	if len(tasks) == 0 {
-		noTasksStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Padding(1, 2)
-		content := noTasksStyle.Render("No tasks")
-		return header + "\n" + content
-	}
-
-	// Define task styles
-	taskStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("39"))
-	taskDoneStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Strikethrough(true)
-
-	// Get selected task ID for highlighting.
-	// Note: We must manually apply selection styling in renderTaskSection because
-	// this function bypasses the TaskList delegate which normally handles selection
-	// rendering. The delegate is only used for the main task list view, not for
-	// embedded task sections in the daily view.
-	var selectedTaskID string
-	if m.taskList != nil {
-		selectedTask := m.taskList.SelectedTask()
-		if selectedTask != nil {
-			selectedTaskID = selectedTask.ID
-		}
-	}
-
-	// Render tasks
-	var taskLines []string
-	for _, task := range tasks {
-		checkbox := "[ ]"
-		style := taskStyle
-		if task.Status == journal.TaskDone {
-			checkbox = "[x]"
-			style = taskDoneStyle
-		}
-
-		line := fmt.Sprintf("%s %s", checkbox, task.Text)
-		if len(task.Tags) > 0 {
-			line = line + fmt.Sprintf(" [%s]", strings.Join(task.Tags, " "))
-		}
-
-		// Apply selection highlighting if this task is selected.
-		// Selection style takes precedence over task status styling (e.g., strikethrough
-		// for done tasks) to ensure the selected item is always clearly visible.
-		if task.ID == selectedTaskID {
-			line = components.SelectedStyle.Render(line)
-		} else {
-			line = style.Render(line)
-		}
-
-		taskLines = append(taskLines, line)
-	}
-
-	content := strings.Join(taskLines, "\n")
-
-	// Ensure content fits within height
-	contentHeight := height - 1 // Reserve 1 line for header
-	if contentHeight < 0 {
-		contentHeight = 0
-	}
-
-	return header + "\n" + content
-}
-
-// renderDetailPane renders a placeholder for the task detail pane
-func (m *Model) renderDetailPane(width, height int) string {
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("205")).
-		Bold(true)
-
-	if m.taskList == nil {
-		return titleStyle.Render("━━ TASK DETAILS ━━") + "\n\nNo task list available"
-	}
-
-	selectedTask := m.taskList.SelectedTask()
-	if selectedTask == nil {
-		return titleStyle.Render("━━ TASK DETAILS ━━") + "\n\nNo task selected"
-	}
-
-	header := titleStyle.Render("━━ TASK DETAILS ━━")
-
-	// Render basic task info as placeholder
-	placeholderStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Padding(1, 2)
-
-	placeholder := placeholderStyle.Render(
-		fmt.Sprintf("Task: %s\n\nDetail pane positioning framework is ready.\nActual task details component (reckon-egt) not yet implemented.",
-			selectedTask.Text),
-	)
-
-	return header + "\n" + placeholder
 }
 
 // NewModel creates a new TUI model
@@ -404,7 +159,6 @@ func NewModel(service *journal.Service) *Model {
 		textEntryBar:   components.NewTextEntryBar(),
 		statusBar:      sb,
 		summaryView:    components.NewSummaryView(),
-		notesPane:      components.NewNotesPane(),
 		datePicker:     components.NewDatePicker(""),
 	}
 }
@@ -460,9 +214,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case components.TaskToggleMsg:
 		return m.handleTaskToggle(msg)
 
-	case components.TaskSelectionChangedMsg:
-		return m.handleTaskSelectionChanged(msg)
-
 	case taskToggledMsg:
 		return m.handleTaskToggled(msg)
 
@@ -502,12 +253,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearSuccessMsg:
 		m.successMessage = ""
 		return m, nil
-
-	case linksLoadedMsg:
-		return m.handleLinksLoaded(msg)
-
-	case components.LinkSelectedMsg:
-		return m.handleLinkSelected(msg)
 
 	case fileChangedMsg:
 		return m.handleFileChanged(msg)
@@ -553,17 +298,12 @@ func (m *Model) View() string {
 		return view
 	}
 
-	if m.clearDateMode {
-		view := "Clear: [S]chedule [D]eadline [B]oth ESC:cancel"
-		return view
-	}
-
 	if m.helpMode {
 		return m.helpView()
 	}
 
-	// Use multi-section split view when taskList is available
-	if m.taskList != nil {
+	// Use multi-section split view when journal is loaded
+	if m.currentJournal != nil {
 		return m.renderNewLayout()
 	}
 
@@ -585,101 +325,11 @@ func (m *Model) getBorderStyle(section Section) lipgloss.Style {
 	return style
 }
 
-// renderTasksWithDetailPane renders the center column with three task sections and optional detail pane
-func (m *Model) renderTasksWithDetailPane() string {
-	if m.taskList == nil {
-		return "No tasks"
-	}
-
-	// Get grouped tasks
-	allTasks := m.taskList.GetTasks()
-	grouped := components.GroupTasksByTime(allTasks)
-
-	// Calculate dimensions for task sections
-	sectionDims := CalculateTaskSectionDimensions(m.width, m.height, m.detailPanePosition, m.notesPaneVisible)
-
-	// Build sections based on detail pane position
-	var sections []string
-
-	if !m.notesPaneVisible {
-		// No detail pane: show all three sections
-		if sectionDims.TodayHeight > 0 {
-			todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-BorderWidth, sectionDims.TodayHeight-BorderHeight)
-			sections = append(sections, todayView)
-		}
-		if sectionDims.ThisWeekHeight > 0 {
-			thisWeekView := m.renderTaskSection("THIS WEEK", grouped.ThisWeek, sectionDims.CenterWidth-BorderWidth, sectionDims.ThisWeekHeight-BorderHeight)
-			sections = append(sections, thisWeekView)
-		}
-		if sectionDims.AllTasksHeight > 0 {
-			allTasksView := m.renderTaskSection("ALL TASKS", grouped.AllTasks, sectionDims.CenterWidth-BorderWidth, sectionDims.AllTasksHeight-BorderHeight)
-			sections = append(sections, allTasksView)
-		}
-	} else {
-		// Detail pane visible: show sections based on position
-		switch m.detailPanePosition {
-		case DetailPaneBottom:
-			// Show TODAY and THIS WEEK, detail pane at bottom
-			if sectionDims.TodayHeight > 0 {
-				todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-BorderWidth, sectionDims.TodayHeight-BorderHeight)
-				sections = append(sections, todayView)
-			}
-			if sectionDims.ThisWeekHeight > 0 {
-				thisWeekView := m.renderTaskSection("THIS WEEK", grouped.ThisWeek, sectionDims.CenterWidth-BorderWidth, sectionDims.ThisWeekHeight-BorderHeight)
-				sections = append(sections, thisWeekView)
-			}
-			if sectionDims.DetailHeight > 0 {
-				detailView := m.renderDetailPane(sectionDims.CenterWidth-BorderWidth, sectionDims.DetailHeight-BorderHeight)
-				sections = append(sections, detailView)
-			}
-		case DetailPaneMiddle:
-			// Show TODAY, detail pane in middle, ALL TASKS at bottom
-			if sectionDims.TodayHeight > 0 {
-				todayView := m.renderTaskSection("TODAY", grouped.Today, sectionDims.CenterWidth-BorderWidth, sectionDims.TodayHeight-BorderHeight)
-				sections = append(sections, todayView)
-			}
-			if sectionDims.DetailHeight > 0 {
-				detailView := m.renderDetailPane(sectionDims.CenterWidth-BorderWidth, sectionDims.DetailHeight-BorderHeight)
-				sections = append(sections, detailView)
-			}
-			if sectionDims.AllTasksHeight > 0 {
-				allTasksView := m.renderTaskSection("ALL TASKS", grouped.AllTasks, sectionDims.CenterWidth-BorderWidth, sectionDims.AllTasksHeight-BorderHeight)
-				sections = append(sections, allTasksView)
-			}
-		}
-	}
-
-	// Join sections with separators
-	if len(sections) == 0 {
-		return "No tasks"
-	}
-
-	// Calculate separator width with bounds checking to prevent negative widths
-	separatorWidth := sectionDims.CenterWidth - BorderWidth
-	if separatorWidth < 0 {
-		separatorWidth = 0
-	}
-
-	separatorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240"))
-	separator := separatorStyle.Render(strings.Repeat("─", separatorWidth))
-
-	return strings.Join(sections, "\n"+separator+"\n")
-}
-
 // renderNewLayout renders the 50-50 layout: Logs | Tasks
 func (m *Model) renderNewLayout() string {
-	dims := CalculatePaneDimensions(m.width, m.height, m.notesPaneVisible)
+	dims := CalculatePaneDimensions(m.width, m.height)
 
-	// Size components accounting for borders
-	if m.taskList != nil {
-		m.taskList.SetSize(dims.TasksWidth-BorderWidth, dims.TasksHeight-BorderHeight)
-		m.taskList.SetFocused(m.focusedSection == SectionTasks)
-	}
-	if m.notesPane != nil {
-		m.notesPane.SetSize(dims.NotesWidth-BorderWidth, dims.NotesHeight-BorderHeight)
-		m.notesPane.SetFocused(m.focusedSection == SectionNotes)
-	}
+	// Size log view accounting for borders
 	if m.logView != nil {
 		m.logView.SetSize(dims.LogsWidth-BorderWidth, dims.LogsHeight-BorderHeight)
 		m.logView.SetFocused(m.focusedSection == SectionLogs)
@@ -702,44 +352,24 @@ func (m *Model) renderNewLayout() string {
 		centerView(logsInnerWidth, logsInnerHeight, logsView),
 	)
 
-	// Render center column with tasks and optional notes pane
-	var tasksBox string
-	if m.notesPaneVisible && m.notesPane != nil {
-		// Split vertically: Tasks (top) and Notes (bottom)
-		tasksContent := ""
-		if m.taskList != nil {
-			tasksContent = m.renderTasksWithDetailPane()
-		}
-
-		// Ensure non-negative dimensions
-		tasksInner := dims.TasksHeight - BorderHeight
-		if tasksInner < 0 {
-			tasksInner = 0
-		}
-		notesInner := dims.NotesHeight - BorderHeight
-		if notesInner < 0 {
-			notesInner = 0
-		}
-
-		tasksCentered := centerView(tasksInnerWidth, tasksInner, tasksContent)
-		tasksBoxed := m.getBorderStyle(SectionTasks).Render(tasksCentered)
-
-		notesView := m.notesPane.View()
-		notesCentered := centerView(tasksInnerWidth, notesInner, notesView)
-		notesBoxed := m.getBorderStyle(SectionNotes).Render(notesCentered)
-
-		// Join tasks and notes vertically
-		centerContent := lipgloss.JoinVertical(lipgloss.Left, tasksBoxed, notesBoxed)
-		tasksBox = centerContent
-	} else {
-		// Just tasks, full height
-		centerContent := ""
-		if m.taskList != nil {
-			centerContent = m.renderTasksWithDetailPane()
-		}
-		tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, centerContent)
-		tasksBox = m.getBorderStyle(SectionTasks).Render(tasksCentered)
+	// New rendering: task list + detail area stacked vertically
+	detailHeight := tasksInnerHeight / 3
+	if detailHeight < 3 {
+		detailHeight = 3
 	}
+	taskListHeight := tasksInnerHeight - detailHeight - 1 // -1 for separator
+	if taskListHeight < 1 {
+		taskListHeight = 1
+	}
+
+	taskListContent := m.renderTaskList(tasksInnerWidth, taskListHeight)
+	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	separator := separatorStyle.Render(strings.Repeat("─", tasksInnerWidth))
+	detailContent := m.renderDetailArea(tasksInnerWidth, detailHeight)
+
+	centerContent := strings.Join([]string{taskListContent, separator, detailContent}, "\n")
+	tasksCentered := centerView(tasksInnerWidth, tasksInnerHeight, centerContent)
+	tasksBox := m.getBorderStyle(SectionTasks).Render(tasksCentered)
 
 	// Join main panes horizontally
 	content := lipgloss.JoinHorizontal(
@@ -815,20 +445,18 @@ Navigation:
   shift+tab  Previous section
   j, k       Navigate within section
 
- Actions:
-   t          Add task
-   i          Add intention
-   w          Add win
-   L          Add log entry
-   n          Add note (Tasks/Logs section)
-   e          Edit selected item (Tasks/Intentions/Wins/Logs sections)
-    space      Toggle task completion (Tasks section)
-    enter/space Toggle intention / Expand task (Intentions/Tasks section) / Expand log entry (Logs section)
-    space      Expand log entry (Logs section)
-   d          Delete selected item (with confirmation)
-   s          Schedule task (Tasks section)
-   D          Set deadline (Tasks section)
-   c          Clear date submenu (Tasks section): s/d/b clears schedule/deadline/both
+Actions:
+  t          Add task
+  i          Add intention
+  w          Add win
+  L          Add log entry
+  n          Add note (Tasks/Logs section)
+  e          Edit selected item (Tasks/Logs sections)
+  space      Toggle task completion (Tasks section)
+  enter      Expand log entry (Logs section)
+  d          Delete selected item (with confirmation)
+  s          Schedule task (Tasks section)
+  D          Set deadline (Tasks section)
 
 Text Entry:
   enter      Submit entry
@@ -840,15 +468,8 @@ General:
   ?          Toggle help
 
 Sections:
-  - Logs: Activity log with stdtimestamps
-  - Tasks: General todo list with collapsible notes
-  - Notes: Linked notes and backlinks (wiki-style navigation)
-
-Notes Section (when focused):
-  - j/k: Navigate links
-  - enter: Follow link
-  - tab: Toggle section collapse
-  - g/G: Jump to top/bottom
+  - Logs: Activity log with timestamps
+  - Tasks: Todo list with notes
 
 Press ? to exit help.`
 
@@ -913,11 +534,6 @@ type logNoteAddedMsg struct{}
 
 type logNoteDeletedMsg struct{}
 
-type TaskNoteDeleteMsg struct {
-	TaskID string
-	NoteID string
-}
-
 type taskNoteDeletedMsg struct{}
 
 type taskScheduledMsg struct {
@@ -934,8 +550,118 @@ type taskDateClearedMsg struct {
 
 type clearSuccessMsg struct{}
 
-type linksLoadedMsg struct {
-	noteID    string
-	outgoing  []components.LinkDisplayItem
-	backlinks []components.LinkDisplayItem
+// clampIndex returns idx clamped to [0, length-1], or -1 if length == 0.
+func clampIndex(idx, length int) int {
+	if length == 0 {
+		return -1
+	}
+	if idx < 0 {
+		return 0
+	}
+	if idx >= length {
+		return length - 1
+	}
+	return idx
+}
+
+// selectedTask returns the currently selected task, or nil if nothing is selected.
+func (m *Model) selectedTask() *journal.Task {
+	if m.selectedIndex < 0 || m.selectedIndex >= len(m.tasks) {
+		return nil
+	}
+	return &m.tasks[m.selectedIndex]
+}
+
+// renderTaskList renders the task list using m.tasks and m.selectedIndex.
+// It applies scroll-follow-cursor logic to keep the selected task visible.
+func (m *Model) renderTaskList(width, height int) string {
+	if len(m.tasks) == 0 {
+		noTasksStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240"))
+		return noTasksStyle.Render("No tasks - press t to add one")
+	}
+
+	// Adjust scroll offset so selected item is visible
+	if m.selectedIndex >= 0 {
+		if m.selectedIndex < m.taskScrollOffset {
+			m.taskScrollOffset = m.selectedIndex
+		}
+		if m.selectedIndex >= m.taskScrollOffset+height {
+			m.taskScrollOffset = m.selectedIndex - height + 1
+		}
+	}
+
+	taskNormalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("39"))
+	taskDoneStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Strikethrough(true)
+
+	var lines []string
+	end := m.taskScrollOffset + height
+	if end > len(m.tasks) {
+		end = len(m.tasks)
+	}
+	for i := m.taskScrollOffset; i < end; i++ {
+		task := m.tasks[i]
+		checkbox := "[ ]"
+		style := taskNormalStyle
+		if task.Status == journal.TaskDone {
+			checkbox = "[x]"
+			style = taskDoneStyle
+		}
+
+		line := fmt.Sprintf("%s %s", checkbox, task.Text)
+		if len(task.Tags) > 0 {
+			line += fmt.Sprintf(" [%s]", strings.Join(task.Tags, " "))
+		}
+		if task.Status != journal.TaskDone {
+			dateInfo := components.FormatDateInfo(task)
+			if dateInfo != "" {
+				line += "  " + dateInfo
+				style = components.GetDateStyle(task)
+			}
+		}
+
+		if i == m.selectedIndex {
+			line = components.SelectedStyle.Render(line)
+		} else {
+			line = style.Render(line)
+		}
+		lines = append(lines, line)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderDetailArea renders the notes for the currently selected task.
+func (m *Model) renderDetailArea(width, height int) string {
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("205")).
+		Bold(true)
+
+	task := m.selectedTask()
+	if task == nil {
+		return titleStyle.Render("━━ NOTES ━━") + "\n" +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("  No task selected")
+	}
+
+	header := titleStyle.Render("━━ NOTES ━━")
+	if len(task.Notes) == 0 {
+		return header + "\n" +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("  No notes")
+	}
+
+	noteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	var lines []string
+	lines = append(lines, header)
+	for _, note := range task.Notes {
+		lines = append(lines, noteStyle.Render("  - "+note.Text))
+	}
+
+	// Clamp to height
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
 }

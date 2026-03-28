@@ -110,7 +110,7 @@ func TestHandleJournalUpdated(t *testing.T) {
 
 // TestHandleTasksLoaded tests the tasks loaded handler
 func TestHandleTasksLoaded(t *testing.T) {
-	t.Run("creates task list when nil", func(t *testing.T) {
+	t.Run("populates tasks field", func(t *testing.T) {
 		m := &Model{}
 		tasks := []journal.Task{
 			{ID: "1", Text: "Test task", Status: journal.TaskOpen},
@@ -120,25 +120,51 @@ func TestHandleTasksLoaded(t *testing.T) {
 		updatedModel, _ := m.handleTasksLoaded(msg)
 		model := updatedModel.(*Model)
 
-		if model.taskList == nil {
-			t.Error("expected taskList to be created")
+		if len(model.tasks) == 0 {
+			t.Error("expected tasks field to be populated")
 		}
 	})
 
-	t.Run("updates existing task list", func(t *testing.T) {
+	t.Run("preserves selection identity across re-sort", func(t *testing.T) {
+		// Initial state: 2 tasks, cursor at index 1 (task "b")
 		m := &Model{
-			taskList: components.NewTaskList([]journal.Task{}),
+			tasks: []journal.Task{
+				{ID: "a", Text: "Task A", Status: journal.TaskOpen},
+				{ID: "b", Text: "Task B", Status: journal.TaskOpen},
+			},
+			selectedIndex: 1,
 		}
-		tasks := []journal.Task{
-			{ID: "1", Text: "Test task", Status: journal.TaskOpen},
+		// Reload with tasks in reversed order — task "b" should still be selected
+		newTasks := []journal.Task{
+			{ID: "b", Text: "Task B", Status: journal.TaskOpen},
+			{ID: "a", Text: "Task A", Status: journal.TaskOpen},
 		}
-		msg := tasksLoadedMsg{tasks: tasks}
-
-		updatedModel, _ := m.handleTasksLoaded(msg)
+		updatedModel, _ := m.handleTasksLoaded(tasksLoadedMsg{tasks: newTasks})
 		model := updatedModel.(*Model)
 
-		if model.taskList == nil {
-			t.Error("expected taskList to remain set")
+		if model.selectedIndex != 0 {
+			t.Errorf("expected selectedIndex=0 (task b moved to front), got %d", model.selectedIndex)
+		}
+		if model.tasks[model.selectedIndex].ID != "b" {
+			t.Errorf("expected selected task ID 'b', got %q", model.tasks[model.selectedIndex].ID)
+		}
+	})
+
+	t.Run("clamps scroll offset when list shrinks", func(t *testing.T) {
+		m := &Model{
+			tasks: []journal.Task{
+				{ID: "1"}, {ID: "2"}, {ID: "3"}, {ID: "4"}, {ID: "5"},
+			},
+			taskScrollOffset: 4, // pointing at last item
+		}
+		// Reload with fewer tasks — scroll offset must be reset
+		updatedModel, _ := m.handleTasksLoaded(tasksLoadedMsg{tasks: []journal.Task{
+			{ID: "1", Status: journal.TaskOpen},
+		}})
+		model := updatedModel.(*Model)
+
+		if model.taskScrollOffset != 0 {
+			t.Errorf("expected taskScrollOffset=0 after list shrink, got %d", model.taskScrollOffset)
 		}
 	})
 }
@@ -166,25 +192,6 @@ func TestHandleTaskToggle(t *testing.T) {
 
 		if cmd == nil {
 			t.Error("expected command when taskService exists")
-		}
-	})
-}
-
-// TestHandleTaskSelectionChanged tests the task selection changed handler
-func TestHandleTaskSelectionChanged(t *testing.T) {
-	t.Run("updates notes for selected task", func(t *testing.T) {
-		m := &Model{
-			taskList:  components.NewTaskList([]journal.Task{}),
-			notesPane: components.NewNotesPane(),
-		}
-		msg := components.TaskSelectionChangedMsg{}
-
-		updatedModel, _ := m.handleTaskSelectionChanged(msg)
-		model := updatedModel.(*Model)
-
-		// Just verify it doesn't panic and returns model
-		if model == nil {
-			t.Error("expected model to be returned")
 		}
 	})
 }

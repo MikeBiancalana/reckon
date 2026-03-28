@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 var (
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
-			Bold(true)
+		Foreground(lipgloss.Color("196")).
+		Bold(true)
 )
 
 // taskNoteStage represents the current stage in the note entry flow
@@ -27,16 +27,16 @@ const (
 
 // taskNoteModel is the Bubble Tea model for the task note entry workflow
 type taskNoteModel struct {
-	stage      taskNoteStage
-	picker     *components.TaskPicker
-	editor     *components.TextEditor
-	tasks      []journal.Task
-	taskID     string
-	noteText   string
-	canceled   bool
-	err        error
-	width      int
-	height     int
+	stage    taskNoteStage
+	picker   *components.TaskPicker
+	editor   *components.TextEditor
+	tasks    []journal.Task
+	taskID   string
+	noteText string
+	canceled bool
+	err      error
+	width    int
+	height   int
 }
 
 func (m taskNoteModel) Init() tea.Cmd {
