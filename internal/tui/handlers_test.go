@@ -110,7 +110,7 @@ func TestHandleJournalUpdated(t *testing.T) {
 
 // TestHandleTasksLoaded tests the tasks loaded handler
 func TestHandleTasksLoaded(t *testing.T) {
-	t.Run("creates task list when nil", func(t *testing.T) {
+	t.Run("populates tasks field", func(t *testing.T) {
 		m := &Model{}
 		tasks := []journal.Task{
 			{ID: "1", Text: "Test task", Status: journal.TaskOpen},
@@ -120,25 +120,8 @@ func TestHandleTasksLoaded(t *testing.T) {
 		updatedModel, _ := m.handleTasksLoaded(msg)
 		model := updatedModel.(*Model)
 
-		if model.taskList == nil {
-			t.Error("expected taskList to be created")
-		}
-	})
-
-	t.Run("updates existing task list", func(t *testing.T) {
-		m := &Model{
-			taskList: components.NewTaskList([]journal.Task{}),
-		}
-		tasks := []journal.Task{
-			{ID: "1", Text: "Test task", Status: journal.TaskOpen},
-		}
-		msg := tasksLoadedMsg{tasks: tasks}
-
-		updatedModel, _ := m.handleTasksLoaded(msg)
-		model := updatedModel.(*Model)
-
-		if model.taskList == nil {
-			t.Error("expected taskList to remain set")
+		if len(model.tasks) == 0 {
+			t.Error("expected tasks field to be populated")
 		}
 	})
 }
@@ -166,25 +149,6 @@ func TestHandleTaskToggle(t *testing.T) {
 
 		if cmd == nil {
 			t.Error("expected command when taskService exists")
-		}
-	})
-}
-
-// TestHandleTaskSelectionChanged tests the task selection changed handler
-func TestHandleTaskSelectionChanged(t *testing.T) {
-	t.Run("updates notes for selected task", func(t *testing.T) {
-		m := &Model{
-			taskList:  components.NewTaskList([]journal.Task{}),
-			notesPane: components.NewNotesPane(),
-		}
-		msg := components.TaskSelectionChangedMsg{}
-
-		updatedModel, _ := m.handleTaskSelectionChanged(msg)
-		model := updatedModel.(*Model)
-
-		// Just verify it doesn't panic and returns model
-		if model == nil {
-			t.Error("expected model to be returned")
 		}
 	})
 }

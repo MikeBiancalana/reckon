@@ -26,11 +26,6 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTextEntryKeys(msg)
 	}
 
-	// Handle clear date submenu mode
-	if m.clearDateMode {
-		return m.handleClearDateKeys(msg)
-	}
-
 	// Handle confirmation mode
 	if m.confirmMode {
 		return m.handleConfirmKeys(msg)
@@ -136,35 +131,25 @@ func (m *Model) handleQuit() (tea.Model, tea.Cmd) {
 
 // handleSpaceKey handles space key in different contexts
 func (m *Model) handleSpaceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle space key for tasks (toggle completion)
-	if m.focusedSection == SectionTasks && m.taskList != nil {
-		var cmd tea.Cmd
-		m.taskList, cmd = m.taskList.Update(msg)
-		return m, cmd
+	if m.focusedSection == SectionTasks {
+		task := m.selectedTask()
+		if task == nil {
+			return m, nil
+		}
+		capturedID := task.ID
+		return m, func() tea.Msg {
+			return components.TaskToggleMsg{TaskID: capturedID}
+		}
 	}
 	return m, nil
 }
 
 // handleEnterKey handles enter key in different contexts
 func (m *Model) handleEnterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle enter key for tasks (expand/collapse)
-	if m.focusedSection == SectionTasks && m.taskList != nil {
-		var cmd tea.Cmd
-		m.taskList, cmd = m.taskList.Update(msg)
-		return m, cmd
-	}
-
 	// Handle enter key for logs (expand/collapse)
 	if m.focusedSection == SectionLogs && m.logView != nil {
 		var cmd tea.Cmd
 		m.logView, cmd = m.logView.Update(msg)
-		return m, cmd
-	}
-
-	// Handle enter key for notes pane (follow link)
-	if m.focusedSection == SectionNotes && m.notesPane != nil {
-		var cmd tea.Cmd
-		m.notesPane, cmd = m.notesPane.Update(msg)
 		return m, cmd
 	}
 
@@ -176,9 +161,6 @@ func (m *Model) handleKeyString(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		return m.handleQuit()
-
-	case "N":
-		return m.handleToggleNotesPane()
 
 	case "tab":
 		return m.handleNextSection()
@@ -229,19 +211,9 @@ func (m *Model) handleKeyString(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "D":
 		return m.handleSetDeadline()
 
-	case "c":
-		return m.handleClearDate()
-
 	default:
 		return m.handleComponentKeys(msg)
 	}
-}
-
-// handleToggleNotesPane toggles notes pane visibility
-func (m *Model) handleToggleNotesPane() (tea.Model, tea.Cmd) {
-	m.notesPaneVisible = !m.notesPaneVisible
-	logger.Debug("tui: toggled notes pane visibility", "visible", m.notesPaneVisible)
-	return m, nil
 }
 
 // handleNextSection cycles to next section
@@ -290,10 +262,10 @@ func (m *Model) handleAddTask() (tea.Model, tea.Cmd) {
 // handleAddNote initiates note creation for selected task or log
 func (m *Model) handleAddNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Add note to selected task in Tasks section
-	if m.focusedSection == SectionTasks && m.taskList != nil {
-		selectedTask := m.taskList.SelectedTask()
-		if selectedTask != nil {
-			m.noteTaskID = selectedTask.ID
+	if m.focusedSection == SectionTasks {
+		task := m.selectedTask()
+		if task != nil {
+			m.noteTaskID = task.ID
 			m.textEntryBar.SetMode(components.ModeNote)
 			m.textEntryBar.Clear()
 
@@ -417,25 +389,13 @@ func (m *Model) handleDeleteLog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleDeleteTask initiates task or note deletion
+// handleDeleteTask initiates task deletion
 func (m *Model) handleDeleteTask(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.taskList != nil {
-		// Check if a note is selected
-		if m.taskList.IsSelectedItemNote() {
-			// Delegate to task list to get the TaskNoteDeleteMsg
-			var cmd tea.Cmd
-			m.taskList, cmd = m.taskList.Update(msg)
-			return m, cmd
-		}
-
-		// Otherwise, it's a task
-		task := m.taskList.SelectedTask()
-		if task != nil {
-			logger.Debug("tui: entering confirm mode for task deletion", "taskID", task.ID)
-			m.confirmMode = true
-			m.confirmItemType = "task"
-			m.confirmItemID = task.ID
-		}
+	task := m.selectedTask()
+	if task != nil {
+		m.confirmMode = true
+		m.confirmItemType = "task"
+		m.confirmItemID = task.ID
 	}
 	return m, nil
 }
@@ -460,22 +420,17 @@ func (m *Model) handleEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleEditTask initiates task editing
 func (m *Model) handleEditTask() (tea.Model, tea.Cmd) {
-	if m.taskList != nil {
-		selectedTask := m.taskList.SelectedTask()
-		if selectedTask != nil && !m.taskList.IsSelectedItemNote() {
-			// Edit task (only main tasks, not notes)
-			m.editItemID = selectedTask.ID
-			m.editItemType = "task"
-			m.editItemTags = selectedTask.Tags // Preserve tags
-			m.textEntryBar.SetMode(components.ModeEditTask)
-			m.textEntryBar.SetValue(selectedTask.Text)
-
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(true)
-			}
-
-			return m, m.textEntryBar.Focus()
+	selectedTask := m.selectedTask()
+	if selectedTask != nil {
+		m.editItemID = selectedTask.ID
+		m.editItemType = "task"
+		m.editItemTags = selectedTask.Tags
+		m.textEntryBar.SetMode(components.ModeEditTask)
+		m.textEntryBar.SetValue(selectedTask.Text)
+		if m.statusBar != nil {
+			m.statusBar.SetInputMode(true)
 		}
+		return m, m.textEntryBar.Focus()
 	}
 	return m, nil
 }
@@ -512,21 +467,16 @@ func (m *Model) handleComponentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case SectionTasks:
-		if m.taskList != nil {
-			var cmd tea.Cmd
-			m.taskList, cmd = m.taskList.Update(msg)
-			if m.statusBar != nil {
-				m.statusBar.SetNoteSelected(m.taskList.IsSelectedItemNote())
+		switch msg.String() {
+		case "j", "down":
+			m.selectedIndex = clampIndex(m.selectedIndex+1, len(m.tasks))
+		case "k", "up":
+			if m.selectedIndex > 0 {
+				m.selectedIndex--
 			}
-			return m, cmd
 		}
+		return m, nil
 
-	case SectionNotes:
-		if m.notesPane != nil {
-			var cmd tea.Cmd
-			m.notesPane, cmd = m.notesPane.Update(msg)
-			return m, cmd
-		}
 	}
 
 	return m, nil
@@ -534,28 +484,16 @@ func (m *Model) handleComponentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleScheduleTask initiates task scheduling
 func (m *Model) handleScheduleTask() (tea.Model, tea.Cmd) {
-	// Only handle when Tasks section is focused
-	if m.focusedSection != SectionTasks || m.taskList == nil {
+	if m.focusedSection != SectionTasks {
 		return m, nil
 	}
 
-	// Get selected task
-	selectedTask := m.taskList.SelectedTask()
+	selectedTask := m.selectedTask()
 	if selectedTask == nil {
 		m.successMessage = "No task selected"
-		return m, func() tea.Msg {
-			return clearSuccessMsg{}
-		}
+		return m, func() tea.Msg { return clearSuccessMsg{} }
 	}
 
-	if m.taskList.IsSelectedItemNote() {
-		m.successMessage = "Cannot schedule a note"
-		return m, func() tea.Msg {
-			return clearSuccessMsg{}
-		}
-	}
-
-	// Show date picker in schedule mode
 	m.datePickerMode = "schedule"
 	m.datePickerTargetTask = selectedTask.ID
 	m.datePickerVisible = true
@@ -565,62 +503,21 @@ func (m *Model) handleScheduleTask() (tea.Model, tea.Cmd) {
 
 // handleSetDeadline initiates deadline setting
 func (m *Model) handleSetDeadline() (tea.Model, tea.Cmd) {
-	// Only handle when Tasks section is focused
-	if m.focusedSection != SectionTasks || m.taskList == nil {
+	if m.focusedSection != SectionTasks {
 		return m, nil
 	}
 
-	// Get selected task
-	selectedTask := m.taskList.SelectedTask()
+	selectedTask := m.selectedTask()
 	if selectedTask == nil {
 		m.successMessage = "No task selected"
-		return m, func() tea.Msg {
-			return clearSuccessMsg{}
-		}
+		return m, func() tea.Msg { return clearSuccessMsg{} }
 	}
 
-	if m.taskList.IsSelectedItemNote() {
-		m.successMessage = "Cannot set deadline for a note"
-		return m, func() tea.Msg {
-			return clearSuccessMsg{}
-		}
-	}
-
-	// Show date picker in deadline mode
 	m.datePickerMode = "deadline"
 	m.datePickerTargetTask = selectedTask.ID
 	m.datePickerVisible = true
 	m.datePicker = components.NewDatePicker("Set Deadline")
 	return m, m.datePicker.Show()
-}
-
-// handleClearDate initiates clear date submenu
-func (m *Model) handleClearDate() (tea.Model, tea.Cmd) {
-	// Only handle when Tasks section is focused
-	if m.focusedSection != SectionTasks || m.taskList == nil {
-		return m, nil
-	}
-
-	// Get selected task
-	selectedTask := m.taskList.SelectedTask()
-	if selectedTask == nil {
-		m.successMessage = "No task selected"
-		return m, func() tea.Msg {
-			return clearSuccessMsg{}
-		}
-	}
-
-	if m.taskList.IsSelectedItemNote() {
-		m.successMessage = "Cannot clear dates for a note"
-		return m, func() tea.Msg {
-			return clearSuccessMsg{}
-		}
-	}
-
-	// Show clear date submenu
-	m.clearDateMode = true
-	m.clearDateTargetTask = selectedTask.ID
-	return m, nil
 }
 
 // closeDatePicker cleans up date picker state
@@ -702,79 +599,3 @@ func (m *Model) handleDatePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handleClearDateKeys handles keyboard input in clear date submenu
-func (m *Model) handleClearDateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "s", "S":
-		// Clear schedule
-		capturedTaskID := m.clearDateTargetTask
-		capturedTaskService := m.taskService
-
-		m.clearDateMode = false
-		m.clearDateTargetTask = ""
-
-		return m, func() tea.Msg {
-			if capturedTaskService == nil {
-				return errMsg{err: fmt.Errorf("task service not available for clearing schedule")}
-			}
-
-			err := capturedTaskService.ClearTaskSchedule(capturedTaskID)
-			if err != nil {
-				return errMsg{err: fmt.Errorf("failed to clear schedule: %w", err)}
-			}
-			return taskDateClearedMsg{clearedType: "schedule"}
-		}
-
-	case "d", "D":
-		// Clear deadline
-		capturedTaskID := m.clearDateTargetTask
-		capturedTaskService := m.taskService
-
-		m.clearDateMode = false
-		m.clearDateTargetTask = ""
-
-		return m, func() tea.Msg {
-			if capturedTaskService == nil {
-				return errMsg{err: fmt.Errorf("task service not available for clearing deadline")}
-			}
-
-			err := capturedTaskService.ClearTaskDeadline(capturedTaskID)
-			if err != nil {
-				return errMsg{err: fmt.Errorf("failed to clear deadline: %w", err)}
-			}
-			return taskDateClearedMsg{clearedType: "deadline"}
-		}
-
-	case "b", "B":
-		// Clear both
-		capturedTaskID := m.clearDateTargetTask
-		capturedTaskService := m.taskService
-
-		m.clearDateMode = false
-		m.clearDateTargetTask = ""
-
-		return m, func() tea.Msg {
-			if capturedTaskService == nil {
-				return errMsg{err: fmt.Errorf("task service not available for clearing dates")}
-			}
-
-			err := capturedTaskService.ClearTaskSchedule(capturedTaskID)
-			if err != nil {
-				return errMsg{err: fmt.Errorf("failed to clear schedule: %w", err)}
-			}
-			err = capturedTaskService.ClearTaskDeadline(capturedTaskID)
-			if err != nil {
-				return errMsg{err: fmt.Errorf("failed to clear deadline: %w", err)}
-			}
-			return taskDateClearedMsg{clearedType: "both"}
-		}
-
-	case "esc":
-		// Cancel
-		m.clearDateMode = false
-		m.clearDateTargetTask = ""
-		return m, nil
-	}
-
-	return m, nil
-}

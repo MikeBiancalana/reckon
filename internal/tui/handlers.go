@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	stdtime "time"
 
 	"github.com/MikeBiancalana/reckon/internal/logger"
@@ -53,11 +52,6 @@ func (m *Model) handleJournalLoaded(msg journalLoadedMsg) (tea.Model, tea.Cmd) {
 		m.logView.UpdateLogEntries(msg.journal.LogEntries)
 	}
 
-	// Initialize taskList. Tasks are loaded via the separate tasksLoadedMsg handler.
-	if m.taskList == nil {
-		m.taskList = components.NewTaskList(nil)
-	}
-
 	// Calculate time summary
 	daySummary := time.CalculateDaySummary(&msg.journal)
 	if m.summaryView != nil {
@@ -83,15 +77,8 @@ func (m *Model) handleJournalUpdated(msg journalUpdatedMsg) (tea.Model, tea.Cmd)
 func (m *Model) handleTasksLoaded(msg tasksLoadedMsg) (tea.Model, tea.Cmd) {
 	logger.Debug("tui: handling tasksLoadedMsg", "taskCount", len(msg.tasks))
 
-	// Update or create task list
-	if m.taskList != nil {
-		m.taskList.UpdateTasks(msg.tasks)
-	} else {
-		m.taskList = components.NewTaskList(msg.tasks)
-	}
-
-	m.updateNotesForSelectedTask()
-	m.calculateDetailPanePosition()
+	m.tasks = SortTasksByPriority(msg.tasks, stdtime.Now())
+	m.selectedIndex = clampIndex(m.selectedIndex, len(m.tasks))
 
 	// Clear success message after 2 seconds
 	if m.successMessage != "" {
@@ -112,14 +99,6 @@ func (m *Model) handleTaskToggle(msg components.TaskToggleMsg) (tea.Model, tea.C
 	}
 
 	return m, nil
-}
-
-// handleTaskSelectionChanged handles task selection change events
-func (m *Model) handleTaskSelectionChanged(msg components.TaskSelectionChangedMsg) (tea.Model, tea.Cmd) {
-	m.updateNotesForSelectedTask()
-	m.calculateDetailPanePosition()
-	cmd := m.updateLinksForSelectedItem()
-	return m, cmd
 }
 
 // handleTaskToggled handles task toggled confirmation
@@ -266,21 +245,3 @@ func (m *Model) handleTaskDateCleared(msg taskDateClearedMsg) (tea.Model, tea.Cm
 	return m, m.loadTasks()
 }
 
-// handleLinksLoaded handles links loaded message
-func (m *Model) handleLinksLoaded(msg linksLoadedMsg) (tea.Model, tea.Cmd) {
-	if m.notesPane != nil {
-		m.notesPane.UpdateLinks(msg.noteID, msg.outgoing, msg.backlinks)
-	}
-	return m, nil
-}
-
-// handleLinkSelected handles link selection from notes pane
-func (m *Model) handleLinkSelected(msg components.LinkSelectedMsg) (tea.Model, tea.Cmd) {
-	// Stub implementation for now - reckon-edr will implement full navigation
-	m.successMessage = fmt.Sprintf("Navigate to: %s", msg.NoteSlug)
-
-	// Clear success message after 2 seconds
-	return m, tea.Tick(2*stdtime.Second, func(t stdtime.Time) tea.Msg {
-		return clearSuccessMsg{}
-	})
-}

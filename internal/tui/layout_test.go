@@ -20,7 +20,7 @@ func TestCalculatePaneDimensions_StandardSizes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(tt.termWidth, tt.termHeight, false)
+			dims := CalculatePaneDimensions(tt.termWidth, tt.termHeight)
 
 			// Verify basic properties
 			if dims.TextEntryHeight != 3 {
@@ -62,7 +62,7 @@ func TestCalculatePaneDimensions_WidthDistribution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(tt.termWidth, 30, false)
+			dims := CalculatePaneDimensions(tt.termWidth, 30)
 
 			// Calculate percentages
 			logsPercent := float64(dims.LogsWidth) / float64(tt.termWidth)
@@ -101,7 +101,7 @@ func TestCalculatePaneDimensions_HeightDistribution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(120, tt.termHeight, false)
+			dims := CalculatePaneDimensions(120, tt.termHeight)
 
 			// Available height should be termHeight - text entry (3) - summary (1) - status (1)
 			expectedAvailableHeight := tt.termHeight - 5
@@ -137,7 +137,7 @@ func TestCalculatePaneDimensions_MinimumSizes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dims := CalculatePaneDimensions(tt.termWidth, tt.termHeight, false)
+			dims := CalculatePaneDimensions(tt.termWidth, tt.termHeight)
 
 			// All dimensions should be non-negative
 			if dims.LogsWidth < 0 {
@@ -179,7 +179,7 @@ func TestCalculatePaneDimensions_MinimumSizes(t *testing.T) {
 // TestCalculatePaneDimensions_SpecificDimensions tests exact calculations
 func TestCalculatePaneDimensions_SpecificDimensions(t *testing.T) {
 	// Test with width=100, height=30
-	dims := CalculatePaneDimensions(100, 30, false)
+	dims := CalculatePaneDimensions(100, 30)
 
 	// Width calculations: 50% of 100 = 50 each
 	if dims.LogsWidth != 50 {
@@ -206,7 +206,7 @@ func TestCalculatePaneDimensions_WidthRounding(t *testing.T) {
 
 	for _, width := range widths {
 		t.Run("Width_"+string(rune(width+'0')), func(t *testing.T) {
-			dims := CalculatePaneDimensions(width, 30, false)
+			dims := CalculatePaneDimensions(width, 30)
 
 			totalWidth := dims.LogsWidth + dims.TasksWidth
 			if totalWidth != width {
@@ -221,8 +221,8 @@ func TestCalculatePaneDimensions_WidthRounding(t *testing.T) {
 func TestCalculatePaneDimensions_Consistency(t *testing.T) {
 	termWidth, termHeight := 120, 30
 
-	dims1 := CalculatePaneDimensions(termWidth, termHeight, false)
-	dims2 := CalculatePaneDimensions(termWidth, termHeight, false)
+	dims1 := CalculatePaneDimensions(termWidth, termHeight)
+	dims2 := CalculatePaneDimensions(termWidth, termHeight)
 
 	if dims1 != dims2 {
 		t.Errorf("Multiple calls with same parameters should produce identical results")
@@ -232,7 +232,7 @@ func TestCalculatePaneDimensions_Consistency(t *testing.T) {
 // TestCalculatePaneDimensions_FiftyFiftySplit verifies the 50-50 horizontal split
 func TestCalculatePaneDimensions_FiftyFiftySplit(t *testing.T) {
 	t.Run("even width 120: each pane gets 60", func(t *testing.T) {
-		dims := CalculatePaneDimensions(120, 30, false)
+		dims := CalculatePaneDimensions(120, 30)
 
 		if dims.LogsWidth != 60 {
 			t.Errorf("Expected LogsWidth=60, got %d", dims.LogsWidth)
@@ -247,7 +247,7 @@ func TestCalculatePaneDimensions_FiftyFiftySplit(t *testing.T) {
 	})
 
 	t.Run("odd width 121: logs gets 60, tasks gets 61", func(t *testing.T) {
-		dims := CalculatePaneDimensions(121, 30, false)
+		dims := CalculatePaneDimensions(121, 30)
 
 		if dims.LogsWidth != 60 {
 			t.Errorf("Expected LogsWidth=60, got %d", dims.LogsWidth)
@@ -263,153 +263,11 @@ func TestCalculatePaneDimensions_FiftyFiftySplit(t *testing.T) {
 
 	t.Run("widths always sum to termWidth", func(t *testing.T) {
 		for _, w := range []int{80, 100, 120, 121, 160, 200} {
-			dims := CalculatePaneDimensions(w, 30, false)
+			dims := CalculatePaneDimensions(w, 30)
 			total := dims.LogsWidth + dims.TasksWidth
 			if total != w {
 				t.Errorf("termWidth=%d: LogsWidth+TasksWidth=%d, want %d", w, total, w)
 			}
 		}
 	})
-}
-
-// TestCalculateTaskSectionDimensions_NoDetailPane tests layout without detail pane
-func TestCalculateTaskSectionDimensions_NoDetailPane(t *testing.T) {
-	termWidth, termHeight := 120, 30
-
-	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneBottom, false)
-
-	// Center width should be 50% of terminal width
-	expectedWidth := termWidth / 2
-	if dims.CenterWidth != expectedWidth {
-		t.Errorf("Expected CenterWidth=%d, got %d", expectedWidth, dims.CenterWidth)
-	}
-
-	// All three sections should be visible and roughly equal
-	if dims.TodayHeight == 0 {
-		t.Error("TodayHeight should not be 0 when detail pane is hidden")
-	}
-	if dims.ThisWeekHeight == 0 {
-		t.Error("ThisWeekHeight should not be 0 when detail pane is hidden")
-	}
-	if dims.AllTasksHeight == 0 {
-		t.Error("AllTasksHeight should not be 0 when detail pane is hidden")
-	}
-
-	// Verify sections add up to available height (minus separators)
-	totalHeight := dims.TodayHeight + dims.ThisWeekHeight + dims.AllTasksHeight
-	const sectionSeparators = 2
-	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators // text entry, status, summary, separators
-	if totalHeight != expectedAvailableHeight {
-		t.Errorf("Expected total section height=%d, got %d", expectedAvailableHeight, totalHeight)
-	}
-}
-
-// TestCalculateTaskSectionDimensions_DetailPaneBottom tests layout with detail pane at bottom
-func TestCalculateTaskSectionDimensions_DetailPaneBottom(t *testing.T) {
-	termWidth, termHeight := 120, 30
-
-	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneBottom, true)
-
-	// ALL TASKS should be replaced by detail pane
-	if dims.AllTasksHeight != 0 {
-		t.Errorf("AllTasksHeight should be 0 when detail pane is at bottom, got %d", dims.AllTasksHeight)
-	}
-
-	// Detail height should be non-zero
-	if dims.DetailHeight == 0 {
-		t.Error("DetailHeight should not be 0 when detail pane is visible")
-	}
-
-	// TODAY and THIS WEEK should be visible
-	if dims.TodayHeight == 0 {
-		t.Error("TodayHeight should not be 0")
-	}
-	if dims.ThisWeekHeight == 0 {
-		t.Error("ThisWeekHeight should not be 0")
-	}
-
-	// Verify total height
-	totalHeight := dims.TodayHeight + dims.ThisWeekHeight + dims.DetailHeight
-	const sectionSeparators = 2
-	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators
-	if totalHeight != expectedAvailableHeight {
-		t.Errorf("Expected total height=%d, got %d", expectedAvailableHeight, totalHeight)
-	}
-}
-
-// TestCalculateTaskSectionDimensions_DetailPaneMiddle tests layout with detail pane in middle
-func TestCalculateTaskSectionDimensions_DetailPaneMiddle(t *testing.T) {
-	termWidth, termHeight := 120, 30
-
-	dims := CalculateTaskSectionDimensions(termWidth, termHeight, DetailPaneMiddle, true)
-
-	// THIS WEEK should be replaced by detail pane
-	if dims.ThisWeekHeight != 0 {
-		t.Errorf("ThisWeekHeight should be 0 when detail pane is in middle, got %d", dims.ThisWeekHeight)
-	}
-
-	// Detail height should be non-zero
-	if dims.DetailHeight == 0 {
-		t.Error("DetailHeight should not be 0 when detail pane is visible")
-	}
-
-	// TODAY and ALL TASKS should be visible
-	if dims.TodayHeight == 0 {
-		t.Error("TodayHeight should not be 0")
-	}
-	if dims.AllTasksHeight == 0 {
-		t.Error("AllTasksHeight should not be 0")
-	}
-
-	// Verify total height
-	totalHeight := dims.TodayHeight + dims.DetailHeight + dims.AllTasksHeight
-	const sectionSeparators = 2
-	expectedAvailableHeight := termHeight - 3 - 1 - 1 - sectionSeparators
-	if totalHeight != expectedAvailableHeight {
-		t.Errorf("Expected total height=%d, got %d", expectedAvailableHeight, totalHeight)
-	}
-}
-
-// TestCalculateTaskSectionDimensions_VariousSizes tests different terminal sizes
-func TestCalculateTaskSectionDimensions_VariousSizes(t *testing.T) {
-	tests := []struct {
-		name       string
-		termWidth  int
-		termHeight int
-	}{
-		{"Standard 80x24", 80, 24},
-		{"Common 120x30", 120, 30},
-		{"Large 160x40", 160, 40},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Test all combinations of position and visibility
-			positions := []DetailPanePosition{DetailPaneBottom, DetailPaneMiddle}
-			visibilities := []bool{true, false}
-
-			for _, pos := range positions {
-				for _, visible := range visibilities {
-					dims := CalculateTaskSectionDimensions(tt.termWidth, tt.termHeight, pos, visible)
-
-					// All dimensions should be non-negative
-					if dims.CenterWidth < 0 {
-						t.Errorf("CenterWidth should be non-negative, got %d", dims.CenterWidth)
-					}
-					if dims.TodayHeight < 0 {
-						t.Errorf("TodayHeight should be non-negative, got %d", dims.TodayHeight)
-					}
-					if dims.ThisWeekHeight < 0 {
-						t.Errorf("ThisWeekHeight should be non-negative, got %d", dims.ThisWeekHeight)
-					}
-					if dims.AllTasksHeight < 0 {
-						t.Errorf("AllTasksHeight should be non-negative, got %d", dims.AllTasksHeight)
-					}
-					if dims.DetailHeight < 0 {
-						t.Errorf("DetailHeight should be non-negative, got %d", dims.DetailHeight)
-					}
-				}
-			}
-		})
-	}
 }
