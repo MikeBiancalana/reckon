@@ -121,6 +121,11 @@ type Model struct {
 	summaryView *components.SummaryView
 	notesPane   *components.NotesPane
 
+	// Simple task list state (replaces taskList component)
+	tasks            []journal.Task
+	selectedIndex    int
+	taskScrollOffset int
+
 	// Notes pane state
 	selectedTaskID   string
 	notesPaneVisible bool
@@ -938,4 +943,120 @@ type linksLoadedMsg struct {
 	noteID    string
 	outgoing  []components.LinkDisplayItem
 	backlinks []components.LinkDisplayItem
+}
+
+// clampIndex returns idx clamped to [0, length-1], or -1 if length == 0.
+func clampIndex(idx, length int) int {
+	if length == 0 {
+		return -1
+	}
+	if idx < 0 {
+		return 0
+	}
+	if idx >= length {
+		return length - 1
+	}
+	return idx
+}
+
+// selectedTask returns the currently selected task, or nil if nothing is selected.
+func (m *Model) selectedTask() *journal.Task {
+	if m.selectedIndex < 0 || m.selectedIndex >= len(m.tasks) {
+		return nil
+	}
+	return &m.tasks[m.selectedIndex]
+}
+
+// renderTaskList renders the task list using m.tasks and m.selectedIndex.
+// It applies scroll-follow-cursor logic to keep the selected task visible.
+func (m *Model) renderTaskList(width, height int) string {
+	if len(m.tasks) == 0 {
+		noTasksStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240"))
+		return noTasksStyle.Render("No tasks - press t to add one")
+	}
+
+	// Adjust scroll offset so selected item is visible
+	if m.selectedIndex >= 0 {
+		if m.selectedIndex < m.taskScrollOffset {
+			m.taskScrollOffset = m.selectedIndex
+		}
+		if m.selectedIndex >= m.taskScrollOffset+height {
+			m.taskScrollOffset = m.selectedIndex - height + 1
+		}
+	}
+
+	taskNormalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("39"))
+	taskDoneStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Strikethrough(true)
+
+	var lines []string
+	end := m.taskScrollOffset + height
+	if end > len(m.tasks) {
+		end = len(m.tasks)
+	}
+	for i := m.taskScrollOffset; i < end; i++ {
+		task := m.tasks[i]
+		checkbox := "[ ]"
+		style := taskNormalStyle
+		if task.Status == journal.TaskDone {
+			checkbox = "[x]"
+			style = taskDoneStyle
+		}
+
+		line := fmt.Sprintf("%s %s", checkbox, task.Text)
+		if len(task.Tags) > 0 {
+			line += fmt.Sprintf(" [%s]", strings.Join(task.Tags, " "))
+		}
+		if task.Status != journal.TaskDone {
+			dateInfo := components.FormatDateInfo(task)
+			if dateInfo != "" {
+				line += "  " + dateInfo
+				style = components.GetDateStyle(task)
+			}
+		}
+
+		if i == m.selectedIndex {
+			line = components.SelectedStyle.Render(line)
+		} else {
+			line = style.Render(line)
+		}
+		lines = append(lines, line)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderDetailArea renders the notes for the currently selected task.
+func (m *Model) renderDetailArea(width, height int) string {
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("205")).
+		Bold(true)
+
+	task := m.selectedTask()
+	if task == nil {
+		return titleStyle.Render("━━ NOTES ━━") + "\n" +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("  No task selected")
+	}
+
+	header := titleStyle.Render("━━ NOTES ━━")
+	if len(task.Notes) == 0 {
+		return header + "\n" +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("  No notes")
+	}
+
+	noteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	var lines []string
+	lines = append(lines, header)
+	for _, note := range task.Notes {
+		lines = append(lines, noteStyle.Render("  - "+note.Text))
+	}
+
+	// Clamp to height
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
 }

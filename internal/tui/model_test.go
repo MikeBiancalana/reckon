@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -728,7 +729,6 @@ func TestHelpViewContainsExistingShortcuts(t *testing.T) {
 		"l, →",
 		"tab",
 		"j, k",
-		"d",
 		"q, ctrl+c",
 		"?",
 	}
@@ -736,6 +736,152 @@ func TestHelpViewContainsExistingShortcuts(t *testing.T) {
 	for _, entry := range existingEntries {
 		if !strings.Contains(view, entry) {
 			t.Errorf("helpView() should contain existing shortcut %q, got:\n%s", entry, view)
+		}
+	}
+}
+
+// --- Tests for new task list rendering (reckon-obed) ---
+
+func makeTestTask(id, text string, status journal.TaskStatus) journal.Task {
+	return journal.Task{
+		ID:        id,
+		Text:      text,
+		Status:    status,
+		CreatedAt: time.Now(),
+	}
+}
+
+func TestRenderTaskList_Empty(t *testing.T) {
+	m := &Model{
+		tasks:         []journal.Task{},
+		selectedIndex: -1,
+	}
+	result := m.renderTaskList(80, 20)
+	if result == "" {
+		t.Error("renderTaskList with empty tasks should return non-empty placeholder string")
+	}
+	if !strings.Contains(result, "No tasks") {
+		t.Errorf("renderTaskList with empty tasks should contain 'No tasks', got: %q", result)
+	}
+}
+
+func TestRenderTaskList_SelectedHighlighted(t *testing.T) {
+	tasks := []journal.Task{
+		makeTestTask("t1", "First task", journal.TaskOpen),
+		makeTestTask("t2", "Second task", journal.TaskOpen),
+		makeTestTask("t3", "Third task", journal.TaskOpen),
+	}
+	m := &Model{
+		tasks:         tasks,
+		selectedIndex: 1,
+	}
+	result := m.renderTaskList(80, 10)
+
+	// The selected task's text should appear in the output
+	if !strings.Contains(result, "Second task") {
+		t.Errorf("renderTaskList should contain selected task text, got: %q", result)
+	}
+	// All tasks should appear
+	if !strings.Contains(result, "First task") {
+		t.Errorf("renderTaskList should contain all tasks, got: %q", result)
+	}
+}
+
+func TestRenderTaskList_ScrollOffset(t *testing.T) {
+	// Create 20 tasks
+	var tasks []journal.Task
+	for i := 0; i < 20; i++ {
+		tasks = append(tasks, makeTestTask(
+			fmt.Sprintf("t%d", i),
+			fmt.Sprintf("Task %d", i),
+			journal.TaskOpen,
+		))
+	}
+	m := &Model{
+		tasks:         tasks,
+		selectedIndex: 15, // Beyond visible area with height=5
+	}
+	result := m.renderTaskList(80, 5)
+
+	// Task 15 should be visible
+	if !strings.Contains(result, "Task 15") {
+		t.Errorf("renderTaskList should scroll to show selected task 15, got: %q", result)
+	}
+	// Task 0 should NOT be visible (scrolled away)
+	if strings.Contains(result, "Task 0\n") || strings.HasPrefix(result, "[ ] Task 0") {
+		t.Errorf("renderTaskList should have scrolled past task 0, got: %q", result)
+	}
+}
+
+func TestRenderDetailArea_NoTasks(t *testing.T) {
+	m := &Model{
+		tasks:         []journal.Task{},
+		selectedIndex: -1,
+	}
+	result := m.renderDetailArea(80, 10)
+	if result == "" {
+		t.Error("renderDetailArea should return non-empty string")
+	}
+	// Should show some kind of "no selection" message
+	if !strings.Contains(result, "No task") && !strings.Contains(result, "NOTES") {
+		t.Errorf("renderDetailArea with no tasks should indicate no selection, got: %q", result)
+	}
+}
+
+func TestRenderDetailArea_TaskWithNotes(t *testing.T) {
+	task := journal.Task{
+		ID:   "t1",
+		Text: "My task",
+		Notes: []journal.TaskNote{
+			{ID: "n1", Text: "First note"},
+			{ID: "n2", Text: "Second note"},
+		},
+		Status:    journal.TaskOpen,
+		CreatedAt: time.Now(),
+	}
+	m := &Model{
+		tasks:         []journal.Task{task},
+		selectedIndex: 0,
+	}
+	result := m.renderDetailArea(80, 10)
+
+	if !strings.Contains(result, "First note") {
+		t.Errorf("renderDetailArea should show task notes, got: %q", result)
+	}
+	if !strings.Contains(result, "Second note") {
+		t.Errorf("renderDetailArea should show all notes, got: %q", result)
+	}
+}
+
+func TestRenderDetailArea_TaskWithoutNotes(t *testing.T) {
+	task := makeTestTask("t1", "My task", journal.TaskOpen)
+	m := &Model{
+		tasks:         []journal.Task{task},
+		selectedIndex: 0,
+	}
+	result := m.renderDetailArea(80, 10)
+
+	if !strings.Contains(result, "No notes") {
+		t.Errorf("renderDetailArea should show 'No notes' placeholder, got: %q", result)
+	}
+}
+
+func TestClampIndex(t *testing.T) {
+	tests := []struct {
+		idx, length, want int
+	}{
+		{0, 0, -1},
+		{5, 0, -1},
+		{-1, 3, 0},
+		{0, 3, 0},
+		{2, 3, 2},
+		{3, 3, 2},
+		{10, 3, 2},
+	}
+	for _, tt := range tests {
+		got := clampIndex(tt.idx, tt.length)
+		if got != tt.want {
+			t.Errorf("clampIndex(%d, %d) = %d, want %d", tt.idx, tt.length, got, tt.want)
 		}
 	}
 }

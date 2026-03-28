@@ -158,6 +158,9 @@ func findNoteText(notes []journal.TaskNote, noteID string) string {
 	return ""
 }
 
+// FormatDateInfo returns a formatted date string for a task's schedule/deadline dates.
+func FormatDateInfo(task journal.Task) string { return formatDateInfo(task) }
+
 func formatDateInfo(task journal.Task) string {
 	today := time.Now().Truncate(24 * time.Hour)
 	var parts []string
@@ -199,6 +202,9 @@ func formatFriendlyDate(t time.Time, today time.Time) string {
 		return t.Format("Jan 2, 2006")
 	}
 }
+
+// GetDateStyle returns the appropriate lipgloss style for a task based on its urgency.
+func GetDateStyle(task journal.Task) lipgloss.Style { return getDateStyle(task) }
 
 func getDateStyle(task journal.Task) lipgloss.Style {
 	today := time.Now().Truncate(24 * time.Hour)
