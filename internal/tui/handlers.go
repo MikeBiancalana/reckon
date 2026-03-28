@@ -31,24 +31,7 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		m.statusBar.SetWidth(msg.Width)
 	}
 
-	// Only calculate pane dimensions if terminal is large enough
-	if !m.terminalTooSmall {
-		// Calculate pane dimensions
-		paneWidthIntentions := int(float64(msg.Width) * 0.25)
-		paneWidthWins := paneWidthIntentions
-		paneWidthLogs := msg.Width - 2*paneWidthIntentions
-		paneHeight := msg.Height - 2
-
-		if m.intentionList != nil {
-			m.intentionList.SetSize(paneWidthIntentions, paneHeight)
-		}
-		if m.winsView != nil {
-			m.winsView.SetSize(paneWidthWins, paneHeight)
-		}
-		if m.logView != nil {
-			m.logView.SetSize(paneWidthLogs, paneHeight)
-		}
-	}
+	// logView sizing is handled in renderNewLayout via CalculatePaneDimensions
 
 	return m, nil
 }
@@ -63,32 +46,11 @@ func (m *Model) handleJournalLoaded(msg journalLoadedMsg) (tea.Model, tea.Cmd) {
 
 	m.currentJournal = &msg.journal
 
-	// Update or create IntentionList
-	if m.intentionList == nil {
-		m.intentionList = components.NewIntentionList(msg.journal.Intentions)
-	} else {
-		m.intentionList.UpdateIntentions(msg.journal.Intentions)
-	}
-
-	// Update or create WinsView
-	if m.winsView == nil {
-		m.winsView = components.NewWinsView(msg.journal.Wins)
-	} else {
-		m.winsView.UpdateWins(msg.journal.Wins)
-	}
-
 	// Update or create LogView
 	if m.logView == nil {
 		m.logView = components.NewLogView(msg.journal.LogEntries)
 	} else {
 		m.logView.UpdateLogEntries(msg.journal.LogEntries)
-	}
-
-	// Update or create ScheduleView
-	if m.scheduleView == nil {
-		m.scheduleView = components.NewScheduleView(msg.journal.ScheduleItems)
-	} else {
-		m.scheduleView.UpdateSchedule(msg.journal.ScheduleItems)
 	}
 
 	// Initialize taskList. Tasks are loaded via the separate tasksLoadedMsg handler.

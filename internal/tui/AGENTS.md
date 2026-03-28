@@ -26,17 +26,26 @@ User Input → Update() → Model State Change → View() → Render
 - `tea.Msg` - Messages passed to Update (key presses, async results)
 - `tea.Cmd` - Async commands that return messages
 
-### Layout Structure (40-40-18)
+### Layout Structure (50-50)
 
 ```
-┌─────────────────┬─────────────────┬──────────┐
-│   Left (40%)    │  Center (40%)   │Right(18%)│
-│                 │                 │          │
-│   Log View      │   Task List     │ Schedule │
-│                 │   (grouped by   │ Intents  │
-│                 │    time)        │  Wins    │
-│                 │                 │          │
-└─────────────────┴─────────────────┴──────────┘
+┌─────────────────────┬─────────────────────┐
+│     Left (50%)      │     Right (50%)      │
+│                     │                      │
+│     Log View        │     Task List        │
+│                     │   (grouped by time)  │
+│                     │                      │
+└─────────────────────┴──────────────────────┘
+```
+
+The right pane optionally splits vertically when the Notes pane is visible ('N' key):
+
+```
+┌─────────────────────┬─────────────────────┐
+│     Left (50%)      │  Task List (top)    │
+│                     ├─────────────────────┤
+│     Log View        │  Notes Pane (bot)  │
+└─────────────────────┴─────────────────────┘
 ```
 
 ## Critical Patterns
@@ -107,7 +116,6 @@ m.currentJournal = updatedJournal
 
 // 2. Update components to reflect new state
 m.logView.UpdateLogs(updatedJournal.Log)
-m.intentionList.UpdateIntentions(updatedJournal.Intentions)
 
 // 3. Return updated model
 return m, cmd
@@ -141,11 +149,9 @@ Each component checks `focused` flag before handling keys.
 1. Add enum to `model.go`:
    ```go
    const (
-       SectionIntentions Section = iota
-       SectionWins
-       SectionLogs
+       SectionLogs    Section = iota
        SectionTasks
-       SectionSchedule
+       SectionNotes
        SectionYourNew  // Add here
        SectionCount
    )

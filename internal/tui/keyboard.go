@@ -147,14 +147,6 @@ func (m *Model) handleSpaceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleEnterKey handles enter key in different contexts
 func (m *Model) handleEnterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle enter key for toggling intentions
-	if m.focusedSection == SectionIntentions && m.intentionList != nil {
-		intention := m.intentionList.SelectedIntention()
-		if intention != nil {
-			return m, m.toggleIntention(intention.ID)
-		}
-	}
-
 	// Handle enter key for tasks (expand/collapse)
 	if m.focusedSection == SectionTasks && m.taskList != nil {
 		var cmd tea.Cmd
@@ -392,12 +384,6 @@ func (m *Model) handleDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.focusedSection {
-	case SectionIntentions:
-		return m.handleDeleteIntention()
-
-	case SectionWins:
-		return m.handleDeleteWin()
-
 	case SectionLogs:
 		return m.handleDeleteLog(msg)
 
@@ -405,34 +391,6 @@ func (m *Model) handleDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDeleteTask(msg)
 	}
 
-	return m, nil
-}
-
-// handleDeleteIntention initiates intention deletion
-func (m *Model) handleDeleteIntention() (tea.Model, tea.Cmd) {
-	if m.intentionList != nil {
-		intention := m.intentionList.SelectedIntention()
-		if intention != nil {
-			logger.Debug("tui: entering confirm mode for intention deletion", "intentionID", intention.ID)
-			m.confirmMode = true
-			m.confirmItemType = "intention"
-			m.confirmItemID = intention.ID
-		}
-	}
-	return m, nil
-}
-
-// handleDeleteWin initiates win deletion
-func (m *Model) handleDeleteWin() (tea.Model, tea.Cmd) {
-	if m.winsView != nil {
-		win := m.winsView.SelectedWin()
-		if win != nil {
-			logger.Debug("tui: entering confirm mode for win deletion", "winID", win.ID)
-			m.confirmMode = true
-			m.confirmItemType = "win"
-			m.confirmItemID = win.ID
-		}
-	}
 	return m, nil
 }
 
@@ -493,12 +451,6 @@ func (m *Model) handleEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case SectionTasks:
 		return m.handleEditTask()
 
-	case SectionIntentions:
-		return m.handleEditIntention()
-
-	case SectionWins:
-		return m.handleEditWin()
-
 	case SectionLogs:
 		return m.handleEditLog()
 	}
@@ -517,46 +469,6 @@ func (m *Model) handleEditTask() (tea.Model, tea.Cmd) {
 			m.editItemTags = selectedTask.Tags // Preserve tags
 			m.textEntryBar.SetMode(components.ModeEditTask)
 			m.textEntryBar.SetValue(selectedTask.Text)
-
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(true)
-			}
-
-			return m, m.textEntryBar.Focus()
-		}
-	}
-	return m, nil
-}
-
-// handleEditIntention initiates intention editing
-func (m *Model) handleEditIntention() (tea.Model, tea.Cmd) {
-	if m.intentionList != nil {
-		selectedIntention := m.intentionList.SelectedIntention()
-		if selectedIntention != nil {
-			m.editItemID = selectedIntention.ID
-			m.editItemType = "intention"
-			m.textEntryBar.SetMode(components.ModeEditIntention)
-			m.textEntryBar.SetValue(selectedIntention.Text)
-
-			if m.statusBar != nil {
-				m.statusBar.SetInputMode(true)
-			}
-
-			return m, m.textEntryBar.Focus()
-		}
-	}
-	return m, nil
-}
-
-// handleEditWin initiates win editing
-func (m *Model) handleEditWin() (tea.Model, tea.Cmd) {
-	if m.winsView != nil {
-		selectedWin := m.winsView.SelectedWin()
-		if selectedWin != nil {
-			m.editItemID = selectedWin.ID
-			m.editItemType = "win"
-			m.textEntryBar.SetMode(components.ModeEditWin)
-			m.textEntryBar.SetValue(selectedWin.Text)
 
 			if m.statusBar != nil {
 				m.statusBar.SetInputMode(true)
@@ -592,20 +504,6 @@ func (m *Model) handleEditLog() (tea.Model, tea.Cmd) {
 // handleComponentKeys delegates key handling to focused component
 func (m *Model) handleComponentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.focusedSection {
-	case SectionIntentions:
-		if m.intentionList != nil {
-			var cmd tea.Cmd
-			m.intentionList, cmd = m.intentionList.Update(msg)
-			return m, cmd
-		}
-
-	case SectionWins:
-		if m.winsView != nil {
-			var cmd tea.Cmd
-			m.winsView, cmd = m.winsView.Update(msg)
-			return m, cmd
-		}
-
 	case SectionLogs:
 		if m.logView != nil {
 			var cmd tea.Cmd
@@ -629,10 +527,6 @@ func (m *Model) handleComponentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.notesPane, cmd = m.notesPane.Update(msg)
 			return m, cmd
 		}
-
-	case SectionSchedule:
-		// ScheduleView doesn't have interactive elements yet
-		// So we don't delegate to it
 	}
 
 	return m, nil

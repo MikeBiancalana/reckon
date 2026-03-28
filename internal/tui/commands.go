@@ -156,12 +156,6 @@ func (m *Model) deleteItem() tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		switch capturedItemType {
-		case "intention":
-			err = capturedService.DeleteIntention(capturedJournal, capturedItemID)
-
-		case "win":
-			err = capturedService.DeleteWin(capturedJournal, capturedItemID)
-
 		case "log":
 			err = capturedService.DeleteLogEntry(capturedJournal, capturedItemID)
 
