@@ -100,9 +100,9 @@ type Model struct {
 	height         int
 
 	// Components
-	logView *components.LogView
-	textEntryBar  *components.TextEntryBar
-	statusBar     *components.StatusBar
+	logView      *components.LogView
+	textEntryBar *components.TextEntryBar
+	statusBar    *components.StatusBar
 
 	// Main layout components
 	summaryView *components.SummaryView
@@ -533,11 +533,6 @@ type noteAddedMsg struct{}
 type logNoteAddedMsg struct{}
 
 type logNoteDeletedMsg struct{}
-
-type TaskNoteDeleteMsg struct {
-	TaskID string
-	NoteID string
-}
 
 type taskNoteDeletedMsg struct{}
 

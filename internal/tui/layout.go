@@ -59,4 +59,3 @@ func CalculatePaneDimensions(termWidth, termHeight int) PaneDimensions {
 
 	return dims
 }
-

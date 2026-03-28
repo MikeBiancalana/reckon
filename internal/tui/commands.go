@@ -390,4 +390,3 @@ func parseTaskTags(input string) (string, []string) {
 
 	return strings.Join(filteredWords, " "), tags
 }
-

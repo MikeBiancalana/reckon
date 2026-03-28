@@ -244,4 +244,3 @@ func (m *Model) handleTaskDateCleared(msg taskDateClearedMsg) (tea.Model, tea.Cm
 	// Reload tasks to reflect the change
 	return m, m.loadTasks()
 }
-

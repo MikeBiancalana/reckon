@@ -358,9 +358,6 @@ func (m *Model) handleDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.focusedSection {
 	case SectionLogs:
 		return m.handleDeleteLog(msg)
-
-	case SectionTasks:
-		return m.handleDeleteTask(msg)
 	}
 
 	return m, nil
@@ -389,16 +386,6 @@ func (m *Model) handleDeleteLog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleDeleteTask initiates task deletion
-func (m *Model) handleDeleteTask(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	task := m.selectedTask()
-	if task != nil {
-		m.confirmMode = true
-		m.confirmItemType = "task"
-		m.confirmItemID = task.ID
-	}
-	return m, nil
-}
 
 // handleEdit initiates editing of selected item
 func (m *Model) handleEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -598,4 +585,3 @@ func (m *Model) handleDatePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, cmd
 }
-

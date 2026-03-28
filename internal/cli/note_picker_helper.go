@@ -3,9 +3,9 @@ package cli
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/MikeBiancalana/reckon/internal/models"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // notePickerModel is a simple Bubble Tea model for the note picker
