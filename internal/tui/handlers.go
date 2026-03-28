@@ -77,8 +77,34 @@ func (m *Model) handleJournalUpdated(msg journalUpdatedMsg) (tea.Model, tea.Cmd)
 func (m *Model) handleTasksLoaded(msg tasksLoadedMsg) (tea.Model, tea.Cmd) {
 	logger.Debug("tui: handling tasksLoadedMsg", "taskCount", len(msg.tasks))
 
+	// Preserve selection identity across re-sorts: capture selected task ID before
+	// sorting, then restore the cursor to the same task afterward.
+	var selectedID string
+	if m.selectedIndex >= 0 && m.selectedIndex < len(m.tasks) {
+		selectedID = m.tasks[m.selectedIndex].ID
+	}
+
 	m.tasks = SortTasksByPriority(msg.tasks, stdtime.Now())
-	m.selectedIndex = clampIndex(m.selectedIndex, len(m.tasks))
+
+	// Restore cursor to the previously selected task if it still exists.
+	restored := false
+	if selectedID != "" {
+		for i, task := range m.tasks {
+			if task.ID == selectedID {
+				m.selectedIndex = i
+				restored = true
+				break
+			}
+		}
+	}
+	if !restored {
+		m.selectedIndex = clampIndex(m.selectedIndex, len(m.tasks))
+	}
+
+	// Clamp scroll offset so it can't point past the end of the (possibly smaller) list.
+	if m.taskScrollOffset >= len(m.tasks) {
+		m.taskScrollOffset = 0
+	}
 
 	// Clear success message after 2 seconds
 	if m.successMessage != "" {

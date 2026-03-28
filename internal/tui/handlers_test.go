@@ -124,6 +124,49 @@ func TestHandleTasksLoaded(t *testing.T) {
 			t.Error("expected tasks field to be populated")
 		}
 	})
+
+	t.Run("preserves selection identity across re-sort", func(t *testing.T) {
+		// Initial state: 2 tasks, cursor at index 1 (task "b")
+		m := &Model{
+			tasks: []journal.Task{
+				{ID: "a", Text: "Task A", Status: journal.TaskOpen},
+				{ID: "b", Text: "Task B", Status: journal.TaskOpen},
+			},
+			selectedIndex: 1,
+		}
+		// Reload with tasks in reversed order — task "b" should still be selected
+		newTasks := []journal.Task{
+			{ID: "b", Text: "Task B", Status: journal.TaskOpen},
+			{ID: "a", Text: "Task A", Status: journal.TaskOpen},
+		}
+		updatedModel, _ := m.handleTasksLoaded(tasksLoadedMsg{tasks: newTasks})
+		model := updatedModel.(*Model)
+
+		if model.selectedIndex != 0 {
+			t.Errorf("expected selectedIndex=0 (task b moved to front), got %d", model.selectedIndex)
+		}
+		if model.tasks[model.selectedIndex].ID != "b" {
+			t.Errorf("expected selected task ID 'b', got %q", model.tasks[model.selectedIndex].ID)
+		}
+	})
+
+	t.Run("clamps scroll offset when list shrinks", func(t *testing.T) {
+		m := &Model{
+			tasks: []journal.Task{
+				{ID: "1"}, {ID: "2"}, {ID: "3"}, {ID: "4"}, {ID: "5"},
+			},
+			taskScrollOffset: 4, // pointing at last item
+		}
+		// Reload with fewer tasks — scroll offset must be reset
+		updatedModel, _ := m.handleTasksLoaded(tasksLoadedMsg{tasks: []journal.Task{
+			{ID: "1", Status: journal.TaskOpen},
+		}})
+		model := updatedModel.(*Model)
+
+		if model.taskScrollOffset != 0 {
+			t.Errorf("expected taskScrollOffset=0 after list shrink, got %d", model.taskScrollOffset)
+		}
+	})
 }
 
 // TestHandleTaskToggle tests the task toggle handler
