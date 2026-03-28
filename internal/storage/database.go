@@ -112,7 +112,51 @@ CREATE TABLE IF NOT EXISTS note_links (
 
 
 
+-- Checklist templates
+CREATE TABLE IF NOT EXISTS checklist_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- Checklist template items
+CREATE TABLE IF NOT EXISTS checklist_template_items (
+    id TEXT PRIMARY KEY,
+    template_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    FOREIGN KEY (template_id) REFERENCES checklist_templates(id) ON DELETE CASCADE
+);
+
+-- Checklist runs (instances of a template)
+CREATE TABLE IF NOT EXISTS checklist_runs (
+    id TEXT PRIMARY KEY,
+    template_id TEXT NOT NULL,
+    template_name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    started_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    FOREIGN KEY (template_id) REFERENCES checklist_templates(id) ON DELETE CASCADE
+);
+
+-- Checklist run items (per-run item state)
+CREATE TABLE IF NOT EXISTS checklist_run_items (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    template_item_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    checked INTEGER NOT NULL DEFAULT 0,
+    checked_at INTEGER,
+    FOREIGN KEY (run_id) REFERENCES checklist_runs(id) ON DELETE CASCADE
+);
+
 -- Indices for faster queries
+CREATE INDEX IF NOT EXISTS idx_checklist_template_items_template ON checklist_template_items(template_id);
+CREATE INDEX IF NOT EXISTS idx_checklist_runs_template ON checklist_runs(template_id);
+CREATE INDEX IF NOT EXISTS idx_checklist_runs_status ON checklist_runs(status);
+CREATE INDEX IF NOT EXISTS idx_checklist_run_items_run ON checklist_run_items(run_id);
 CREATE INDEX IF NOT EXISTS idx_intentions_date ON intentions(journal_date);
 CREATE INDEX IF NOT EXISTS idx_intentions_status ON intentions(status);
 CREATE INDEX IF NOT EXISTS idx_log_entries_date ON log_entries(journal_date);
