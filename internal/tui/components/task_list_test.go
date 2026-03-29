@@ -87,16 +87,9 @@ func TestFormatDateInfo(t *testing.T) {
 	})
 }
 
-// localTestToday returns local midnight, consistent with localToday() in production code.
-func localTestToday() time.Time {
-	now := time.Now()
-	y, m, d := now.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, now.Location())
-}
-
 // TestFormatFriendlyDate verifies relative date formatting.
 func TestFormatFriendlyDate(t *testing.T) {
-	today := localTestToday()
+	today := localToday()
 
 	t.Run("today returns 'today'", func(t *testing.T) {
 		got := formatFriendlyDate(today, today)
@@ -125,7 +118,7 @@ func TestFormatFriendlyDate(t *testing.T) {
 // TestFormatDateInfoFormat verifies the exact format strings produced by FormatDateInfo.
 // These tests document the display contract for the TUI task list date indicators.
 func TestFormatDateInfoFormat(t *testing.T) {
-	today := localTestToday()
+	today := localToday()
 
 	t.Run("scheduled future uses calendar emoji prefix", func(t *testing.T) {
 		future := today.AddDate(0, 0, 10).Format("2006-01-02")
@@ -243,7 +236,7 @@ func TestGetDateStyle(t *testing.T) {
 	})
 
 	t.Run("deadline today style renders the input", func(t *testing.T) {
-		today := localTestToday().Format("2006-01-02")
+		today := localToday().Format("2006-01-02")
 		task := journal.Task{
 			ID:           "1",
 			Status:       journal.TaskOpen,
