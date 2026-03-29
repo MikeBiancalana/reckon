@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
 	notessvc "github.com/MikeBiancalana/reckon/internal/service"
@@ -174,15 +175,18 @@ func TestNoteFileStructure(t *testing.T) {
 
 	// Verify directory structure
 	notesDir, _ := config.NotesDir()
+	now := time.Now()
+	year := now.Format("2006")
+	yearMonth := now.Format("2006-01")
 
 	// Check year directory exists
-	yearPath := filepath.Join(notesDir, "2026")
+	yearPath := filepath.Join(notesDir, year)
 	if _, err := os.Stat(yearPath); os.IsNotExist(err) {
 		t.Errorf("Year directory not created: %s", yearPath)
 	}
 
 	// Check year-month directory exists
-	monthPath := filepath.Join(notesDir, "2026", "2026-02")
+	monthPath := filepath.Join(notesDir, year, yearMonth)
 	if _, err := os.Stat(monthPath); os.IsNotExist(err) {
 		t.Errorf("Month directory not created: %s", monthPath)
 	}
@@ -195,7 +199,7 @@ func TestNoteFileStructure(t *testing.T) {
 	}
 
 	// Verify file name matches pattern: yyyy-mm-dd-slug.md
-	expectedFilename := "2026-02-01-structure-test.md"
+	expectedFilename := now.Format("2006-01-02") + "-structure-test.md"
 	if filepath.Base(note.FilePath) != expectedFilename {
 		t.Errorf("Expected filename '%s', got '%s'", expectedFilename, filepath.Base(note.FilePath))
 	}

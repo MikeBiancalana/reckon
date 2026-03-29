@@ -39,11 +39,11 @@ func setupTaskServiceTest(t *testing.T) (*TaskService, *storage.FileStore, *stor
 	})
 
 	// Create repository and file store
-	repo := NewTaskRepository(db, nil)
+	repo := NewTaskRepository(db)
 	store := storage.NewFileStore()
 
 	// Create service
-	service := NewTaskService(repo, store, nil)
+	service := NewTaskService(repo, store)
 
 	return service, store, db, tmpDir
 }

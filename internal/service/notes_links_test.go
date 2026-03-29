@@ -1,17 +1,33 @@
 package service
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/models"
 	"github.com/MikeBiancalana/reckon/internal/storage"
 )
 
+func setupTestDB(t *testing.T) (*storage.Database, func()) {
+	t.Helper()
+	tempDir, err := os.MkdirTemp("", "notes-links-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := storage.NewDatabase(dbPath)
+	if err != nil {
+		os.RemoveAll(tempDir)
+		t.Fatalf("failed to create database: %v", err)
+	}
+	return db, func() { os.RemoveAll(tempDir) }
+}
+
 // TestGetOutgoingLinksWithNotes_Integration tests the enriched outgoing links query
 func TestGetOutgoingLinksWithNotes_Integration(t *testing.T) {
 	// Setup
-	db, cleanup := storage.NewTestDatabase(t)
+	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	repo := NewNotesRepository(db)
@@ -71,7 +87,7 @@ func TestGetOutgoingLinksWithNotes_Integration(t *testing.T) {
 // TestGetBacklinksWithNotes_Integration tests the enriched backlinks query
 func TestGetBacklinksWithNotes_Integration(t *testing.T) {
 	// Setup
-	db, cleanup := storage.NewTestDatabase(t)
+	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	repo := NewNotesRepository(db)
@@ -131,7 +147,7 @@ func TestGetBacklinksWithNotes_Integration(t *testing.T) {
 // TestGetOutgoingLinksWithNotes_UnresolvedLink tests handling of unresolved links
 func TestGetOutgoingLinksWithNotes_UnresolvedLink(t *testing.T) {
 	// Setup
-	db, cleanup := storage.NewTestDatabase(t)
+	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	repo := NewNotesRepository(db)
@@ -181,7 +197,7 @@ func TestGetOutgoingLinksWithNotes_UnresolvedLink(t *testing.T) {
 // TestNotesService_GetOutgoingLinksWithNotes_Wrapper tests service wrapper
 func TestNotesService_GetOutgoingLinksWithNotes_Wrapper(t *testing.T) {
 	// Setup
-	db, cleanup := storage.NewTestDatabase(t)
+	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	repo := NewNotesRepository(db)
@@ -233,7 +249,7 @@ func TestNotesService_GetOutgoingLinksWithNotes_Wrapper(t *testing.T) {
 // TestNotesService_GetBacklinksWithNotes_Wrapper tests service wrapper
 func TestNotesService_GetBacklinksWithNotes_Wrapper(t *testing.T) {
 	// Setup
-	db, cleanup := storage.NewTestDatabase(t)
+	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	repo := NewNotesRepository(db)

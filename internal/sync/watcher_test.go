@@ -21,7 +21,7 @@ func TestNewWatcher(t *testing.T) {
 	// Create service
 	fileStore := storage.NewFileStore()
 	repo := journal.NewRepository(db)
-	service := journal.NewService(repo, fileStore, nil)
+	service := journal.NewService(repo, fileStore)
 
 	// Create watcher
 	watcher, err := NewWatcher(service)
@@ -63,7 +63,7 @@ func TestWatcherStartStop(t *testing.T) {
 	// Create service
 	fileStore := storage.NewFileStore()
 	repo := journal.NewRepository(db)
-	service := journal.NewService(repo, fileStore, nil)
+	service := journal.NewService(repo, fileStore)
 
 	// Create watcher
 	watcher, err := NewWatcher(service)

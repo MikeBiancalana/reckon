@@ -23,7 +23,7 @@ func Example_scheduleItems() {
 	db, _ := storage.NewDatabase(dbPath)
 	fileStore := storage.NewFileStore()
 	repo := NewRepository(db)
-	service := NewService(repo, fileStore, nil)
+	service := NewService(repo, fileStore)
 
 	// Create a journal for today
 	date := time.Now().Format("2006-01-02")
