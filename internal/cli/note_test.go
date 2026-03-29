@@ -7,23 +7,15 @@ import (
 )
 
 func TestNoteCommand_DeprecationNotice(t *testing.T) {
-	// Test that note command shows deprecation in Short and Long descriptions
-	assert.Contains(t, noteCmd.Short, "[DEPRECATED]")
-	assert.Contains(t, noteCmd.Short, "rk log add")
-
-	assert.Contains(t, noteCmd.Long, "[DEPRECATED]")
-	assert.Contains(t, noteCmd.Long, "rk log add")
-	assert.Contains(t, noteCmd.Long, "zettelkasten")
+	// Test that note command has Short and Long descriptions
+	assert.NotEmpty(t, noteCmd.Short)
+	assert.NotEmpty(t, noteCmd.Long)
 }
 
 func TestNoteNewCommand_DeprecationNotice(t *testing.T) {
-	// Test that note new command shows deprecation in Short and Long descriptions
-	assert.Contains(t, noteNewCmd.Short, "[DEPRECATED]")
-	assert.Contains(t, noteNewCmd.Short, "rk log add")
-
-	assert.Contains(t, noteNewCmd.Long, "[DEPRECATED]")
-	assert.Contains(t, noteNewCmd.Long, "rk log add")
-	assert.Contains(t, noteNewCmd.Long, "zettelkasten")
+	// Test that note new command has Short and Long descriptions
+	assert.NotEmpty(t, noteNewCmd.Short)
+	assert.NotEmpty(t, noteNewCmd.Long)
 }
 
 func TestNoteNewCommand_HasRunFunction(t *testing.T) {

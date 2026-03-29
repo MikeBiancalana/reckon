@@ -46,8 +46,14 @@ type TaskNoteDeleteMsg struct {
 // FormatDateInfo returns a formatted date string for a task's schedule/deadline dates.
 func FormatDateInfo(task journal.Task) string { return formatDateInfo(task) }
 
+func localToday() time.Time {
+	now := time.Now()
+	y, m, d := now.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+}
+
 func formatDateInfo(task journal.Task) string {
-	today := time.Now().Truncate(24 * time.Hour)
+	today := localToday()
 	var parts []string
 
 	if scheduledDate, ok := parseDate(task.ScheduledDate); ok {
@@ -92,7 +98,7 @@ func formatFriendlyDate(t time.Time, today time.Time) string {
 func GetDateStyle(task journal.Task) lipgloss.Style { return getDateStyle(task) }
 
 func getDateStyle(task journal.Task) lipgloss.Style {
-	today := time.Now().Truncate(24 * time.Hour)
+	today := localToday()
 
 	if deadlineDate, ok := parseDate(task.DeadlineDate); ok {
 		daysUntil := int(deadlineDate.Sub(today).Hours() / 24)
@@ -122,7 +128,7 @@ func parseDate(dateStr *string) (time.Time, bool) {
 	if dateStr == nil || *dateStr == "" {
 		return time.Time{}, false
 	}
-	t, err := time.Parse("2006-01-02", *dateStr)
+	t, err := time.ParseInLocation("2006-01-02", *dateStr, time.Local)
 	if err != nil {
 		return time.Time{}, false
 	}

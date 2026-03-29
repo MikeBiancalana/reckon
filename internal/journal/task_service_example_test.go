@@ -31,7 +31,7 @@ func Example_taskService() {
 	defer db.Close()
 
 	// Create repository and file store
-	repo := journal.NewTaskRepository(db, nil)
+	repo := journal.NewTaskRepository(db)
 	store := storage.NewFileStore()
 
 	// Create service

@@ -769,8 +769,8 @@ Task with notes
 
 ## Log
 
-- note-001 First note
-- note-002 Second note
+  - note-001 First note
+  - note-002 Second note
 `
 		task, err := ParseTaskFile(content)
 		if err != nil {
@@ -866,8 +866,8 @@ func TestWriteTaskFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("WriteTaskFile failed: %v", err)
 		}
-		if !contains(content, "scheduled: 2025-01-15") {
-			t.Errorf("Expected frontmatter to contain 'scheduled: 2025-01-15', got:\n%s", content)
+		if !contains(content, `scheduled: "2025-01-15"`) {
+			t.Errorf("Expected frontmatter to contain 'scheduled: \"2025-01-15\"', got:\n%s", content)
 		}
 		if contains(content, "deadline:") {
 			t.Errorf("Expected no deadline in frontmatter, got:\n%s", content)
@@ -891,8 +891,8 @@ func TestWriteTaskFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("WriteTaskFile failed: %v", err)
 		}
-		if !contains(content, "deadline: 2025-01-20") {
-			t.Errorf("Expected frontmatter to contain 'deadline: 2025-01-20', got:\n%s", content)
+		if !contains(content, `deadline: "2025-01-20"`) {
+			t.Errorf("Expected frontmatter to contain 'deadline: \"2025-01-20\"', got:\n%s", content)
 		}
 		if contains(content, "scheduled:") {
 			t.Errorf("Expected no scheduled in frontmatter, got:\n%s", content)
@@ -917,11 +917,11 @@ func TestWriteTaskFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("WriteTaskFile failed: %v", err)
 		}
-		if !contains(content, "scheduled: 2025-01-15") {
-			t.Errorf("Expected frontmatter to contain 'scheduled: 2025-01-15', got:\n%s", content)
+		if !contains(content, `scheduled: "2025-01-15"`) {
+			t.Errorf("Expected frontmatter to contain 'scheduled: \"2025-01-15\"', got:\n%s", content)
 		}
-		if !contains(content, "deadline: 2025-01-20") {
-			t.Errorf("Expected frontmatter to contain 'deadline: 2025-01-20', got:\n%s", content)
+		if !contains(content, `deadline: "2025-01-20"`) {
+			t.Errorf("Expected frontmatter to contain 'deadline: \"2025-01-20\"', got:\n%s", content)
 		}
 		if !contains(content, "status: done") {
 			t.Errorf("Expected frontmatter to contain 'status: done', got:\n%s", content)

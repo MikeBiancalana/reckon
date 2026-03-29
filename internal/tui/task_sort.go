@@ -19,7 +19,9 @@ import (
 // Done tasks are excluded. Tasks within a bucket are stable-sorted by CreatedAt ascending.
 // now is the reference time used for date calculations (use time.Now() in production).
 func SortTasksByPriority(tasks []journal.Task, now stdtime.Time) []journal.Task {
-	today := now.Truncate(24 * stdtime.Hour)
+	y, m, d := now.Date()
+	loc := now.Location()
+	today := stdtime.Date(y, m, d, 0, 0, 0, 0, loc)
 	weekday := now.Weekday()
 	if weekday == stdtime.Sunday {
 		weekday = 7
@@ -37,7 +39,7 @@ func SortTasksByPriority(tasks []journal.Task, now stdtime.Time) []journal.Task 
 		if task.Status == journal.TaskDone {
 			continue
 		}
-		items = append(items, indexed{task: task, bucket: taskBucket(task, today, weekStart, weekEnd)})
+		items = append(items, indexed{task: task, bucket: taskBucket(task, today, weekStart, weekEnd, loc)})
 	}
 
 	sort.SliceStable(items, func(i, j int) bool {
@@ -55,33 +57,33 @@ func SortTasksByPriority(tasks []journal.Task, now stdtime.Time) []journal.Task 
 }
 
 // taskBucket returns the urgency bucket (0–3) for a task.
-func taskBucket(task journal.Task, today, weekStart, weekEnd stdtime.Time) int {
+func taskBucket(task journal.Task, today, weekStart, weekEnd stdtime.Time, loc *stdtime.Location) int {
 	// Bucket 0: overdue deadline
-	if d, ok := parseTaskDate(task.DeadlineDate); ok {
+	if d, ok := parseTaskDate(task.DeadlineDate, loc); ok {
 		if d.Before(today) {
 			return 0
 		}
 	}
 
 	// Bucket 1: due today OR scheduled today/past
-	if d, ok := parseTaskDate(task.DeadlineDate); ok {
+	if d, ok := parseTaskDate(task.DeadlineDate, loc); ok {
 		if d.Equal(today) {
 			return 1
 		}
 	}
-	if s, ok := parseTaskDate(task.ScheduledDate); ok {
+	if s, ok := parseTaskDate(task.ScheduledDate, loc); ok {
 		if s.Equal(today) || s.Before(today) {
 			return 1
 		}
 	}
 
 	// Bucket 2: due/scheduled this week
-	if d, ok := parseTaskDate(task.DeadlineDate); ok {
+	if d, ok := parseTaskDate(task.DeadlineDate, loc); ok {
 		if inWeek(d, weekStart, weekEnd) {
 			return 2
 		}
 	}
-	if s, ok := parseTaskDate(task.ScheduledDate); ok {
+	if s, ok := parseTaskDate(task.ScheduledDate, loc); ok {
 		if inWeek(s, weekStart, weekEnd) {
 			return 2
 		}
@@ -94,12 +96,12 @@ func inWeek(t, weekStart, weekEnd stdtime.Time) bool {
 	return (t.After(weekStart) || t.Equal(weekStart)) && t.Before(weekEnd)
 }
 
-// parseTaskDate parses a YYYY-MM-DD date string pointer.
-func parseTaskDate(dateStr *string) (stdtime.Time, bool) {
+// parseTaskDate parses a YYYY-MM-DD date string pointer in the given location.
+func parseTaskDate(dateStr *string, loc *stdtime.Location) (stdtime.Time, bool) {
 	if dateStr == nil || *dateStr == "" {
 		return stdtime.Time{}, false
 	}
-	t, err := stdtime.Parse("2006-01-02", *dateStr)
+	t, err := stdtime.ParseInLocation("2006-01-02", *dateStr, loc)
 	if err != nil {
 		return stdtime.Time{}, false
 	}
