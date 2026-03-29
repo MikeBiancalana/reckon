@@ -921,3 +921,31 @@ mainView := strings.Join(parts, "\n")
 - If a test assertion is trivially true (e.g., `assert nil == nil`), the test is no longer meaningful — remove or replace it
 
 **When to apply:** Any ticket that removes, replaces, or consolidates features.
+
+---
+
+### Time and Timezone Handling
+
+#### ❌ Anti-Pattern: time.Parse for Calendar Date Comparisons
+**Discovered in:** reckon-gcuu (2026-03-29)
+**Issue:** `time.Parse("2006-01-02", dateStr)` returns UTC midnight. Comparing against `time.Now().Truncate(24*time.Hour)` (also UTC midnight) seems consistent, but `today.Format("2006-01-02")` formats in *local* time — producing the wrong calendar date in UTC-offset timezones. The result: tasks due "today" appear overdue for users west of UTC.
+
+```go
+// BAD: mixes UTC parse with local-formatted "today"
+today := time.Now().Truncate(24 * time.Hour)  // UTC midnight
+t, _ := time.Parse("2006-01-02", dateStr)     // also UTC midnight, but today was formatted in local
+
+// GOOD: consistent local timezone throughout
+func localToday() time.Time {
+    now := time.Now()
+    y, m, d := now.Date()  // extracts in now's location (local)
+    return time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+}
+t, _ := time.ParseInLocation("2006-01-02", dateStr, time.Local)
+```
+
+**For testable functions** that accept `now time.Time`, derive `loc` from `now.Location()` and pass it to any parse calls so tests can inject UTC and stay consistent.
+
+**Frequency:** 🔴 (1 occurrence — but high impact: silent wrong behavior for UTC- users)
+
+**When to apply:** Any code that parses "YYYY-MM-DD" calendar dates and compares them to "today".
