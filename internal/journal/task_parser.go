@@ -190,7 +190,30 @@ func isValidDate(s string) bool {
 	return err == nil
 }
 
-func newTaskFromFrontmatter(fm *TaskFileFrontmatter, notes []TaskNote) *Task {
+// parseDescriptionFromBody extracts the content of the ## Description section from body
+func parseDescriptionFromBody(body string) string {
+	lines := strings.Split(body, "\n")
+	var descLines []string
+	inDesc := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "## Description" {
+			inDesc = true
+			continue
+		}
+		if inDesc {
+			if strings.HasPrefix(trimmed, "## ") {
+				break
+			}
+			descLines = append(descLines, line)
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(descLines, "\n"))
+}
+
+func newTaskFromFrontmatter(fm *TaskFileFrontmatter, description string, notes []TaskNote) *Task {
 	createdAt := time.Now()
 	if fm.Created != "" {
 		if parsed, err := time.Parse("2006-01-02", fm.Created); err == nil {
@@ -206,6 +229,7 @@ func newTaskFromFrontmatter(fm *TaskFileFrontmatter, notes []TaskNote) *Task {
 	return &Task{
 		ID:            fm.ID,
 		Text:          fm.Title,
+		Description:   description,
 		Status:        status,
 		Tags:          fm.Tags,
 		Notes:         notes,
@@ -260,9 +284,10 @@ func parseTaskFileContent(content string) (*Task, error) {
 
 	bodyStart := fmEnd + 1
 	body := strings.Join(lines[bodyStart:], "\n")
+	description := parseDescriptionFromBody(body)
 	notes := parseNotesFromBody(body)
 
-	return newTaskFromFrontmatter(fm, notes), nil
+	return newTaskFromFrontmatter(fm, description, notes), nil
 }
 
 // ParseTaskFile parses a task file with YAML frontmatter and returns a Task.

@@ -107,7 +107,7 @@ func (s *TaskService) MigrateTaskFilenames() error {
 			continue
 		}
 
-		frontmatter, _, err := parseTaskFile(string(content))
+		frontmatter, _, _, err := parseTaskFile(string(content))
 		if err != nil {
 			logger.Debug("MigrateTaskFilenames", "error", err, "file_path", filePath)
 			continue
@@ -185,7 +185,7 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 		}
 
 		// Parse file
-		frontmatter, notes, err := parseTaskFile(string(content))
+		frontmatter, description, notes, err := parseTaskFile(string(content))
 		if err != nil {
 			logger.Debug("GetAllTasks", "error", err, "file_path", filePath)
 			continue // Skip invalid files
@@ -207,6 +207,7 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 		task := Task{
 			ID:            frontmatter.ID,
 			Text:          frontmatter.Title,
+			Description:   description,
 			Status:        status,
 			Tags:          frontmatter.Tags,
 			Notes:         notes,
@@ -224,22 +225,23 @@ func (s *TaskService) GetAllTasks() ([]Task, error) {
 	return tasks, nil
 }
 
-// parseTaskFile extracts and parses the YAML frontmatter and notes from task content
-func parseTaskFile(content string) (*TaskFrontmatter, []TaskNote, error) {
+// parseTaskFile extracts and parses the YAML frontmatter, description, and notes from task content
+func parseTaskFile(content string) (*TaskFrontmatter, string, []TaskNote, error) {
 	parts := strings.Split(content, "---")
 	if len(parts) < 3 {
-		return nil, nil, fmt.Errorf("invalid frontmatter format")
+		return nil, "", nil, fmt.Errorf("invalid frontmatter format")
 	}
 
 	var fm TaskFrontmatter
 	if err := yaml.Unmarshal([]byte(parts[1]), &fm); err != nil {
-		return nil, nil, err
+		return nil, "", nil, err
 	}
 
 	body := parts[2]
+	description := parseDescriptionFromBody(body)
 	notes := parseNotesFromBody(body)
 
-	return &fm, notes, nil
+	return &fm, description, notes, nil
 }
 
 // parseNotesFromBody parses notes from the task file body
@@ -292,8 +294,8 @@ func validateTags(tags []string) []string {
 }
 
 // AddTask creates a new task and persists it, returning the task ID
-func (s *TaskService) AddTask(text string, tags []string) (string, error) {
-	logger.Debug("AddTask", "task_text", text, "tags", tags)
+func (s *TaskService) AddTask(text string, description string, tags []string) (string, error) {
+	logger.Debug("AddTask", "task_text", text, "description", description, "tags", tags)
 
 	// Validate and sanitize tags
 	tags = validateTags(tags)
@@ -306,7 +308,7 @@ func (s *TaskService) AddTask(text string, tags []string) (string, error) {
 	}
 
 	// Create new task with position at end
-	newTask := NewTask(text, tags, len(tasks))
+	newTask := NewTask(text, description, tags, len(tasks))
 	tasks = append(tasks, *newTask)
 
 	// Save to both file and DB
@@ -635,7 +637,7 @@ func writeTaskFile(task Task) string {
 		}
 	}
 
-	return fmt.Sprintf("---\n%s---\n\n## Description\n\n%s", string(yamlData), logSection)
+	return fmt.Sprintf("---\n%s---\n\n## Description\n\n%s\n\n%s", string(yamlData), task.Description, logSection)
 }
 
 // validateDate validates a date string in YYYY-MM-DD format

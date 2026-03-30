@@ -57,20 +57,21 @@ func setTaskDates(taskID, scheduleStr, deadlineStr string) error {
 }
 
 var (
-	taskStatusFlag      string
-	taskTagsFlag        []string
-	taskCompactFlag     bool
-	taskVerboseFlag     bool
-	taskFormatFlag      string
-	taskEditTitleFlag   string
-	taskEditTagsFlag    []string
-	taskMatchFlag       string
-	taskScheduledFlag   string
-	taskDeadlineFlag    string
-	taskOverdueFlag     bool
-	taskGroupedFlag     bool
-	taskNewScheduleFlag string
-	taskNewDeadlineFlag string
+	taskStatusFlag         string
+	taskTagsFlag           []string
+	taskCompactFlag        bool
+	taskVerboseFlag        bool
+	taskFormatFlag         string
+	taskEditTitleFlag      string
+	taskEditTagsFlag       []string
+	taskMatchFlag          string
+	taskScheduledFlag      string
+	taskDeadlineFlag       string
+	taskOverdueFlag        bool
+	taskGroupedFlag        bool
+	taskNewScheduleFlag    string
+	taskNewDeadlineFlag    string
+	taskNewDescriptionFlag string
 )
 
 // taskCmd represents the task command
@@ -94,7 +95,7 @@ var taskNewCmd = &cobra.Command{
 
 		// Check if we should launch the interactive form
 		// Launch form if: no title AND no flags are set
-		hasFlags := len(taskTagsFlag) > 0 || taskNewScheduleFlag != "" || taskNewDeadlineFlag != ""
+		hasFlags := len(taskTagsFlag) > 0 || taskNewScheduleFlag != "" || taskNewDeadlineFlag != "" || taskNewDescriptionFlag != ""
 		if title == "" && !hasFlags {
 			return launchTaskNewForm()
 		}
@@ -105,7 +106,7 @@ var taskNewCmd = &cobra.Command{
 		}
 
 		// Create task
-		taskID, err := journalTaskService.AddTask(title, taskTagsFlag)
+		taskID, err := journalTaskService.AddTask(title, taskNewDescriptionFlag, taskTagsFlag)
 		if err != nil {
 			return fmt.Errorf("failed to create task: %w", err)
 		}
@@ -117,6 +118,9 @@ var taskNewCmd = &cobra.Command{
 
 		if !quietFlag {
 			fmt.Printf("✓ Created task: %s\n", title)
+			if taskNewDescriptionFlag != "" {
+				fmt.Printf("  Description: %s\n", taskNewDescriptionFlag)
+			}
 			if len(taskTagsFlag) > 0 {
 				fmt.Printf("  Tags: %s\n", strings.Join(taskTagsFlag, ", "))
 			}
@@ -1140,6 +1144,12 @@ func launchTaskNewForm() error {
 		Required:    true,
 		Placeholder: "Enter task title",
 	}).AddField(components.FormField{
+		Label:       "Description",
+		Key:         "description",
+		Type:        components.FieldTypeText,
+		Required:    false,
+		Placeholder: "Optional task description",
+	}).AddField(components.FormField{
 		Label:       "Tags",
 		Key:         "tags",
 		Type:        components.FieldTypeText,
@@ -1189,6 +1199,8 @@ func createTaskFromForm(result *components.FormResult) error {
 		return fmt.Errorf("task title is required")
 	}
 
+	description := strings.TrimSpace(result.Values["description"])
+
 	// Parse tags from comma-separated string
 	var tags []string
 	if tagsStr := strings.TrimSpace(result.Values["tags"]); tagsStr != "" {
@@ -1201,7 +1213,7 @@ func createTaskFromForm(result *components.FormResult) error {
 	}
 
 	// Create the task
-	taskID, err := journalTaskService.AddTask(title, tags)
+	taskID, err := journalTaskService.AddTask(title, description, tags)
 	if err != nil {
 		return fmt.Errorf("failed to create task: %w", err)
 	}
@@ -1216,6 +1228,9 @@ func createTaskFromForm(result *components.FormResult) error {
 	// Print success message
 	if !quietFlag {
 		fmt.Printf("✓ Created task: %s\n", title)
+		if description != "" {
+			fmt.Printf("  Description: %s\n", description)
+		}
 		if len(tags) > 0 {
 			fmt.Printf("  Tags: %s\n", strings.Join(tags, ", "))
 		}
@@ -1647,6 +1662,7 @@ func init() {
 	taskNewCmd.Flags().StringSliceVar(&taskTagsFlag, "tags", []string{}, "Task tags (comma-separated)")
 	taskNewCmd.Flags().StringVar(&taskNewScheduleFlag, "schedule", "", "Schedule date (t, tm, +3d, mon, YYYY-MM-DD)")
 	taskNewCmd.Flags().StringVar(&taskNewDeadlineFlag, "deadline", "", "Deadline date (t, tm, +3d, mon, YYYY-MM-DD)")
+	taskNewCmd.Flags().StringVar(&taskNewDescriptionFlag, "description", "", "Task description")
 	taskListCmd.Flags().StringVar(&taskStatusFlag, "status", "", "Filter by status (open, active, done)")
 	taskListCmd.Flags().StringSliceVar(&taskTagsFlag, "tag", []string{}, "Filter by tags")
 	taskListCmd.Flags().BoolVar(&taskCompactFlag, "compact", false, "Show compact single-line output")

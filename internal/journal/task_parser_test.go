@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseTasksFile(t *testing.T) {
@@ -1057,4 +1060,65 @@ Test task
 			t.Errorf("Notes count mismatch: expected %d, got %d", len(task.Notes), len(parsedAgain.Notes))
 		}
 	})
+}
+
+func TestWriteTaskFile_WithDescription(t *testing.T) {
+	task := Task{
+		ID:          "test-123",
+		Text:        "My Task Title",
+		Description: "This is a detailed description of the task",
+		Status:      TaskOpen,
+		Tags:        []string{"work"},
+		CreatedAt:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+	}
+
+	content, err := WriteTaskFile(task)
+	require.NoError(t, err)
+	assert.Contains(t, content, "## Description\n\nThis is a detailed description of the task")
+	assert.NotContains(t, content, "## Description\n\nMy Task Title")
+
+	// Round-trip
+	parsed, err := ParseTaskFile(content)
+	require.NoError(t, err)
+	assert.Equal(t, "This is a detailed description of the task", parsed.Description)
+	assert.Equal(t, "My Task Title", parsed.Text)
+}
+
+func TestWriteTaskFile_EmptyDescription(t *testing.T) {
+	task := Task{
+		ID:          "test-456",
+		Text:        "My Task Title",
+		Description: "",
+		Status:      TaskOpen,
+		CreatedAt:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+	}
+
+	content, err := WriteTaskFile(task)
+	require.NoError(t, err)
+
+	// Round-trip
+	parsed, err := ParseTaskFile(content)
+	require.NoError(t, err)
+	assert.Equal(t, "", parsed.Description)
+	assert.Equal(t, "My Task Title", parsed.Text)
+}
+
+func TestParseTaskFile_DescriptionWithMarkdown(t *testing.T) {
+	content := `---
+id: test-789
+title: Test Task
+created: "2024-01-15"
+status: open
+---
+
+## Description
+
+This has **bold** and ## Log mentioned in text
+
+## Log
+
+`
+	parsed, err := ParseTaskFile(content)
+	require.NoError(t, err)
+	assert.Equal(t, "This has **bold** and ## Log mentioned in text", parsed.Description)
 }
