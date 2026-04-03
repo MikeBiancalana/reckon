@@ -949,3 +949,77 @@ t, _ := time.ParseInLocation("2006-01-02", dateStr, time.Local)
 **Frequency:** 🔴 (1 occurrence — but high impact: silent wrong behavior for UTC- users)
 
 **When to apply:** Any code that parses "YYYY-MM-DD" calendar dates and compares them to "today".
+
+---
+
+### TUI List Components
+
+#### ❌ Anti-Pattern: Index-Only Selection Identity After Re-Sort
+**Discovered in:** reckon-obed (2026-03-28)
+**Issue:** When a sorted list is reloaded, preserving only the numeric `selectedIndex` silently jumps the cursor to a different item if sort order changed.
+
+```go
+// BAD: index preserved across re-sort — but "task b" may now be at index 0
+m.selectedIndex = clampIndex(m.selectedIndex, len(m.tasks))
+
+// GOOD: capture ID before re-sort, restore cursor by ID afterward
+selectedID := m.tasks[m.selectedIndex].ID
+m.tasks = SortTasksByPriority(msg.tasks, now)
+for i, task := range m.tasks {
+    if task.ID == selectedID {
+        m.selectedIndex = i
+        break
+    }
+}
+```
+
+**Why it matters:** Users lose their place after any action that triggers a task reload (toggle, schedule, add note). The cursor visually stays put but now points to a different task.
+
+**When to apply:** Any time a sorted/filtered list is refreshed — always restore selection by identity (ID), not by position.
+
+#### ❌ Anti-Pattern: Scroll Offset Not Clamped on List Shrink
+**Discovered in:** reckon-obed (2026-03-28)
+**Issue:** A scroll offset that was valid when the list had N items can point past the end after the list shrinks.
+
+```go
+// BAD: offset left unclamped after reload
+m.tasks = newTasks
+
+// GOOD: clamp after any reload
+m.tasks = newTasks
+if m.taskScrollOffset >= len(m.tasks) {
+    m.taskScrollOffset = 0
+}
+```
+
+**Why it matters:** A stale scroll offset causes the render loop to show 0 items even though tasks exist.
+
+**When to apply:** Any handler that replaces a list's backing slice.
+
+---
+
+### Time and Timezone Handling
+
+#### ❌ Anti-Pattern: time.Parse for Calendar Date Comparisons
+**Discovered in:** reckon-gcuu (2026-03-29)
+**Issue:** `time.Parse("2006-01-02", dateStr)` returns UTC midnight. Comparing against `time.Now().Truncate(24*time.Hour)` (also UTC midnight) seems consistent, but `today.Format("2006-01-02")` formats in *local* time — producing the wrong calendar date in UTC-offset timezones. The result: tasks due "today" appear overdue.
+
+```go
+// BAD: mixes UTC parse with local-formatted "today"
+today := time.Now().Truncate(24 * time.Hour)  // UTC midnight
+t, _ := time.Parse("2006-01-02", dateStr)     // also UTC midnight, but "today" was formatted in local
+
+// GOOD: consistent local timezone throughout
+func localToday() time.Time {
+    now := time.Now()
+    y, m, d := now.Date()  // extracts in now's location (local)
+    return time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+}
+t, _ := time.ParseInLocation("2006-01-02", dateStr, time.Local)
+```
+
+**For testable functions** (those that accept `now time.Time`), derive `loc` from `now.Location()` and pass it to any parse calls so tests can inject UTC and stay consistent.
+
+**Frequency:** 🔴 (1 occurrence — but high impact: silent wrong behavior for UTC- users)
+
+**When to apply:** Any code that parses "YYYY-MM-DD" calendar dates and compares them to "today".
