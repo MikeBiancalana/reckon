@@ -198,7 +198,7 @@ func TestAddTask(t *testing.T) {
 	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add a task
-	_, err := service.AddTask("New task to complete", []string{})
+	_, err := service.AddTask("New task to complete", "", []string{})
 	require.NoError(t, err)
 
 	// Verify it was saved by reading back
@@ -225,13 +225,13 @@ func TestAddTask_MultipleTasksIncrementPosition(t *testing.T) {
 	service, _, _, _ := setupTaskServiceTest(t)
 
 	// Add multiple tasks
-	_, err := service.AddTask("First task", []string{})
+	_, err := service.AddTask("First task", "", []string{})
 	require.NoError(t, err)
 
-	_, err = service.AddTask("Second task", []string{})
+	_, err = service.AddTask("Second task", "", []string{})
 	require.NoError(t, err)
 
-	_, err = service.AddTask("Third task", []string{})
+	_, err = service.AddTask("Third task", "", []string{})
 	require.NoError(t, err)
 
 	// Verify positions
@@ -452,7 +452,7 @@ func TestSave_UpdatesBothFileAndDB(t *testing.T) {
 	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add a task
-	_, err := service.AddTask("Test task", []string{})
+	_, err := service.AddTask("Test task", "", []string{})
 	require.NoError(t, err)
 
 	// Verify task file exists in tasks directory
@@ -478,7 +478,7 @@ func TestService_FileIsSourceOfTruth(t *testing.T) {
 	service, _, _, tmpDir := setupTaskServiceTest(t)
 
 	// Add task via service
-	_, err := service.AddTask("Task from service", []string{})
+	_, err := service.AddTask("Task from service", "", []string{})
 	require.NoError(t, err)
 
 	// Manually create a different task file directly in tasks directory
@@ -507,10 +507,10 @@ func TestService_Integration(t *testing.T) {
 	service, _, _, _ := setupTaskServiceTest(t)
 
 	// Add multiple tasks
-	_, err := service.AddTask("Task 1", []string{})
+	_, err := service.AddTask("Task 1", "", []string{})
 	require.NoError(t, err)
 
-	_, err = service.AddTask("Task 2", []string{})
+	_, err = service.AddTask("Task 2", "", []string{})
 	require.NoError(t, err)
 
 	// Add notes to first task
@@ -713,4 +713,38 @@ func TestGetTasksByTimeframe_Empty(t *testing.T) {
 	assert.Empty(t, today)
 	assert.Empty(t, thisWeek)
 	assert.Empty(t, rest)
+}
+
+func TestAddTask_WithDescription(t *testing.T) {
+	service, _, _, tmpDir := setupTaskServiceTest(t)
+
+	_, err := service.AddTask("My task", "Detailed description here", []string{"work"})
+	require.NoError(t, err)
+
+	tasks, err := service.GetAllTasks()
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "My task", tasks[0].Text)
+	assert.Equal(t, "Detailed description here", tasks[0].Description)
+
+	// Verify file content
+	tasksDir := filepath.Join(tmpDir, "tasks")
+	files, err := os.ReadDir(tasksDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	content, err := os.ReadFile(filepath.Join(tasksDir, files[0].Name()))
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "## Description\n\nDetailed description here")
+}
+
+func TestAddTask_EmptyDescription(t *testing.T) {
+	service, _, _, _ := setupTaskServiceTest(t)
+
+	_, err := service.AddTask("My task", "", []string{})
+	require.NoError(t, err)
+
+	tasks, err := service.GetAllTasks()
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "", tasks[0].Description)
 }

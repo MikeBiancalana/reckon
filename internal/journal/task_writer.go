@@ -48,7 +48,7 @@ func WriteTaskFile(task Task) (string, error) {
 	sb.WriteString("---\n\n")
 
 	sb.WriteString("## Description\n\n")
-	sb.WriteString(task.Text)
+	sb.WriteString(task.Description)
 	sb.WriteString("\n\n")
 
 	if len(task.Notes) > 0 {

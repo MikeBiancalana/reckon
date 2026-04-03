@@ -106,6 +106,7 @@ func NewWin(text string, position int) *Win {
 type Task struct {
 	ID            string     `json:"id"`
 	Text          string     `json:"text"`
+	Description   string     `json:"description,omitempty"`
 	Status        TaskStatus `json:"status"`
 	Tags          []string   `json:"tags"`
 	Notes         []TaskNote `json:"notes"`
@@ -116,15 +117,16 @@ type Task struct {
 }
 
 // NewTask creates a new task with a generated ID
-func NewTask(text string, tags []string, position int) *Task {
+func NewTask(text string, description string, tags []string, position int) *Task {
 	return &Task{
-		ID:        xid.New().String(),
-		Text:      text,
-		Status:    TaskOpen,
-		Tags:      tags,
-		Notes:     make([]TaskNote, 0),
-		Position:  position,
-		CreatedAt: time.Now(),
+		ID:          xid.New().String(),
+		Text:        text,
+		Description: description,
+		Status:      TaskOpen,
+		Tags:        tags,
+		Notes:       make([]TaskNote, 0),
+		Position:    position,
+		CreatedAt:   time.Now(),
 	}
 }
 
