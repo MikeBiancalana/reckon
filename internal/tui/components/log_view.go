@@ -48,6 +48,7 @@ func findLogNoteText(notes []journal.LogNote, noteID string) string {
 // LogDelegate handles rendering of log entry items
 type LogDelegate struct {
 	collapsedMap map[string]bool // logEntryID -> isCollapsed
+	width        int
 }
 
 func (d LogDelegate) Height() int                               { return 1 }
@@ -92,6 +93,11 @@ func (d LogDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 
 		text = fmt.Sprintf("%s%s %s: %s", indicator, timeStr, icon, item.entry.Content)
 		style = logStyle
+	}
+
+	// Truncate to available width to prevent pane from expanding horizontally
+	if d.width > 0 {
+		text = lipgloss.NewStyle().MaxWidth(d.width).Render(text)
 	}
 
 	// Highlight selected item
@@ -151,6 +157,7 @@ type LogView struct {
 	collapsedMap map[string]bool
 	logEntries   []journal.LogEntry // keep track of original log entries for state management
 	focused      bool
+	width        int
 }
 
 func NewLogView(logEntries []journal.LogEntry) *LogView {
@@ -254,7 +261,7 @@ func (lv *LogView) Update(msg tea.Msg) (*LogView, tea.Cmd) {
 			items := buildLogItems(lv.logEntries, lv.collapsedMap)
 			lv.list.SetItems(items)
 
-			delegate := LogDelegate{collapsedMap: lv.collapsedMap}
+			delegate := LogDelegate{collapsedMap: lv.collapsedMap, width: lv.width}
 			lv.list.SetDelegate(delegate)
 
 			if isCollapsing {
@@ -284,7 +291,9 @@ func (lv *LogView) View() string {
 
 // SetSize sets the size of the list
 func (lv *LogView) SetSize(width, height int) {
+	lv.width = width
 	lv.list.SetSize(width, height)
+	lv.list.SetDelegate(LogDelegate{collapsedMap: lv.collapsedMap, width: lv.width})
 }
 
 // SetFocused sets whether this component is focused
@@ -323,7 +332,7 @@ func (lv *LogView) UpdateLogEntries(logEntries []journal.LogEntry) {
 	}
 
 	// Update delegate with current collapsed map
-	delegate := LogDelegate{collapsedMap: lv.collapsedMap}
+	delegate := LogDelegate{collapsedMap: lv.collapsedMap, width: lv.width}
 	lv.list.SetDelegate(delegate)
 }
 
