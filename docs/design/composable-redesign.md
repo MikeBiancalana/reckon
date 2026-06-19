@@ -127,8 +127,8 @@ cases.
    2026-06-19:** yes, mixed is fine once **file** (storage) and **node**
    (address) are split. Per-tool scope table + two granularity rules recorded in
    the "Atoms" section.
-2. Does history/undo matter enough to pay for an event log (B), or is git history
-   enough?
+2. ~~History/undo worth an event log (B), or is git history enough?~~ **Resolved
+   2026-06-19:** git history is enough. Event log killed; see Decision log.
 3. ~~Is linking core (everything-is-a-node) or just notes-link-notes?~~ **Mostly
    resolved 2026-06-19:** nodes span all *durable* types (todo, note, log entry,
    checklist run), not notes-only — so linking is core. But addressability is
@@ -270,6 +270,54 @@ Spectrum: **file-per-item** (note, todo) ←→ **file-per-group** (ephemeral). 
 **promotion path** (ephemeral → durable todo) is the bridge when a throwaway
 turns out to matter and needs an address.
 
+## Node ID scheme — prior art & leaning (decision pending)
+
+> Status: research recorded; canonical scheme not yet locked. Links *inside*
+> items (block-level) are a confirmed requirement — that's a main point of links.
+
+### Prior art
+
+| System | ID scheme | Stored as | Lesson |
+|---|---|---|---|
+| Luhmann Zettelkasten | Folgezettel `21/3d7a6` (encodes lineage) | — | structure-in-ID is brittle, position-coupled; abandoned digitally |
+| Digital zettel (The Archive, Zettlr) | timestamp `20260619T1430` | inside note | sortable, decentralized, decoupled from title; minute-collisions → add seconds |
+| Obsidian | filename = note ID; `^blockid` (short random) for blocks; `#Heading` | filename + inline `^` | **two levels** (note + block); path-as-ID is rename-fragile (app must rewrite links) |
+| Roam / Logseq | block-level UUID `((uuid))` | DB / inline `id::` line | everything addressable at block grain; UUIDs unauthorable; Logseq keeps them inline in md |
+| org-mode (org-id) | UUID in `:ID:` drawer; `:CUSTOM_ID:` human alias | property on node | ID as a *property*, decoupled from heading; opaque ID + optional human alias |
+| TiddlyWiki | title = ID | — | title-as-identity → rename = identity change |
+| git | content hash (SHA) | — | content-addressing → identity changes on edit; WRONG for mutable nodes, right for snapshots |
+| beads (this repo) | `reckon-4u1c` = prefix + base32 token | DB | namespace prefix + short random; works, but namespace-in-ID couples to classification |
+| ULID / UUIDv7 | 128-bit, time-sortable, unique | inline | timestamp-sortability + guaranteed uniqueness, decentralized |
+
+### Lessons
+
+1. **Decouple ID from title, path, AND content.** Store it *inside* the item as
+   a property/anchor. Kills rename-fragility (Obsidian/TiddlyWiki) and
+   edit-fragility (git-hash). org-id and timestamp-zettel get this right.
+2. **Two levels.** node ID + block `^id`; links inside items = `[[nodeid#blockid]]`.
+   Universal across Obsidian/Roam/Logseq/org. Well-trodden, surmountable.
+3. **Decentralized minting** (you + agents + devices) → random or time+entropy,
+   no central counter. ULID/UUIDv7 ideal.
+4. **Time-sortable = free win** — chronological order straight from the ID.
+5. **Opaque ID + optional human alias** — identity opaque/stable; layer a
+   slug/`CUSTOM_ID` for readable, re-pointable links.
+6. **Do NOT bake type into the ID** — the promotion path (ephemeral→todo, maybe
+   todo→note) reclassifies, and a type/namespace prefix would break links on
+   promotion. Store type as a property. (beads bakes the namespace in only
+   because its issues don't migrate type; reckon's nodes do.)
+
+### Current leaning (not final)
+
+- Canonical node ID = **ULID** — sortable, unique, decentralized, plain-text,
+  type-agnostic.
+- Stored inline: frontmatter `id:` for file-per-item; per-block `^ulid` / `id::`
+  for items packed in a group file.
+- Block ID = short token; `[[nodeid#blockid]]`.
+- Human **aliases** (date for journal, slug for notes) layered on top; resolver
+  maps alias → ULID. One canonical scheme + readable links (`[[2026-06-19]]`,
+  `[[my-note-slug]]` both resolve to ULIDs).
+- Type = property, never in the ID.
+
 ## Decision log
 
 ### 2026-06-19 — Integration model = graph-query (read glue)
@@ -319,6 +367,20 @@ high-volume/low-value/short-lived, isolate durable/linked/history-worthy.*
 Per-tool scope table recorded in the "Atoms" section. Ephemeral tasks
 deliberately get **no** stable address; promotion to a durable todo is the
 keep-it bridge.
+
+### 2026-06-19 — Event log (substrate option B): killed
+The append-only event log is **out**. Property-graph-in-SQLite + git together
+cover the history/time-travel needs that motivated it (git = history/undo;
+SQLite index = current-state queries; timestamps + day-files = temporal log).
+Not worth the cost (not greppable, projection layer, heavier). Substrate is
+plain-text files (option A/C blend) + derived property-graph index.
+
+### 2026-06-19 — Node ID scheme: research logged, leaning ULID + aliases (pending)
+Block-level links inside items confirmed as a requirement. Prior art + lessons
+recorded in the "Node ID scheme" section. Leaning: canonical ULID stored inline,
+decoupled from title/path/content; block `^id` for intra-item anchors; human
+aliases (date/slug) resolving to ULIDs; type kept as a property, never in the
+ID (because the promotion path reclassifies). Not yet locked.
 
 ## Parking lot / notes
 
