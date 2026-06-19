@@ -259,7 +259,7 @@ matter. The costs self-select away.
 
 | Tool | file (storage atom) | node (addressable atom) | Notes |
 |---|---|---|---|
-| Journal / log | 1 file per day | the day + each entry (timestamp = free stable ID) | appended through the day; link a date or a moment |
+| Journal / log | 1 file per day | the day + each entry (each a node, own ULID; date/time as alias) | appended through the day; link a date or a moment |
 | Todo (durable) | 1 file per todo | the todo (1:1) | deps are edges → IDs mandatory; fine git history wanted |
 | Note (zettel) | 1 file per note | the note (1:1); blocks optional via `^id` | densely linked; file-per-item is the right fit |
 | Checklist — template | 1 file per template | the template | reusable definition; items usually not addressed |
@@ -272,8 +272,9 @@ turns out to matter and needs an address.
 
 ## Node ID scheme — prior art & leaning (decision pending)
 
-> Status: research recorded; canonical scheme not yet locked. Links *inside*
-> items (block-level) are a confirmed requirement — that's a main point of links.
+> Status: **DECIDED 2026-06-19.** Canonical = ULID; human aliases allowed;
+> block-level addressing = node-local fragment IDs appended to the node ULID
+> (`ULID#frag`). Links inside items are a confirmed requirement.
 
 ### Prior art
 
@@ -306,17 +307,33 @@ turns out to matter and needs an address.
    promotion. Store type as a property. (beads bakes the namespace in only
    because its issues don't migrate type; reckon's nodes do.)
 
-### Current leaning (not final)
+### Decision (2026-06-19) — locked
 
-- Canonical node ID = **ULID** — sortable, unique, decentralized, plain-text,
-  type-agnostic.
-- Stored inline: frontmatter `id:` for file-per-item; per-block `^ulid` / `id::`
-  for items packed in a group file.
-- Block ID = short token; `[[nodeid#blockid]]`.
-- Human **aliases** (date for journal, slug for notes) layered on top; resolver
-  maps alias → ULID. One canonical scheme + readable links (`[[2026-06-19]]`,
-  `[[my-note-slug]]` both resolve to ULIDs).
-- Type = property, never in the ID.
+- **Canonical node ID = ULID.** Sortable, unique, decentralized, plain-text,
+  type-agnostic. The authoritative identity.
+- **A file holds 1..N nodes, each with its own ULID, stored inline.** Two cases,
+  not to be conflated:
+  - *file-per-item* (note, todo): node ULID in frontmatter `id:`.
+  - *group file* (journal day, ephemeral inbox): one ULID per contained node,
+    marked inline per item (`id::`-style); the container is itself a node with
+    its own ULID.
+- **Block / fragment addressing = node-local sub-IDs appended to the node ULID**,
+  URL-fragment style: `ULID#frag`. Different level, simpler scheme — the sub-ID
+  need only be unique *within* its node, so it stays short.
+  - Sub-IDs are **stable tokens, never positional** (line/ordinal breaks on
+    edit — the decouple-from-content lesson, recursed).
+  - A block gets a sub-ID **only when it becomes a link target**
+    (*addressability = durability*, recursing to block level). Unlinked prose
+    carries no ID at any level.
+- **Human aliases** allowed, non-authoritative: date for a journal day
+  (`2026-06-19`), slug for a note (`my-note-slug`), time for an entry. Resolver
+  maps alias → ULID. Links may be written `[[ULID]]`, `[[ULID#frag]]`,
+  `[[alias]]`, or `[[alias#frag]]`.
+- **Type = property, never in the ID** (the promotion path reclassifies).
+
+The per-tool **file→node parser** is exactly what splits a file into its nodes
+(assigning/reading each ULID) and exposes their fragments — this is where the
+two cases above are handled, keeping the core indexer generic.
 
 ## Decision log
 
@@ -380,7 +397,19 @@ Block-level links inside items confirmed as a requirement. Prior art + lessons
 recorded in the "Node ID scheme" section. Leaning: canonical ULID stored inline,
 decoupled from title/path/content; block `^id` for intra-item anchors; human
 aliases (date/slug) resolving to ULIDs; type kept as a property, never in the
-ID (because the promotion path reclassifies). Not yet locked.
+ID (because the promotion path reclassifies). Locked later same day — see the
+LOCKED entry below.
+
+### 2026-06-19 — Node ID scheme: LOCKED
+ULID = canonical node identity. A file holds 1..N nodes, each with its own ULID
+inline (file-per-item → frontmatter `id:`; group file → one ULID per contained
+node + the container is its own node). Block-level addressing = node-local
+sub-IDs appended URL-fragment style (`ULID#frag`), unique only within the node,
+**stable tokens not positional**, assigned **only when a block is linked**.
+Human aliases (date/slug/time) allowed, non-authoritative; resolver maps
+alias → ULID; links written as `[[ULID]]`, `[[ULID#frag]]`, `[[alias]]`,
+`[[alias#frag]]`. Type stays a property. The per-tool file→node parser owns the
+file-splitting and ULID assignment.
 
 ## Parking lot / notes
 
