@@ -137,11 +137,9 @@ cases.
 4. ~~What does cross-tool composition look like concretely?~~ **Resolved
    2026-06-19:** graph-query over a shared property-graph index; views = saved
    queries; agent authors them. See Decision log.
-5. ~~Interchange format when tools talk?~~ **Reopened 2026-06-19:** the same-type
-   pipe case arrived (promotion). Need a canonical node interchange format —
-   NDJSON node envelope (`ulid?`, `type`, `time`, `props`, `body`, `fragments`,
-   `links`), which equals the file→node parser's serialized output. Field-level
-   spec pending; ties to the parser contract.
+5. ~~Interchange format when tools talk?~~ **Resolved 2026-06-19:** the canonical
+   node spec (NDJSON envelope) is the interchange format, and it equals the
+   file→node parser's output. See "Canonical node (spec)".
 
 ## Integration shape — graph-query (worked detail)
 
@@ -389,6 +387,119 @@ Shape: `rk <src> --<disposition> <ID> | rk <dst> --import`.
 - (Other mechanisms: drop-file / maildir is usually just `--import`'s backend —
   emit writes a node-file into the dest dir, the indexer picks it up.)
 
+## Canonical node (spec)
+
+The keystone artifact. One representation, four consumers:
+1. **parser** — `file → [node]` (splits a file into nodes).
+2. **promotion** — pipes nodes between tools (emit/import).
+3. **indexer** — nodes → property graph (nodes, edges, FTS, alias map).
+4. **resolver** — index → alias→ULID, ref→file, `ULID#frag`→span.
+
+Spec it once; the plumbing collapses into it.
+
+### Two faces
+
+- **Inline (on disk)** — what's authored in the text file: frontmatter + body +
+  inline markers. Human/tool/agent writes this. Source of truth.
+- **Envelope (NDJSON)** — the parser's normalized output: every inline fact plus
+  parser-derived fields (`loc`, `hash`, `mtime`, `v`). Flows through pipes and
+  into the index. A superset of the inline facts.
+
+### Fields
+
+| Field | Where | Req | Type | Meaning |
+|---|---|---|---|---|
+| `ulid` | inline + env | yes¹ | string(26) | canonical identity (Crockford base32). ¹absent only on unaddressed emit; import mints it |
+| `type` | inline + env | yes | string | node type — a *property*, never in the ULID |
+| `time` | inline + env | yes | RFC3339 | semantic timestamp (may differ from the ULID's mint time, e.g. backdated log) |
+| `body` | inline + env | yes | string | text content (markdown) |
+| `aliases` | inline + env | no | [string] | human handles resolving to this ULID; unique in the alias namespace; non-authoritative |
+| `props` | env (from inline fields) | no | object | per-type open bag (todo: `state`,`due`; note: `tags`,`title`; run: `items`). Core indexes generically, does not schematize |
+| `fragments` | inline markers + env | no | [{`id`,`anchor?`}] | node-local sub-anchors; `id` unique *within* node; emitted only when targeted |
+| `links` | env (from body + ref-props) | no | [{`rel`,`to`,`from_frag?`,`to_frag?`}] | forward typed edges; `to` = ULID or alias (resolved later) |
+| `loc` | **env only** | yes² | {`file`,…} | source file; parser-derived; not authored inline. ²required in the envelope |
+| `hash` | env only | no | string | body hash (change detection/dedupe); derived |
+| `mtime` | env only | no | RFC3339 | last modified (git/file); derived |
+| `v` | env only | no | int | envelope schema version (forward-compat) |
+
+### Invariants
+
+1. **Forward + authored only.** A node stores forward, authored facts. *All*
+   reverse/aggregate views (backlinks, "what links here", counts) are
+   **index-derived and never stored.** No duplicated truth.
+2. **Inline ULID is truth.** Filename may mirror the ULID (file-per-item) but the
+   inline `id:` wins.
+3. **`links` is the normalized edge set.** Two authored sources feed it:
+   ref-valued **props** → typed edges (`depends: [[X]]` → `depends-on`); body
+   **`[[...]]`** → generic `references` edges. Reserved rels: `references`,
+   `derived-from` (promotion), plus per-type typed rels (`depends-on`,
+   `contains`, `child-of`). Otherwise an open vocabulary.
+4. **Resolution is the index's job, not the parser's.** Envelope `to`/`aliases`
+   may be unresolved (alias or ULID); the resolver maps them.
+5. **Type-agnostic ULID** → `--pop` move preserves identity across a type change;
+   inbound links survive promotion.
+
+### Examples
+
+Inline — a todo at `todos/01J9Z3K7Q2W8XR4M6N0V5BYHED.md`:
+
+```markdown
+---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHED
+type: todo
+time: 2026-06-19T09:14:03-05:00
+aliases: [buy-milk]
+state: open
+due: 2026-06-22
+depends: [[01J9Z2QH8M...]]
+---
+Buy milk for the week. See [[grocery-plan]] for brands.
+```
+
+Envelope (one NDJSON line; pretty-printed here):
+
+```json
+{
+  "v": 1,
+  "ulid": "01J9Z3K7Q2W8XR4M6N0V5BYHED",
+  "type": "todo",
+  "time": "2026-06-19T09:14:03-05:00",
+  "aliases": ["buy-milk"],
+  "props": { "state": "open", "due": "2026-06-22" },
+  "body": "Buy milk for the week. See [[grocery-plan]] for brands.",
+  "fragments": [],
+  "links": [
+    { "rel": "depends-on", "to": "01J9Z2QH8M..." },
+    { "rel": "references", "to": "grocery-plan" }
+  ],
+  "loc": { "file": "todos/01J9Z3K7Q2W8XR4M6N0V5BYHED.md" }
+}
+```
+
+Routing: `state`/`due` → `props`; `depends` (ref-valued prop) → a `depends-on`
+edge; body `[[grocery-plan]]` → a `references` edge with an *alias* target the
+resolver resolves later.
+
+Group file — a log day `log/2026-06-19.md` parses to **N+1 nodes**: one
+`log-day` node (alias `2026-06-19`) plus one `log-entry` node per timestamped
+entry, each with its own ULID. The day carries `contains` edges to its entries.
+One envelope line per node.
+
+### Parser contract (the keystone, now concrete)
+
+Each tool ships one pair; the core stays generic and calls it:
+
+- `parse(file) -> []Node` — split a file into its nodes, fill
+  `ulid/type/time/body/props/fragments/links/loc`.
+- `serialize(node) -> inlineText` — the inverse, for writing into the store.
+
+Everything else reduces to that pair:
+- **emit** = read node(s) → `serialize` to NDJSON on stdout.
+- **import** = read NDJSON from stdin → mint `ulid` if absent → `serialize` into
+  the tool's own store.
+- **index** = `parse` every file → upsert nodes/edges/FTS/aliases.
+- **resolve** = query the index.
+
 ## Decision log
 
 ### 2026-06-19 — Integration model = graph-query (read glue)
@@ -486,6 +597,22 @@ file→node parser's serialized output. Atomicity via git-history recovery (raw
 pipe) or a transactional `rk promote` dispatcher verb. Confirms the integration
 split: **graph-query = read/heterogeneous, pipe = move/homogeneous.** Event bus
 stays deferred.
+
+### 2026-06-19 — Canonical node spec'd (keystone)
+One artifact serves parser output, promotion interchange, index input, and
+resolver input. Two faces: **inline** (authored truth) and **NDJSON envelope**
+(parser-normalized superset with derived `loc`/`hash`/`mtime`/`v`). Fields:
+`ulid` (type-agnostic), `type` (a prop), `time` (semantic), `body`, `aliases`,
+`props` (per-type open bag), `fragments` (node-local), `links` (forward typed
+edges fed by ref-props + body `[[..]]`), plus env-only `loc`. Invariants: nodes
+store **forward/authored facts only** — all reverse/aggregate is index-derived,
+never stored; inline ULID is truth; resolution is the index's job. **Parser
+contract** = `parse(file)->[]node` + `serialize(node)->text` per tool;
+emit/import/index/resolve all reduce to that pair. Settles open-Q #5 (interchange
+format) and the parser-contract thread. Judgment defaults (vetoable): `time`
+semantic+required; envelope `v` version; open rel vocab w/ reserved set;
+day→`contains`→entries; typed edges from props + generic from body (`[[rel:target]]`
+syntax deferred).
 
 ## Parking lot / notes
 
