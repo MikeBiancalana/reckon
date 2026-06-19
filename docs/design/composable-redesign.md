@@ -542,6 +542,93 @@ Because tools are packages, the binary layout is a *build-time* choice: one
 separate binaries. Same code, either or both targets. **Commit now to the
 contract (node format + boundary discipline), not the process count.**
 
+## Relationship to existing systems & to current reckon
+
+### To current reckon — closer than the README suggests
+
+Code inspection (2026-06-19) shows the redesign's DNA already present:
+- **Modular packages per domain** — `journal`, `checklist`, `note`, `time`,
+  `tui`, `cli`, `storage`, `parser`, `service`. Already decomposed by domain.
+- **Time-sortable decentralized inline ID** — `rs/xid` (12-byte, base32,
+  time-ordered). ULID's role is already filled; xid→ULID is near-cosmetic.
+- **A link graph with backlinks** — `note_links(source, target, target_slug)`.
+  Zettelkasten linking already exists, slug-addressed.
+- **SQLite index**, per-type tables (`tasks`, `notes`, `note_links`,
+  `log_entries`, `intentions`, `wins`, `schedule_items`, `checklist_*`).
+- **Slugs** ≈ the alias layer.
+
+**Evolution of the DNA, revolution of the structure.** Delta:
+
+| Redesign change | vs current |
+|---|---|
+| One unified node + one edges graph across all types | per-type tables; links only note↔note. Generalize `note_links` → universal typed edges |
+| All types = plain-text-truth, index disposable | journal is markdown; tasks/notes/checklists appear SQLite-primary. Invert → text truth everywhere (biggest change; verify current truth) |
+| Packages behind multi-call `rk` + PATH extensions | one program, no extension point |
+| Promotion, block `#frag`, alias resolver, agent-first | none (note-level links only, human-first) |
+| xid → ULID | trivial |
+
+**Verdict: a refactor of an already-modular codebase ~60% of the way there, not a
+greenfield rewrite.** Salvageable: parser, storage, TUI (→ a view over the
+index), xid, `note_links` logic.
+
+### To other systems — borrowed parts, unshipped whole
+
+- **Closest scope/philosophy: org-mode + org-roam** — text; todo+agenda+journal+
+  notes+checklists; `org-id`; org-roam keeps a **SQLite link cache** over
+  markdown; **capture+refile = promotion**; agenda ≈ graph-query. Differs:
+  Emacs-locked, Lisp, not CLI-composable, not agent-first.
+- **Closest execution: `zk`** (markdown + SQLite index + link graph), **`nb`**
+  (git-backed plain-text CLI multi-tool), **taskwarrior+timewarrior** (separate
+  composable binaries; custom store, no graph).
+- **Closest data model: Tana / Anytype / Notion** — typed nodes + relations +
+  queried views. Differs: proprietary, GUI/cloud, not text/git/CLI.
+- **Note-graph GUIs: Obsidian, Logseq** — markdown + links + block refs +
+  plugins/queries; cover note+todo+journal in one app. Differ: GUI monolith,
+  not pipeable/agent-oriented.
+
+**Novelty verdict:** every factor is borrowed; the *intersection* isn't shipped:
+> {plain-text+git truth} × {one typed-node property-graph across **all**
+> domains} × {strict UNIX-composable CLI + node-pipe} × {**agent-first**} ×
+> {type-agnostic ULID + promotion}
+
+Nearest single thing — "org-roam as composable CLI for agents" — doesn't exist.
+
+### Worth building? — validated by lived experience
+
+User's PKM history maps directly onto the design's bets:
+
+- **org-mode / org-roam** — loved; left due to **Emacs lock-in + no elisp**.
+  Still uses **Orgzly** on phone for todos/reminders (great). → validates
+  "org-roam data model without Emacs"; mobile plain-text works.
+- **Obsidian** — liked the feel, but **too little structure out of the box** →
+  decision paralysis (separate note or not? where does it go? how to organize?).
+  Couldn't build a *system*. Still uses for long-form wiki notes. → **opinionated
+  structure is a feature, not a bug** — the core anti-Obsidian bet.
+- **Logseq** — heavy use; loved **append-to-daily-log then branch off to a note**
+  (enough structure to feel progress). But **todo tracking falls short**: query
+  view → **scheduling → doing is not smooth**; and **no division between
+  ephemeral and durable** tasks/reminders (also true in Obsidian). → validates
+  the ephemeral/durable split and a smooth query→schedule→do path as core gaps.
+- **Sync** — **Syncthing** syncs Logseq + Orgzly + Obsidian files to phone now.
+  nvim primary on desktop; **Obsidian as optional mobile GUI**. → plain-text +
+  Syncthing is the proven substrate; Obsidian-flavored markdown is *actively
+  wanted*, not merely a hedge.
+
+### Derived requirements
+
+1. **Opinionated structure out of the box** — typed tools with clear homes; no
+   blank-canvas paralysis. The structure *is* the product (anti-Obsidian).
+2. **Daily-log capture + branch-to-note as first-class** — Logseq's loved flow;
+   maps onto journal (capture) + promotion (`--ref` log-entry → note, backlinked).
+3. **Ephemeral vs durable split** — a felt gap; already core. Keep central.
+4. **Smooth query → schedule → do** — Logseq's pain; the todo/schedule tools must
+   close the gap from "queried list" to "scheduled & actionable." (current reckon
+   already has `schedule_items` + scheduled/deadline — salvage.)
+5. **Plain-text + Syncthing mobile; Obsidian-compatible on-disk format.** Only
+   text syncs; the **SQLite index is per-device, derived, regenerated — never
+   synced** (reinforces "index disposable"). reckon files coexist in a synced
+   vault alongside Obsidian/Logseq.
+
 ## Decision log
 
 ### 2026-06-19 — Integration model = graph-query (read glue)
@@ -667,6 +754,22 @@ experimental, heavyweight, exotic, or polyglot modules — which can live on PAT
 or graduate into the core once proven. Packaging (one main vs many) is a
 build-time choice deferred by the package structure; the committed thing is the
 contract, not the process count.
+
+### 2026-06-19 — Assessment: build is warranted; ~60% already in reckon
+The redesign targets gaps the user has personally hit and not solved in org-roam
+(Emacs lock-in), Obsidian (too generic → paralysis), or Logseq (weak
+todo→schedule→do flow, no ephemeral/durable split). No existing system ships the
+intersection (text+git × unified typed-node graph × UNIX-composable CLI ×
+agent-first × ULID+promotion). Current reckon already has modular packages, xid
+(≈ULID), `note_links` (a link graph), a SQLite index, and slugs — so this is a
+refactor, not a greenfield rewrite. Build warranted.
+
+### 2026-06-19 — On-disk format: Obsidian-flavored markdown; index never synced
+Adopt Obsidian-compatible markdown (`[[links]]`, `^block`, frontmatter) so the
+user's existing nvim-desktop + Obsidian-mobile + Syncthing workflow keeps working
+and the parser rides a format real editors already render. Only plain-text files
+sync (git + Syncthing); the SQLite index is per-device, regenerated from text,
+**never synced** — consistent with the index being disposable/derived.
 
 ## Parking lot / notes
 
