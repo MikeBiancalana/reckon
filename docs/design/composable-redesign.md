@@ -137,9 +137,11 @@ cases.
 4. ~~What does cross-tool composition look like concretely?~~ **Resolved
    2026-06-19:** graph-query over a shared property-graph index; views = saved
    queries; agent authors them. See Decision log.
-5. ~~Interchange format when tools talk?~~ **Mostly moot 2026-06-19:** the shared
-   index *is* the integration; tools don't pipe to each other. If a same-type
-   pipe case ever arises, decide format then (likely JSON lines).
+5. ~~Interchange format when tools talk?~~ **Reopened 2026-06-19:** the same-type
+   pipe case arrived (promotion). Need a canonical node interchange format —
+   NDJSON node envelope (`ulid?`, `type`, `time`, `props`, `body`, `fragments`,
+   `links`), which equals the file→node parser's serialized output. Field-level
+   spec pending; ties to the parser contract.
 
 ## Integration shape — graph-query (worked detail)
 
@@ -319,7 +321,8 @@ turns out to matter and needs an address.
     its own ULID.
 - **Block / fragment addressing = node-local sub-IDs appended to the node ULID**,
   URL-fragment style: `ULID#frag`. Different level, simpler scheme — the sub-ID
-  need only be unique *within* its node, so it stays short.
+  need only be unique *within* its node, so it stays short. **Delimiter `#`
+  consciously chosen** over `^ / :: | >` — see Decision log.
   - Sub-IDs are **stable tokens, never positional** (line/ordinal breaks on
     edit — the decouple-from-content lesson, recursed).
   - A block gets a sub-ID **only when it becomes a link target**
@@ -334,6 +337,57 @@ turns out to matter and needs an address.
 The per-tool **file→node parser** is exactly what splits a file into its nodes
 (assigning/reading each ULID) and exposes their fragments — this is where the
 two cases above are handled, keeping the core indexer generic.
+
+## Promotion path (write-side node moves)
+
+The one inter-tool *action* (vs. read-side views). Promotion takes content from
+one tool and lands it as a node in another (ephemeral→todo, todo→note).
+
+**Mechanism = pipe (validated).** Promotion moves *homogeneous* data
+(nodes → nodes) — exactly where pipes fit, and exactly where graph-query did
+*not*. The two integration models partition cleanly:
+- **graph-query** = read, heterogeneous (unified views across types).
+- **pipe** = move, homogeneous (a stream of one payload type: a node).
+
+Shape: `rk <src> --<disposition> <ID> | rk <dst> --import`.
+- emit side (`rk <src>`) picks the **disposition** (what happens to the source).
+- import side (`rk <dst> --import`) is generic: reads the NDJSON node stream,
+  writes into its own store.
+
+### Disposition — selectable per-operation, chosen by the emit verb
+
+- `--ref <ID>` — emit a *new* node carrying a `derived-from:<ID>` edge; **source
+  untouched**; import **mints a new ULID**; the source's backlink is surfaced by
+  the index (typed edges + backlink index already decided — no write-back to
+  source). Use for addressed→addressed (todo→note): preserves the graph.
+- `--pop <ID>` — emit the node carrying its **existing ULID** (if any) +
+  provenance; the **source tool deletes it from its own store**; import
+  **preserves the ULID** (mints only if the source had none, e.g. ephemeral).
+  Use for consume/move. **Inbound links survive** because the ULID is preserved
+  and type is just a property — promotion-as-move is exactly why type stays out
+  of the ID.
+- (optional `--cp` — copy, no edge, no delete.)
+
+### Invariants & wrinkles
+
+- **Each tool writes only its own store.** `--pop` deletes from the source store
+  (source owns it); `--import` writes the destination store (dest owns it); the
+  cross-link is just an edge in the new node, reverse surfaced by the index. No
+  tool reaches into another's store → tools stay opaque, pipe model stays sound.
+- **Interchange = NDJSON**, one node/line: `ulid?`, `type`, `time`, `props{}`,
+  `body`, `fragments[]`, `links[]`. **This equals the file→node parser's output
+  serialized** — promotion-serialization and parser-output are two faces of one
+  artifact (the canonical serialized node). Speccing promotion partly specs the
+  keystone parser contract.
+- **Atomicity.** A raw pipe is two processes; exit codes don't flow backward, so
+  `--pop` (delete source) then a failed `--import` could lose the node. Two
+  answers, pick per need: **git history is the undo** (fine for low-value /
+  ephemeral sources; consistent with "git = history/undo"), or a transactional
+  **dispatcher form** `rk promote <ID> --to=note --pop` (single process) when
+  atomicity matters — same disposition flags.
+- **Event bus stays deferred** — promotion needs none of it. YAGNI held.
+- (Other mechanisms: drop-file / maildir is usually just `--import`'s backend —
+  emit writes a node-file into the dest dir, the indexer picks it up.)
 
 ## Decision log
 
@@ -410,6 +464,28 @@ Human aliases (date/slug/time) allowed, non-authoritative; resolver maps
 alias → ULID; links written as `[[ULID]]`, `[[ULID#frag]]`, `[[alias]]`,
 `[[alias#frag]]`. Type stays a property. The per-tool file→node parser owns the
 file-splitting and ULID assignment.
+
+### 2026-06-19 — Fragment delimiter: `#` (consciously chosen)
+Node→fragment delimiter = `#` (`ULID#frag`). Parsing is unambiguous for *any*
+punctuation (ULIDs are punctuation-free Crockford base32), so the call is
+ergonomics. `#` wins on web-fragment semantics (`resource#frag`), wikilink
+precedent, and shell-safety in composite position (`a#b` is not a comment).
+Rejected: `|` and `>` as shell metacharacters (`|` also collides with the
+wikilink display-text delimiter); `/` as filesystem-path-conflating. A single,
+non-repeatable boundary fits the flat 2-level (node + fragment) model.
+
+### 2026-06-19 — Promotion path: pipe with emit-side selectable disposition
+Inter-tool node move uses a pipe: `rk <src> --<disp> <ID> | rk <dst> --import`.
+Disposition selected per-operation by the emit verb: `--ref` (non-destructive,
+new ULID, `derived-from` edge, source backlink via index) or `--pop` (consume;
+source tool deletes from its own store; existing ULID **preserved** — works
+because type is a property, not in the ID, so inbound links survive). Generic
+`--import` consumer. Invariant: each tool writes only its own store; cross-links
+are edges, reverses via the index. Interchange = NDJSON node envelope = the
+file→node parser's serialized output. Atomicity via git-history recovery (raw
+pipe) or a transactional `rk promote` dispatcher verb. Confirms the integration
+split: **graph-query = read/heterogeneous, pipe = move/homogeneous.** Event bus
+stays deferred.
 
 ## Parking lot / notes
 
