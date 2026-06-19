@@ -500,6 +500,48 @@ Everything else reduces to that pair:
 - **index** = `parse` every file → upsert nodes/edges/FTS/aliases.
 - **resolve** = query the index.
 
+## Program boundaries & the `rk` dispatcher
+
+Question: separate binaries vs. one multi-call binary. Resolved via a middle path.
+
+**Reframe (from git's own history):** git *started* as separate executables
+(`git-commit` etc. on PATH), then consolidated (~v1.6) into **one multi-call
+binary** with builtins, keeping a PATH extension point (`git-<name>`).
+Composability comes from the shared object format + command decomposition, **not**
+the process boundary. So packaging is an engineering choice, orthogonal to UNIX
+composability — and git's trajectory (separate → consolidated) is a cautionary
+tale against starting separate.
+
+### Decision — the via media
+
+1. **Decompose into packages.** Each tool is a Go package exposing `Run(args)`
+   plus its `parse(file)->[]node` / `serialize(node)->text` pair. Tools are
+   libraries first.
+2. **Boundary discipline.** Packages talk *only* via the canonical node + the
+   index. No package reaches into another's internals. Recovers the
+   separate-binaries virtue (enforced honesty) by convention instead of by
+   process isolation.
+3. **One multi-call binary `rk` by default.** A single `main` imports all
+   packages and dispatches `rk <tool> …` git/busybox-style. One install, one
+   version → no format skew/drift, shared keystone code, fast (no exec between
+   subcommands — matters for the TUI), git-quality UX (`rk help`, completion,
+   uniform flags).
+4. **`rk-<name>` PATH extension point.** `rk foo` execs an external `rk-foo` when
+   no builtin matches. Serves:
+   - **environment-specific** modules — e.g. work-only subcommands that differ
+     from personal use, added per-environment without bloating the core;
+   - **experimental / heavyweight / exotic / polyglot** components.
+   These live on PATH, or **graduate** into the main binary once proven — cheap,
+   because an external tool already speaks the node format, so wrapping it as a
+   package and compiling it in is mechanical. ("Earn their keep.")
+
+### Packaging is deferrable / dual
+
+Because tools are packages, the binary layout is a *build-time* choice: one
+`main` importing all = multi-call; N tiny `main`s each wrapping one package =
+separate binaries. Same code, either or both targets. **Commit now to the
+contract (node format + boundary discipline), not the process count.**
+
 ## Decision log
 
 ### 2026-06-19 — Integration model = graph-query (read glue)
@@ -613,6 +655,18 @@ format) and the parser-contract thread. Judgment defaults (vetoable): `time`
 semantic+required; envelope `v` version; open rel vocab w/ reserved set;
 day→`contains`→entries; typed edges from props + generic from body (`[[rel:target]]`
 syntax deferred).
+
+### 2026-06-19 — Program boundaries: packages + one multi-call `rk` + PATH extensions
+Resolved separate-vs-single via a middle path, informed by git's history
+(separate execs → consolidated multi-call builtin + PATH extension). Each tool =
+a Go package (`Run` + parse/serialize); packages talk **only** via node + index
+(boundary discipline = enforced honesty by convention). Default ship = one
+multi-call `rk` binary (no skew, shared core, fast for the TUI, good UX).
+`rk-<name>` PATH extension point handles environment-specific (work vs personal),
+experimental, heavyweight, exotic, or polyglot modules — which can live on PATH
+or graduate into the core once proven. Packaging (one main vs many) is a
+build-time choice deferred by the package structure; the committed thing is the
+contract, not the process count.
 
 ## Parking lot / notes
 
