@@ -1,7 +1,46 @@
 # Reckon Redesign — Composable, UNIX-style System
 
-> Status: **exploratory / iterating**. Living design record. Not a decision yet.
-> Started: 2026-06-19
+> Status: **architecture complete; mechanics pending.** Living design record.
+> Started: 2026-06-19. Last updated: 2026-06-19.
+
+## Status & resuming (start here)
+
+**What this is.** A total redesign of reckon from one monolithic app into a set
+of UNIX-composable tools (log, tasks, notes, ephemeral tasks, checklists) over a
+shared plain-text + git substrate with a derived property-graph index. The
+**design phase is complete**; what remains is mechanics/implementation.
+
+**Decided pillars:**
+
+| Layer | Decision |
+|---|---|
+| Substrate | plain-text files (Obsidian-flavored markdown) + git; Syncthing for mobile |
+| Atoms | `file` (storage) vs `node` (address); per-tool granularity |
+| Identity | ULID (inline, type-agnostic) + `#frag` block IDs + human aliases |
+| Read glue | graph-query over a property-graph index in SQLite (per-device, never synced) |
+| Write glue | pipe + emit-side disposition (`--ref` / `--pop`) + generic `--import` |
+| Keystone | the canonical node (per-tool `parse`/`serialize` pair) |
+| Boundaries | Go packages + one multi-call `rk` binary + `rk-<name>` PATH extensions |
+| Build call | warranted — current reckon is ~60% there; a refactor, not a rewrite |
+
+**What's next (mechanics, all downhill from the canonical node):**
+1. **Index schema** — SQLite `nodes` / `edges` / `fts` / `aliases`; per-device,
+   regenerated from text, never synced.
+2. **Per-tool specs** — each tool's props, file layout, `parse`/`serialize`, and
+   the opinionated structure it imposes.
+3. **Resolver** — alias→ULID, `[[ref]]`→file, `ULID#frag`→span (falls out of #1).
+4. **`query → schedule → do` UX** — a *UX* requirement (Logseq's weak spot), not
+   just data: how a queried task list becomes scheduled and actionable.
+5. **Migration** — map current reckon (per-type tables, xid, `note_links`) onto
+   the unified node + edges graph; salvage parser / storage / TUI.
+
+**How to resume / hand off.** Read this file top-to-bottom for the full
+reasoning; the **Decision log** records every call with rationale, and **Open
+questions** tracks settled vs pending. The design's **core is domain-agnostic** —
+a fresh agent (e.g. with work context) can flesh out a new facet either as a new
+tool/package or as an `rk-<name>` PATH extension, without touching the core, so
+long as it speaks the canonical node format. A beads tracking issue (`bd ready`)
+anchors the next steps.
 
 ## The realization
 
@@ -628,6 +667,10 @@ User's PKM history maps directly onto the design's bets:
    text syncs; the **SQLite index is per-device, derived, regenerated — never
    synced** (reinforces "index disposable"). reckon files coexist in a synced
    vault alongside Obsidian/Logseq.
+6. **Hard separation between tasks and logs** — explicitly valued in current
+   reckon and kept by the decomposition (separate tools/types). A log entry is
+   not a task; promotion bridges them *explicitly* when needed. User-confirmed
+   core value; the module split enforces it structurally.
 
 ## Decision log
 
