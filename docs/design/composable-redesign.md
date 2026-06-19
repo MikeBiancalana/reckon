@@ -106,6 +106,9 @@ same answer UNIX gave with paths: a shared address space.
 
 ## Key tension to resolve next
 
+> **RESOLVED 2026-06-19:** graph-query chosen for read/view glue. See Decision
+> log below. Section kept for the rationale.
+
 **Linear pipe vs. graph query as the integration model.**
 
 - Pipes = `A | B`: linear transform, one tool's output feeds the next. Great for
@@ -125,10 +128,106 @@ cases.
 2. Does history/undo matter enough to pay for an event log (B), or is git history
    enough?
 3. Is linking the *core* feature (everything-is-a-node) or just notes-link-notes?
-4. What does cross-tool composition look like concretely — a query language? a
-   `reckon` meta-command that resolves links and renders views? saved views?
-5. What is the interchange format when tools DO need to talk (JSON lines? plain
-   text records?).
+4. ~~What does cross-tool composition look like concretely?~~ **Resolved
+   2026-06-19:** graph-query over a shared property-graph index; views = saved
+   queries; agent authors them. See Decision log.
+5. ~~Interchange format when tools talk?~~ **Mostly moot 2026-06-19:** the shared
+   index *is* the integration; tools don't pipe to each other. If a same-type
+   pipe case ever arises, decide format then (likely JSON lines).
+
+## Integration shape — graph-query (worked detail)
+
+Mechanics: every tool writes items (ID + time + fields + `[[links]]`) into the
+store. An **indexer** scans the store — agnostic to which tool wrote what — and
+builds one index. A **query layer** reads across the union. Each tool still owns
+its own writes; query is read-only over everything.
+
+Integration = shared index + queries. Not data flowing tool→tool. Data sitting
+in one address space, views slicing across it.
+
+**The view no single tool can produce (why this beats pipes):**
+
+```
+view "daily review" =
+    log entries from today
+  + todos due today
+  + notes touched today
+  + open checklist runs
+```
+
+Log/todo/note/check tools know nothing of each other. The query pulls them
+together by time + link. That is the composition.
+
+**Query-flavor sub-options** (kept for record; see Decision log — flavor is now
+treated as a swappable projection, not a load-bearing choice):
+
+```sql
+-- 1. SQL over index (pragmatic; reuses existing markdown→SQLite)
+SELECT * FROM items
+WHERE type='todo' AND due < now()+7d
+  AND id IN (SELECT src FROM links WHERE dst='note:reckon');
+```
+```
+-- 2. Dataview-style (declarative filter + link-follow; simplest to type)
+from type=todo where due < +7d and links-to(note:reckon)
+```
+```cypher
+-- 3. Property-graph / Cypher (most traversal power; most build cost)
+MATCH (t:todo)-->(n:note {tag:'reckon'}) WHERE t.due < date()+7 RETURN t
+```
+
+### Contender table — two axes (don't conflate)
+
+Read/view glue vs. write/reactive glue are different axes. May want one of each.
+
+| Shape | Glue type | What it is | Fit |
+|---|---|---|---|
+| Linear pipes | read | `A \| B`, text stream | weak — tools heterogeneous, no transform between checklist & note |
+| **Graph query** | read | shared index, query across types | **strong — matches "unified views"** |
+| Tag/namespace + filter | read | no explicit graph; cross-tool via shared tags (org-agenda model) | simpler/cheaper, less precise; good *complement* not replacement |
+| Transclusion / embed | read | doc pulls fragments by ref (Roam, org `#+INCLUDE`) | pairs *with* graph-query; good for hand-authored views |
+| Event bus / pub-sub | write | tools emit, others react | only if behavioral glue wanted: close todo → append log; finish checklist → spawn todos |
+| Plan 9 / FUSE path-as-API | read | each tool exposes data as virtual files | maximally UNIX, niche, heavy |
+
+## Decision log
+
+### 2026-06-19 — Integration model = graph-query (read glue)
+Composition happens via querying a shared index, not linear pipes. Rationale:
+tools are heterogeneous (checklist ⇏ note), and the goal is unified cross-type
+views. Pipes may still serve narrow same-type cases.
+
+### 2026-06-19 — Query flavor: deferred; lock in the *index model*, not the dialect
+Reframe driven by two user constraints: (a) an agentic layer (local or Claude)
+will author queries, so human typing ergonomics are irrelevant; (b) must not
+paint into a corner by excluding future functionality.
+
+Key insight: the corner-painting risk lives in the **index data model**, not the
+query dialect. Dialect is a swappable projection on top of a rich-enough model.
+
+**Decision:** model the index as a **property graph** — nodes (stable id, type,
+time, arbitrary key/value props, full-text body) + **typed, directional edges**
+with a **backlink index** — persisted in SQLite (reuse existing
+markdown-truth → SQLite-index split). Query dialect chosen later / multiple
+allowed:
+- SQLite **recursive CTEs already give arbitrary-depth graph traversal** — no
+  separate graph DB needed to keep the traversal option open.
+- Can later layer Cypher/Datalog, or expose an **MCP tool surface** for the
+  agent, without changing storage.
+
+**Anti-corner checklist (things to NOT do, each forecloses future queries):**
+- untyped / implicit links (lose edge semantics)
+- one-way links without a backlink index (can't cheaply ask "what links to me")
+- structured fields flattened into prose (lose structured filtering)
+- no stable IDs (can't reference durably)
+- type encoded only by file location (hard to reclassify / query by type)
+
+### 2026-06-19 — Reactive glue (event bus): deferred (YAGNI)
+Not in the initial design; views are read-only. Confirmed cheap to add later —
+**provided writes stay observable.** Cheap insurance to preserve the option
+without building it now: keep created/modified timestamps on items, and/or build
+the store on git (hooks can fire on commit) and/or make index builds
+incremental. Don't make writes invisible; that's the only thing that would make
+a future event bus expensive.
 
 ## Parking lot / notes
 
