@@ -123,11 +123,17 @@ cases.
 
 ## Open questions (to chew on)
 
-1. What is the atom, per tool? (file / file-per-group / line / event) — and is a
-   mixed model acceptable, or does mixing break the "common substrate" promise?
+1. ~~What is the atom, per tool? Is a mixed model acceptable?~~ **Resolved
+   2026-06-19:** yes, mixed is fine once **file** (storage) and **node**
+   (address) are split. Per-tool scope table + two granularity rules recorded in
+   the "Atoms" section.
 2. Does history/undo matter enough to pay for an event log (B), or is git history
    enough?
-3. Is linking the *core* feature (everything-is-a-node) or just notes-link-notes?
+3. ~~Is linking core (everything-is-a-node) or just notes-link-notes?~~ **Mostly
+   resolved 2026-06-19:** nodes span all *durable* types (todo, note, log entry,
+   checklist run), not notes-only — so linking is core. But addressability is
+   gated by durability, so it's "everything durable is a node," not literally
+   everything.
 4. ~~What does cross-tool composition look like concretely?~~ **Resolved
    2026-06-19:** graph-query over a shared property-graph index; views = saved
    queries; agent authors them. See Decision log.
@@ -189,6 +195,81 @@ Read/view glue vs. write/reactive glue are different axes. May want one of each.
 | Event bus / pub-sub | write | tools emit, others react | only if behavioral glue wanted: close todo → append log; finish checklist → spawn todos |
 | Plan 9 / FUSE path-as-API | read | each tool exposes data as virtual files | maximally UNIX, niche, heavy |
 
+## Atoms — storage vs. addressable
+
+Two distinct concepts were both being called "atom." Split them, give each a
+system term, and **retire "atom" from the vocabulary** (informal use only).
+
+- **file** — the *storage atom*. One git-tracked, hand-editable file on disk.
+  The unit of versioning, editing, and (coarse) change detection. If a tool ever
+  needs a directory as its unit, name that case then; today every storage atom
+  is a file.
+- **node** — the *addressable atom*. One thing with a stable ID: a graph node, a
+  `[[link]]` target, an individually-queryable record. Deliberately the same
+  word the property-graph index uses — vocabulary stays consistent
+  substrate → index.
+
+**Relationship:** a file holds 1..N nodes. The indexer turns files into nodes
+but does **not** itself know each tool's internal format — **each tool ships a
+"split file → nodes" parser** (cf. git clean/smudge filters, `file(1)` magic).
+The core indexer stays generic; mixed granularity needs no special-casing in core.
+
+### Why this is sound — for / against (logged)
+
+Most arguments *against* files-of-varying-size are really arguments against
+`file = address`. Once file ≠ node, they evaporate.
+
+**Against (files-as-atoms + varying content):**
+1. Link granularity breaks — links target items; a 20-task file needs sub-file
+   anchors; path-as-address dies, intra-file IDs get re-invented.
+2. Indexer needs per-tool knowledge to split multi-item files → substrate no
+   longer opaque to who wrote what.
+3. Merge conflicts — many logical edits hit one file; coarse lock.
+4. git history coarsens — "when did task 7 change" becomes line archaeology.
+5. Event/change detection coarsens — "something in this file changed, go diff."
+6. Two storage shapes = two mental models; "common substrate" frays.
+7. Index staleness — touch one item, whole file re-parses / all its nodes dirty.
+
+**For:**
+1. Right-sized to data's nature — ephemeral = high-volume/low-value/short-lived;
+   one-file-each = inode bloat, noisy git. Notes = durable/linked → file-per-item.
+   Varying granularity honors real shape (the pro-UNIX reading).
+2. Human/editor ergonomics — a day's throwaways in one file beats 50 files.
+3. Sometimes the group IS the atom — a checklist run, a day's log.
+4. Fewer files = faster, cleaner git, less commit noise.
+5. Plain-text tools work on LINES, not files — "many items/file, one per line"
+   is *more* UNIX-native for list data (todo.txt, ledger, org-mode).
+6. Item-level addressing still cheap — inline IDs (`^id`); file is a container.
+
+**What survives as real cost after the split:** against-#2 (per-tool parsers)
+and against-#4/#5 (coarse git/event history for grouped tools). Both land
+*exactly* on the data you'd group anyway — ephemeral, low-value, history doesn't
+matter. The costs self-select away.
+
+### Two rules that decide granularity everywhere
+
+- **Addressability = durability.** A thing is a node iff you might link to it,
+  query it alone, or want its history. Everything else is just content inside a
+  file. Corollary: *ephemeral* literally means "gets no stable address."
+- **Group vs. isolate.** Group into one file when items are high-volume /
+  low-value / short-lived; isolate (file-per-item) when durable / linked /
+  history-worthy.
+
+### Per-tool scope
+
+| Tool | file (storage atom) | node (addressable atom) | Notes |
+|---|---|---|---|
+| Journal / log | 1 file per day | the day + each entry (timestamp = free stable ID) | appended through the day; link a date or a moment |
+| Todo (durable) | 1 file per todo | the todo (1:1) | deps are edges → IDs mandatory; fine git history wanted |
+| Note (zettel) | 1 file per note | the note (1:1); blocks optional via `^id` | densely linked; file-per-item is the right fit |
+| Checklist — template | 1 file per template | the template | reusable definition; items usually not addressed |
+| Checklist — run | 1 file per run | the run | items are lines inside; address one only if linked |
+| Ephemeral task | 1 file per group (day / inbox) | the file/day only — individual tasks NOT addressed | ephemeral = no ID by design |
+
+Spectrum: **file-per-item** (note, todo) ←→ **file-per-group** (ephemeral). The
+**promotion path** (ephemeral → durable todo) is the bridge when a throwaway
+turns out to matter and needs an address.
+
 ## Decision log
 
 ### 2026-06-19 — Integration model = graph-query (read glue)
@@ -228,6 +309,16 @@ without building it now: keep created/modified timestamps on items, and/or build
 the store on git (hooks can fire on commit) and/or make index builds
 incremental. Don't make writes invisible; that's the only thing that would make
 a future event bus expensive.
+
+### 2026-06-19 — Atom terminology + per-tool scope
+Split the overloaded "atom": **file** = storage atom, **node** = addressable
+atom; "atom" retired as a system term. A file holds 1..N nodes; **each tool
+ships its own file→node parser** so the core indexer stays generic. Granularity
+governed by two rules: *addressability = durability*, and *group
+high-volume/low-value/short-lived, isolate durable/linked/history-worthy.*
+Per-tool scope table recorded in the "Atoms" section. Ephemeral tasks
+deliberately get **no** stable address; promotion to a durable todo is the
+keep-it bridge.
 
 ## Parking lot / notes
 
