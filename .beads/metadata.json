@@ -3,5 +3,6 @@
   "backend": "dolt",
   "dolt_mode": "server",
   "dolt_database": "reckon",
-  "project_id": "04e0405c-af1c-47ab-8154-4dc93eae8141"
+  "project_id": "04e0405c-af1c-47ab-8154-4dc93eae8141",
+  "last_bd_version": "0.62.0"
 }
