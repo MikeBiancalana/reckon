@@ -34,6 +34,9 @@ shared plain-text + git substrate with a derived property-graph index. The
 5. **Migration** — map current reckon (per-type tables, xid, `note_links`) onto
    the unified node + edges graph; salvage parser / storage / TUI.
 
+See the **Remaining design punch list** section for the full breakdown (open
+decisions vs. specs-to-write vs. deferred).
+
 **How to resume / hand off.** Read this file top-to-bottom for the full
 reasoning; the **Decision log** records every call with rationale, and **Open
 questions** tracks settled vs pending. The design's **core is domain-agnostic** —
@@ -676,6 +679,61 @@ User's PKM history maps directly onto the design's bets:
    reckon and kept by the decomposition (separate tools/types). A log entry is
    not a task; promotion bridges them *explicitly* when needed. User-confirmed
    core value; the module split enforces it structurally.
+
+## Remaining design punch list
+
+Split by needs-a-decision vs decided-needs-spec vs deferred. Group A is the real
+remaining *design* work; B is downhill from the keystone; C needs no action now.
+
+### A. Open design decisions (a call is needed)
+
+1. **`query → schedule → do` UX** — the Logseq gap: how a queried task list
+   becomes *scheduled* and *actionable*. Biggest experience-design item (UX, not
+   data).
+2. **Agent interface / query surface** — what the agent invokes: raw SQL? `rk
+   query`? MCP tools? saved views? "Agent-authored over SQLite" decided; surface
+   undecided.
+3. **Scheduling / reminders / recurrence model** — scheduled vs deadline;
+   reminders (ephemeral); recurring tasks & checklists; timezones. Cross-cuts
+   todo + ephemeral + checklist.
+4. **Index freshness / rebuild model** — incremental vs full; on-demand vs
+   file-watch vs git-hook; staleness; per-device regeneration trigger.
+5. **Link syntax finalization** — inline typed-edge syntax (`[[rel:target]]` vs
+   props-only); display text (`[[target|label]]`); reserved rel vocabulary.
+6. **Alias namespace + dangling-link semantics** — global vs per-type alias
+   namespace; collision rules; links to not-yet-existing nodes (dangling
+   allowed?).
+
+### B. Specs to write (decided in principle, detail pending)
+
+7. **Index schema** — `nodes`/`edges`/`fts`/`aliases` columns; props storage
+   (JSON column vs EAV); fragment + backlink indexing.
+8. **Per-tool specs** — one each: **log**, **todo**, **note**, **ephemeral**,
+   **checklist** (template+run); plus decide **time-tracking** (separate tool, or
+   fold into log?). Each = file layout + props + parse/serialize + the
+   opinionated structure it imposes.
+9. **Resolver spec** — alias→ULID, `[[ref]]`→file, `ULID#frag`→span (ties to
+   #6/#7).
+10. **Migration plan** — current reckon (per-type tables, xid, `note_links`,
+    journal md) → unified node+edges; xid→ULID (preserve old IDs as aliases?);
+    salvage parser/storage/TUI.
+11. **Config / repo & vault layout** — where files live, where the per-device
+    gitignored index lives, how tools locate store+index, coexistence with
+    Obsidian/Logseq in a synced vault.
+
+### C. Deferred / acknowledged (no action now)
+
+12. Reactive event bus (YAGNI).
+13. Attachments / binary (base64-field or `loc`-reference escape hatch).
+14. Budgeting module via hledger/format (future; embrace & extend).
+15. Multi-level fragment nesting (only if needed).
+16. `storage == interchange` alternative (considered; declined unless "one
+    format" appeals).
+
+**Critical path:** Group A is the remaining design; within it, **#1
+(query→schedule→do)** and **#2 (agent surface)** most shape the experience;
+**#5/#6** are small finalizations. B is mechanical projection of the canonical
+node. Tracking issue: `reckon-53fu`.
 
 ## Principle: embrace & extend (reuse existing tools/formats)
 
