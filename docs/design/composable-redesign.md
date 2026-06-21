@@ -1,7 +1,7 @@
 # Reckon Redesign — Composable, UNIX-style System
 
 > Status: **architecture complete; mechanics pending.** Living design record.
-> Started: 2026-06-19. Last updated: 2026-06-19.
+> Started: 2026-06-19. Last updated: 2026-06-21.
 
 ## Status & resuming (start here)
 
@@ -443,6 +443,11 @@ Spec it once; the plumbing collapses into it.
 - **Envelope (NDJSON)** — the parser's normalized output: every inline fact plus
   parser-derived fields (`loc`, `hash`, `mtime`, `v`). Flows through pipes and
   into the index. A superset of the inline facts.
+  - *Newlines are safe.* JSON escapes a body's internal newlines as `\n`, so an
+    object never contains a literal newline byte; every node — **any type, any
+    content** — serializes to exactly one physical line. NDJSON is therefore a
+    uniform streaming format across all node types. Only discipline: emit compact
+    JSON via a real encoder, never hand-concatenated strings.
 
 ### Fields
 
@@ -672,6 +677,32 @@ User's PKM history maps directly onto the design's bets:
    not a task; promotion bridges them *explicitly* when needed. User-confirmed
    core value; the module split enforces it structurally.
 
+## Principle: embrace & extend (reuse existing tools/formats)
+
+A value that emerged across the design: **prefer reusing and interoperating with
+established, widely-used programs and formats over building from scratch.** A
+small effort spent on compatibility buys large, battle-tested functionality and
+keeps the user's existing tools working.
+
+Instances already in the design:
+- **git** as the state-over-time / history / undo substrate (not a custom log).
+- **Obsidian-flavored markdown** on disk → existing editors, mobile GUI, and the
+  Syncthing workflow keep working for free.
+- **SQLite** as the index engine; **ULID** as a standard ID.
+
+Forward-looking: a budgeting / purchases module would heavily consider
+**hledger** (or at least its plain-text-accounting format) rather than inventing
+one. New modules should ask buy-vs-build first and lean toward adopting an
+existing format/tool and extending it.
+
+Framing: **embrace & extend — *not* extinguish.** Interoperate, don't capture;
+the adopted formats stay usable by their original tools.
+
+Why it's cheap here: each tool already owns a `parse`/`serialize` pair and plugs
+in as a package or an `rk-<name>` PATH extension — so adopting an external format
+= writing one parser, and adopting an external tool = wrapping it behind the node
+contract.
+
 ## Decision log
 
 ### 2026-06-19 — Integration model = graph-query (read glue)
@@ -813,6 +844,17 @@ user's existing nvim-desktop + Obsidian-mobile + Syncthing workflow keeps workin
 and the parser rides a format real editors already render. Only plain-text files
 sync (git + Syncthing); the SQLite index is per-device, regenerated from text,
 **never synced** — consistent with the index being disposable/derived.
+
+### 2026-06-21 — Principle: embrace & extend existing tools/formats
+Captured an emergent cross-cutting value: prefer reusing/interoperating with
+established programs and formats (git for history, Obsidian-flavored markdown,
+SQLite, ULID) over bespoke builds; a future budgeting module would adopt hledger
+or its plain-text format. Buy-vs-build leans toward **embrace & extend (not
+extinguish)** — interoperate so adopted formats stay usable by their original
+tools. Cheap here because each tool is a `parse`/`serialize` package or an
+`rk-<name>` extension behind the node contract. See the "Principle: embrace &
+extend" section. (Also noted: NDJSON escapes body newlines as `\n`, so every node
+serializes to one physical line — a uniform stream format for all node types.)
 
 ## Parking lot / notes
 
