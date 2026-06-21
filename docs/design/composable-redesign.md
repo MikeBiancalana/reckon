@@ -682,8 +682,8 @@ User's PKM history maps directly onto the design's bets:
 
 ## Design: `query → schedule → do` UX (proposed — punch list A#1)
 
-> Status: **proposed**, pending confirmation. The highest-leverage open design
-> (the specific pain that pushed the user off Logseq).
+> Status: **DECIDED 2026-06-21** (three sub-decisions confirmed below). The
+> highest-leverage open design — the specific pain that pushed the user off Logseq.
 
 **The loop:** capture → surface → triage/schedule → do → review. Capture
 (log/ephemeral) and review (the log) are other tools; the gap is the middle three
@@ -733,10 +733,14 @@ verbs (candidate A) sit *underneath* as the plumbing the TUI and the agent both
 call — same verbs, two surfaces. Embrace & extend: org-agenda reborn outside
 Emacs.
 
-**Open sub-decisions (vetoable defaults):** scheduling model = org
-`scheduled`+`deadline`+today-pin (rec) vs explicit Today/Next/Later buckets ·
-agent auto-plan = propose-and-confirm (rec) vs auto-apply vs off · complete→log =
-linked log-entry by default (rec) vs opt-in.
+**Sub-decisions (confirmed 2026-06-21):**
+- **Scheduling model** = org `scheduled` (do-date) + `deadline` (hard) +
+  today-pin. No bucket taxonomy; Today / Later / Someday are *computed views*
+  over do-dates.
+- **Agent daily planning** = propose-and-confirm (`[a]ccept / [e]dit / [r]eject`).
+  The agent never silently mutates the plan.
+- **Completion** = emits a linked `log-entry` (`did`→task) by default,
+  toggleable. Two nodes + one edge — preserves the hard task/log separation.
 
 ## Remaining design punch list
 
@@ -745,10 +749,10 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
 
 ### A. Open design decisions (a call is needed)
 
-1. **`query → schedule → do` UX** — the Logseq gap. **Proposed 2026-06-21:**
-   `rk today`, a live agenda surface (org-agenda reborn) — see the
-   "Design: query → schedule → do UX" section. Pending confirmation of the three
-   sub-decisions.
+1. ~~`query → schedule → do` UX~~ — **Decided 2026-06-21:** `rk today`, a live
+   agenda surface (org-agenda reborn); three sub-decisions confirmed (org
+   scheduling, propose-and-confirm agent, complete→linked-log default). See the
+   "Design: query → schedule → do UX" section.
 2. **Agent interface / query surface** — what the agent invokes: raw SQL? `rk
    query`? MCP tools? saved views? "Agent-authored over SQLite" decided; surface
    undecided.
@@ -987,6 +991,12 @@ task/log separation while closing the loop into the journal). Porcelain over
 existing TUI task list; CLI verbs are the shared plumbing for both TUI and agent.
 Pending three sub-decisions (scheduling model, agent auto-plan aggressiveness,
 complete→log default). See the "Design: query → schedule → do UX" section.
+
+### 2026-06-21 — query→schedule→do: sub-decisions confirmed
+All three sub-decisions confirmed (recommended defaults): scheduling = org
+`scheduled`+`deadline`+today-pin (buckets are computed views, no taxonomy); agent
+planning = propose-and-confirm (never silent mutation); completion = linked
+`log-entry` (`did`→task) by default, toggleable. A#1 fully decided.
 
 ## Parking lot / notes
 
