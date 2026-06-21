@@ -855,6 +855,17 @@ Obsidian-compat dictates the wikilink *surface*; reckon decides the rest.
 - **Scope/charset:** aliases are **node-level only** (fragments addressed
   structurally); case-insensitive match, spaces allowed, forbid link-control chars
   (`# | [ ] ^`).
+- **Late-binding (Obsidian parity).** reckon's alias = Obsidian's *frontmatter*
+  `aliases:` (a real alternate name that resolves to the page), **not** the
+  cosmetic `[[page|display]]` form (that has no graph meaning in either tool).
+  Links are stored as the **authored alias text** and resolved **late** via the
+  index (edges are recomputed from text on every reindex) — exactly like
+  Obsidian's name lookup. **Rule: never rewrite `[[alias]]` → `[[ULID]]` in
+  files** (early-binding would diverge from Obsidian and destroy readability).
+  Deltas vs Obsidian, both benign: reckon enforces alias *uniqueness* (Obsidian
+  permits ambiguity → reckon is a strict subset, always Obsidian-valid); a
+  human-introduced duplicate alias from Obsidian must be **flagged gracefully** on
+  reindex, not crash.
 
 ## Remaining design punch list
 
