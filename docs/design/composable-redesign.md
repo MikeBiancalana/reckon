@@ -769,6 +769,52 @@ Decisions:
   Cypher/Datalog can slot in later behind the same surface without changing
   callers (honors "don't paint into a corner").
 
+## Design: index freshness & rebuild (decided — punch list A#4)
+
+> Status: **DECIDED 2026-06-21.**
+
+Files change via many paths, several out-of-band (nvim, Obsidian, Syncthing, git)
+that reckon can't observe directly. The index is disposable/per-device, so favor
+robustness over minimal-work cleverness.
+
+**Decision: lazy reconcile on read + write-through for reckon's own changes +
+explicit `rk index` for full rebuild.** Watcher deferred.
+
+- **Lazy on-read (correctness backstop):** before `rk query` / agenda load, a
+  fast reconcile — stat-walk, reparse only changed/new files, drop deleted.
+  Catches every source uniformly, no daemon. The *only* trigger that catches
+  Syncthing (not git-mediated, and a watcher is off when the device sleeps).
+- **Write-through (optimization):** reckon tools update the index inline on write
+  → instant agenda; the next reconcile then finds nothing to do. Not required for
+  correctness.
+- **Explicit `rk index`:** full rebuild from text (recovery / schema migration).
+
+**Change detection = hash-authoritative.** mtime is a fast-path to skip unchanged
+files, but the content `hash` is the authority (mtime is untrustworthy across
+git/Syncthing).
+
+**Index state stored in SQLite (two levels):**
+- **Per-file meta table** `(path, ulid-set, hash, mtime)` — *the* change-detection
+  authority; reconcile compares each file's stored hash/mtime.
+- **Global `index_meta`** (key/value): `schema_version`, `last_reconcile_at`,
+  `last_full_rebuild_at`, `vault_id`, `builder_version` — for display, debounce,
+  and migration, **not** correctness.
+- `schema_version` drives **auto-rebuild**: when reckon's index schema > the
+  stored version, do a full `rk index` automatically (no index migrations — it's
+  derived).
+
+**Edge cases decided:**
+- **Rename/move = free** — reconcile keys nodes by inline **ULID**, just updates
+  `loc`; reorganizing folders never breaks links.
+- **Index location** — a local cache dir (`~/.cache/reckon/<vault-id>/index.db`),
+  **never inside the vault, never synced** (a synced live SQLite file = corruption).
+- **Ignore globs** — `.sync-conflict-*`, `.stversions/`, `.git/`, `.obsidian/`,
+  `.reckon/`.
+- **Malformed files** (git conflict markers, Syncthing conflict copies) — parser
+  tolerates/skips and logs, never crashes the reconcile.
+- **Concurrency/atomicity** — WAL mode + a single reconcile-writer lock; each
+  reconcile in a transaction.
+
 ## Remaining design punch list
 
 Split by needs-a-decision vs decided-needs-spec vs deferred. Group A is the real
@@ -787,8 +833,11 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
 3. **Scheduling / reminders / recurrence model** — scheduled vs deadline;
    reminders (ephemeral); recurring tasks & checklists; timezones. Cross-cuts
    todo + ephemeral + checklist.
-4. **Index freshness / rebuild model** — incremental vs full; on-demand vs
-   file-watch vs git-hook; staleness; per-device regeneration trigger.
+4. ~~Index freshness / rebuild model~~ — **Decided 2026-06-21:** lazy reconcile
+   on read + write-through for reckon's own changes + explicit `rk index` full
+   rebuild; hash-authoritative detection; per-file + `index_meta` state in
+   SQLite; index in a local cache dir, never synced; watcher deferred. See
+   "Design: index freshness & rebuild".
 5. **Link syntax finalization** — inline typed-edge syntax (`[[rel:target]]` vs
    props-only); display text (`[[target|label]]`); reserved rel vocabulary.
 6. **Alias namespace + dangling-link semantics** — global vs per-type alias
@@ -821,10 +870,10 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
 16. `storage == interchange` alternative (considered; declined unless "one
     format" appeals).
 
-**Critical path:** #1 and #2 now decided. Remaining open design: **#3**
-(scheduling/reminders/recurrence — partly fed by #1's org model), **#4** (index
-freshness/rebuild), and the small finalizations **#5/#6**. B is mechanical
-projection of the canonical node. Tracking issue: `reckon-53fu`.
+**Critical path:** #1, #2, #4 decided. Remaining open design: **#3**
+(scheduling/reminders/recurrence — partly fed by #1's org model) and the small
+finalizations **#5/#6**. B is mechanical projection of the canonical node.
+Tracking issue: `reckon-53fu`.
 
 ## Principle: embrace & extend (reuse existing tools/formats)
 
@@ -1036,6 +1085,20 @@ All three sub-decisions confirmed (recommended defaults): scheduling = org
 `scheduled`+`deadline`+today-pin (buckets are computed views, no taxonomy); agent
 planning = propose-and-confirm (never silent mutation); completion = linked
 `log-entry` (`did`→task) by default, toggleable. A#1 fully decided.
+
+### 2026-06-21 — Index freshness: lazy-on-read + write-through + explicit rebuild
+A#4 decided. Lazy reconcile on read is the universal backstop (the only trigger
+that catches Syncthing/Obsidian/nvim/git uniformly, no daemon): stat-walk,
+reparse the delta, drop deleted. Write-through on reckon's own writes is an
+optimization for an instant agenda. Explicit `rk index` does a full rebuild.
+Change detection is hash-authoritative (mtime only a fast-path; untrustworthy
+across git/Syncthing). Index state in SQLite = per-file `(path, ulid-set, hash,
+mtime)` (correctness authority) + global `index_meta` (`schema_version`,
+`last_reconcile_at`, `last_full_rebuild_at`, `vault_id`, `builder_version`) for
+display/debounce/migration, not correctness; a `schema_version` bump triggers an
+auto full-rebuild (no index migrations — derived). Rename/move free (nodes keyed
+by inline ULID, `loc` updated). Index in a local cache dir, never in the vault,
+never synced. Watcher deferred.
 
 ## Parking lot / notes
 
