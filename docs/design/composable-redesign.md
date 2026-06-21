@@ -815,6 +815,47 @@ git/Syncthing).
 - **Concurrency/atomicity** — WAL mode + a single reconcile-writer lock; each
   reconcile in a transaction.
 
+## Design: link syntax (A#5) & alias namespace (A#6) — decided
+
+> Status: **DECIDED 2026-06-21.**
+
+### Link syntax (A#5)
+
+Obsidian-compat dictates the wikilink *surface*; reckon decides the rest.
+- **Adopt Obsidian as-is:** `[[target]]`, `[[target|Label]]`, `[[target#Heading]]`,
+  `[[target#^block]]`, `^block` anchor, `![[target]]` embed, `#tag`.
+- **Typed edges live in frontmatter props** (`depends: "[[ULID]]"` → a
+  `depends-on` edge). Anything inside `[[ ]]` is a link target to Obsidian, so an
+  inline typed-link syntax would break Obsidian resolution. **Body `[[ ]]` =
+  generic `references` edge.**
+- **Alias-preferred links.** reckon aliases == Obsidian frontmatter `aliases:`, so
+  `[[my-note]]` resolves in both; ULID (`[[01J…]]`) is the durable fallback
+  (filename = ULID → Obsidian resolves it too).
+- **Block fragments use Obsidian `#^frag`** — the earlier `#` delimiter decision
+  stands; the block anchor carries `^` to be Obsidian-native. Headings link via
+  `#Heading`.
+- Tags (`#tag`) → a `tags` prop; embeds (`![[ ]]`) → a `references` edge + embed
+  flag. Pass-through; Obsidian renders them.
+
+### Alias namespace & dangling links (A#6)
+
+- **Global / flat namespace** (vault-wide, matches Obsidian). The index **enforces
+  uniqueness** (which Obsidian can't): a colliding alias mint is rejected /
+  auto-disambiguated.
+- **Auto + explicit:** each tool auto-mints a canonical alias (note slug from
+  title, journal day = date); the user may add more. All non-authoritative over
+  the ULID.
+- **Rename = retain old as redirect.** On slug/alias change, the old alias is kept
+  in frontmatter `aliases:` → both reckon and Obsidian still resolve `[[old]]`;
+  **zero file churn** (no mass link rewrites — safe across Syncthing/git devices).
+- **Dangling links allowed** — `[[not-yet-created]]` is a forward-reference,
+  stored as an **unresolved edge** that **auto-resolves when the target is
+  created** (reindex), and is **queryable** (`rk query` for "unresolved"). Matches
+  Obsidian (allow + click-to-create).
+- **Scope/charset:** aliases are **node-level only** (fragments addressed
+  structurally); case-insensitive match, spaces allowed, forbid link-control chars
+  (`# | [ ] ^`).
+
 ## Remaining design punch list
 
 Split by needs-a-decision vs decided-needs-spec vs deferred. Group A is the real
@@ -838,11 +879,14 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
    rebuild; hash-authoritative detection; per-file + `index_meta` state in
    SQLite; index in a local cache dir, never synced; watcher deferred. See
    "Design: index freshness & rebuild".
-5. **Link syntax finalization** — inline typed-edge syntax (`[[rel:target]]` vs
-   props-only); display text (`[[target|label]]`); reserved rel vocabulary.
-6. **Alias namespace + dangling-link semantics** — global vs per-type alias
-   namespace; collision rules; links to not-yet-existing nodes (dangling
-   allowed?).
+5. ~~Link syntax finalization~~ — **Decided 2026-06-21:** adopt Obsidian's
+   wikilink surface; typed edges in frontmatter props (body `[[ ]]` = generic
+   `references`); alias-preferred links, ULID fallback; block frags `#^frag`. See
+   "Design: link syntax & alias namespace".
+6. ~~Alias namespace + dangling-link semantics~~ — **Decided 2026-06-21:** global
+   flat namespace, index-enforced uniqueness; rename = retain old alias as a
+   redirect (zero churn); dangling links allowed, auto-resolve on creation,
+   queryable. See "Design: link syntax & alias namespace".
 
 ### B. Specs to write (decided in principle, detail pending)
 
@@ -870,10 +914,9 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
 16. `storage == interchange` alternative (considered; declined unless "one
     format" appeals).
 
-**Critical path:** #1, #2, #4 decided. Remaining open design: **#3**
-(scheduling/reminders/recurrence — partly fed by #1's org model) and the small
-finalizations **#5/#6**. B is mechanical projection of the canonical node.
-Tracking issue: `reckon-53fu`.
+**Critical path:** #1, #2, #4, #5, #6 decided — **#3** (scheduling / reminders /
+recurrence, partly fed by #1's org model) is the only open Group-A item. B is
+mechanical projection of the canonical node. Tracking issue: `reckon-53fu`.
 
 ## Principle: embrace & extend (reuse existing tools/formats)
 
@@ -1099,6 +1142,24 @@ display/debounce/migration, not correctness; a `schema_version` bump triggers an
 auto full-rebuild (no index migrations — derived). Rename/move free (nodes keyed
 by inline ULID, `loc` updated). Index in a local cache dir, never in the vault,
 never synced. Watcher deferred.
+
+### 2026-06-21 — Link syntax (A#5): Obsidian surface + typed edges in frontmatter
+A#5 decided. Adopt Obsidian's wikilink surface wholesale (`[[t]]`, `|` display,
+`#Heading`, `#^block`, `![[ ]]`, `#tag`). Typed edges live in **frontmatter
+props** (Obsidian owns the `[[ ]]` interior, so inline typed-link syntax would
+break it); body `[[ ]]` = generic `references`. Links prefer aliases (== Obsidian
+`aliases:`) with ULID as the durable fallback (filename=ULID). Block fragments use
+Obsidian `#^frag` (the `#` delimiter stands; block anchor carries `^`). Tags →
+`tags` prop, embeds → reference edge + flag.
+
+### 2026-06-21 — Alias namespace & dangling links (A#6)
+A#6 decided. Global/flat alias namespace (Obsidian-matching); index enforces
+uniqueness. Auto canonical alias per tool + user-added; non-authoritative over the
+ULID. Rename = retain old alias as a redirect in frontmatter `aliases:` → both
+reckon and Obsidian keep resolving `[[old]]`, zero file churn (Syncthing-safe; no
+mass rewrites). Dangling links allowed as forward-references — stored as
+unresolved edges, auto-resolve on target creation, queryable. Aliases node-level
+only; case-insensitive, spaces allowed, forbid `# | [ ] ^`.
 
 ## Parking lot / notes
 
