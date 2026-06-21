@@ -742,6 +742,33 @@ Emacs.
 - **Completion** = emits a linked `log-entry` (`did`→task) by default,
   toggleable. Two nodes + one edge — preserves the hard task/log separation.
 
+## Design: agent query surface — `rk query` (decided — punch list A#2)
+
+> Status: **DECIDED 2026-06-21.**
+
+Single read surface over the shared index. Per-tool list commands (`rk todo ls`)
+are thin sugar over it; an MCP `query()` tool is a thin wrapper over it (same
+engine, two surfaces).
+
+Decisions:
+- **Language = SQL.** Agents are already strong at SQL — beats inventing and
+  maintaining a custom DSL, and gives recursive-CTE graph traversal for free.
+- **Against a stable named-view layer, not physical tables.** Public views
+  (`nodes`, `edges`, `node_props`, `aliases`, `fts`); physical tables stay
+  private. Plumbing/porcelain for the index — refactor storage freely, keep the
+  query contract stable, avoid schema-coupling breakage.
+- **Read-only.** `rk query` opens the index read-only (`query_only` / `mode=ro`)
+  and rejects non-SELECT. Writes go only through the tools + promotion. **Query
+  reads, tools write.**
+- **Output = canonical node NDJSON by default** (composes with the pipe:
+  `rk query … | rk note import`; feeds the agenda + agent), plus a **raw-rows
+  mode** for aggregates/projections.
+- **Saved views = named, versioned text files** (`rk query --view daily`), shared
+  by the agenda and the human; git'd + synced.
+- **Language-agnostic transport** — `rk query --lang sql|…` defaulting to SQL, so
+  Cypher/Datalog can slot in later behind the same surface without changing
+  callers (honors "don't paint into a corner").
+
 ## Remaining design punch list
 
 Split by needs-a-decision vs decided-needs-spec vs deferred. Group A is the real
@@ -753,9 +780,10 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
    agenda surface (org-agenda reborn); three sub-decisions confirmed (org
    scheduling, propose-and-confirm agent, complete→linked-log default). See the
    "Design: query → schedule → do UX" section.
-2. **Agent interface / query surface** — what the agent invokes: raw SQL? `rk
-   query`? MCP tools? saved views? "Agent-authored over SQLite" decided; surface
-   undecided.
+2. ~~Agent query surface~~ — **Decided 2026-06-21:** `rk query`, SQL over a
+   stable named-view layer, read-only, node-NDJSON output (+ raw-rows mode),
+   versioned saved views, `--lang` for future languages, MCP as a thin shim. See
+   the "Design: agent query surface" section.
 3. **Scheduling / reminders / recurrence model** — scheduled vs deadline;
    reminders (ephemeral); recurring tasks & checklists; timezones. Cross-cuts
    todo + ephemeral + checklist.
@@ -793,10 +821,10 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
 16. `storage == interchange` alternative (considered; declined unless "one
     format" appeals).
 
-**Critical path:** Group A is the remaining design; within it, **#1
-(query→schedule→do)** and **#2 (agent surface)** most shape the experience;
-**#5/#6** are small finalizations. B is mechanical projection of the canonical
-node. Tracking issue: `reckon-53fu`.
+**Critical path:** #1 and #2 now decided. Remaining open design: **#3**
+(scheduling/reminders/recurrence — partly fed by #1's org model), **#4** (index
+freshness/rebuild), and the small finalizations **#5/#6**. B is mechanical
+projection of the canonical node. Tracking issue: `reckon-53fu`.
 
 ## Principle: embrace & extend (reuse existing tools/formats)
 
@@ -991,6 +1019,17 @@ task/log separation while closing the loop into the journal). Porcelain over
 existing TUI task list; CLI verbs are the shared plumbing for both TUI and agent.
 Pending three sub-decisions (scheduling model, agent auto-plan aggressiveness,
 complete→log default). See the "Design: query → schedule → do UX" section.
+
+### 2026-06-21 — Agent query surface: `rk query`, SQL over stable views, read-only
+A#2 decided. Single read porcelain `rk query` over the shared index. Language =
+SQL (agents already fluent; recursive CTEs give traversal; no custom language to
+build/maintain), executed against a **stable public view layer** (`nodes`,
+`edges`, `node_props`, `aliases`, `fts`) — physical tables private, so storage
+can be refactored without breaking queries. **Read-only** (query reads, tools
+write). Output = node NDJSON by default (+ raw-rows mode). Saved views = named
+versioned text files. Transport language-agnostic via `--lang` for future
+Cypher/Datalog. MCP `query()` = thin wrapper. Per-tool list commands = sugar over
+`rk query`.
 
 ### 2026-06-21 — query→schedule→do: sub-decisions confirmed
 All three sub-decisions confirmed (recommended defaults): scheduling = org
