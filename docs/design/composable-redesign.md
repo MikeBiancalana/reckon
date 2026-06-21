@@ -680,6 +680,64 @@ User's PKM history maps directly onto the design's bets:
    not a task; promotion bridges them *explicitly* when needed. User-confirmed
    core value; the module split enforces it structurally.
 
+## Design: `query → schedule → do` UX (proposed — punch list A#1)
+
+> Status: **proposed**, pending confirmation. The highest-leverage open design
+> (the specific pain that pushed the user off Logseq).
+
+**The loop:** capture → surface → triage/schedule → do → review. Capture
+(log/ephemeral) and review (the log) are other tools; the gap is the middle three
+and the *transitions* between them.
+
+**Root cause of the Logseq friction:** the query is a **read-only list** (view ≠
+actuator) and scheduling is **absolute/manual** — so every transition is a
+surface-switch + hand-edit + re-query.
+
+**Criteria:** fewest surface-switches (ideal: one) · fewest keystrokes per
+transition · relative > absolute scheduling · view *is* the actuator ·
+agent-assistable triage · CLI/composable underneath · closes the loop into the
+log · keyboard-first.
+
+**Candidates considered:** (A) pure CLI verbs — composable but per-command
+friction, no live surface; (B) live agenda TUI; (C) calendar/time-block —
+high-friction; (D) kanban — heavier for keyboard; (E) edit files directly — the
+friction being fled. Gold standard = **org-agenda** (the user loved it):
+aggregate + schedule + mark-done in one buffer, single keys, never leaving.
+
+### Proposal — `rk today`: a live agenda, agent-primed, complete-as-logging
+
+A porcelain **view-tool** over read-glue (graph-query) + writes to the todo tool.
+Three motions, each ≤1 keystroke, one surface:
+
+- **Surface** — `rk today` queries overdue + scheduled-today + today-pinned +
+  today's reminders. The **agent optionally pre-fills a proposed plan** (orders
+  the list, suggests do-dates) → kills blank-list triage paralysis while the user
+  stays in control.
+- **Schedule** — in-list relative keys: `t`=today-pin · `d`=defer
+  (tomorrow/next-week/pick) · `D`=deadline · `p`=priority; writes straight to the
+  task file. **Model = org's:** a `scheduled` do-date + a hard `deadline` (the
+  distinction Logseq lacked) + a today-pin. No bucket taxonomy to learn —
+  "buckets" are just views over do-dates.
+- **Do** — `x`=done · `i`=in-progress · `c`=cancel. Completion **emits a
+  `log-entry` node linked `did`→task** (via the promotion machinery — two linked
+  nodes, not a merge, so the hard task/log separation holds), closing the loop
+  into the journal and giving time-tracking for free. Default on, toggleable.
+
+**Why lowest-friction:** one surface (no view→edit→re-query round-trips),
+keyboard verbs, relative scheduling, agent removes triage paralysis, doing feeds
+the log/review automatically.
+
+**Why it fits:** porcelain over {graph-query read} + {todo-tool write}, in-process
+in the multi-call `rk`; **reuses current reckon's existing TUI task list**. CLI
+verbs (candidate A) sit *underneath* as the plumbing the TUI and the agent both
+call — same verbs, two surfaces. Embrace & extend: org-agenda reborn outside
+Emacs.
+
+**Open sub-decisions (vetoable defaults):** scheduling model = org
+`scheduled`+`deadline`+today-pin (rec) vs explicit Today/Next/Later buckets ·
+agent auto-plan = propose-and-confirm (rec) vs auto-apply vs off · complete→log =
+linked log-entry by default (rec) vs opt-in.
+
 ## Remaining design punch list
 
 Split by needs-a-decision vs decided-needs-spec vs deferred. Group A is the real
@@ -687,9 +745,10 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
 
 ### A. Open design decisions (a call is needed)
 
-1. **`query → schedule → do` UX** — the Logseq gap: how a queried task list
-   becomes *scheduled* and *actionable*. Biggest experience-design item (UX, not
-   data).
+1. **`query → schedule → do` UX** — the Logseq gap. **Proposed 2026-06-21:**
+   `rk today`, a live agenda surface (org-agenda reborn) — see the
+   "Design: query → schedule → do UX" section. Pending confirmation of the three
+   sub-decisions.
 2. **Agent interface / query surface** — what the agent invokes: raw SQL? `rk
    query`? MCP tools? saved views? "Agent-authored over SQLite" decided; surface
    undecided.
@@ -913,6 +972,21 @@ tools. Cheap here because each tool is a `parse`/`serialize` package or an
 `rk-<name>` extension behind the node contract. See the "Principle: embrace &
 extend" section. (Also noted: NDJSON escapes body newlines as `\n`, so every node
 serializes to one physical line — a uniform stream format for all node types.)
+
+### 2026-06-21 — query→schedule→do UX: proposed `rk today` live agenda
+Proposed approach for punch-list A#1 via a structured design pass (decompose →
+locate friction → criteria → candidates → evaluate). Root cause of the Logseq
+pain: view ≠ actuator + absolute/manual scheduling. Proposal = `rk today`, an
+org-agenda-style live agenda TUI (the model the user loved) that collapses
+surface + schedule + do into one keyboard-driven surface: graph-query surfaces
+tasks (agent optionally pre-plans), in-list relative keys schedule (org
+`scheduled`+`deadline`+today-pin), single keys do, and completion emits a
+`log-entry` node linked `did`→task (promotion machinery — preserves the hard
+task/log separation while closing the loop into the journal). Porcelain over
+{graph-query read}+{todo write}, in-process in multi-call `rk`, reusing the
+existing TUI task list; CLI verbs are the shared plumbing for both TUI and agent.
+Pending three sub-decisions (scheduling model, agent auto-plan aggressiveness,
+complete→log default). See the "Design: query → schedule → do UX" section.
 
 ## Parking lot / notes
 
