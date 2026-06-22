@@ -867,6 +867,92 @@ Obsidian-compat dictates the wikilink *surface*; reckon decides the rest.
   human-introduced duplicate alias from Obsidian must be **flagged gracefully** on
   reindex, not crash.
 
+## Design: scheduling, reminders & recurrence (A#3) — decided
+
+> Status: **DECIDED 2026-06-21.**
+
+Builds on #1 (`scheduled` do-date + `deadline` + today-pin, org model). All
+scheduling data lives in **frontmatter props**, plain-text, org-aligned, surfaced
+in `rk today`.
+
+### Reminders (A#3a)
+- A reminder is a **time-trigger** that can **stand alone** (an ephemeral
+  `reminder` node) **or attach** to a durable node (a `remind:` prop). Same firing
+  mechanism, flexible carrier — fits the ephemeral/durable split.
+- **Delivery is delegated (daemonless).** reckon stores + surfaces due reminders
+  (queryable); actual notification is external — desktop cron/systemd/`at` calling
+  `rk remind due → notify-send`; mobile = whatever app reads the files
+  (Orgzly/Obsidian). This is the first concrete **hook**: `on-reminder-due` (see
+  the Hooks section).
+
+### Recurrence (A#3b/c)
+- **Syntax = org repeaters** on `scheduled`/`deadline`: `+1w` (fixed), `++1w`
+  (skip to next future), `.+3d` (N after completion). Compact, plain-text, the
+  user already knows org. Optional iCal `RRULE` escape hatch for complex rules.
+- **Advance model = virtual occurrences that materialize on need** — dissolves the
+  advance-in-place vs. instance-generation dichotomy:
+  - A recurring rule is a **durable node** that **projects** occurrences.
+  - Occurrences are **virtual** — computed from `repeat:` + the **log's `did`
+    entries as the done-cursor** (no single mutable date to hand-manage; the
+    auto-logged completions from #1 *are* the history). `rk today` shows a virtual
+    occurrence as an actionable row; completing it logs a `did` and the projection
+    advances. Advance-in-place's tidiness for trivial chores (water plants stays
+    virtual, zero clutter).
+  - An occurrence **materializes** into a real **ephemeral task instance**
+    (promotion: rule → instance) **lazily, on need**: when it (a) gets a
+    note/subtask/link, (b) **piles up** (a new occurrence comes due while the prior
+    is still open → both coexist), or (c) is pinned/kept. This is the "durable rule
+    emits ephemeral instances" model, for substantive/stacking occurrences.
+  - **Checklists always materialize a run** (decided earlier) = the
+    always-materialize end of the same spectrum.
+  - One mechanism, per-tool defaults. Cost: a projection function (expand
+    `repeat:` using the log as cursor) + the lazy materialize trigger. **No
+    generator daemon.**
+
+### Timezones (A#3d)
+- **Hybrid:** do-dates (`scheduled`/`deadline`) = **date-only, floating** (a
+  calendar day); log/event timestamps (the node `time` field) = **RFC3339 with
+  offset** (the real instant); **reminder times = wall-clock local** ("9am wherever
+  I am"), optional pinned zone. Matches human intent + the org/iCal
+  floating-vs-absolute split.
+
+### Why this beats org's one-entry-with-drawer
+The type decomposition splits what org crams into a single ever-expanding entry +
+`:LOGBOOK:` drawer into first-class pieces: the **durable rule** (the recurring
+task), the **ephemeral instance** (when scheduled/due), and the **log** (when
+done). Each its own queryable node type — no monolithic drawer.
+
+## Design: hooks (reserved extension seam)
+
+> Status: **seam reserved; realize `on-reminder-due` now, defer the rest (YAGNI).**
+
+The reactive glue deferred earlier (event bus) finds its **daemonless, git-style
+form here**: user scripts that fire **synchronously on lifecycle events**,
+configured in a local `.reckon/hooks/` dir (embrace & extend — exactly git's
+pattern). Lighter than a pub/sub bus; no daemon. The deferred-bus note ("easy to
+add later if writes stay observable") — this is that later form.
+
+The pattern is already latent: **complete→log**, **promotion**,
+**materialize-on-need**, and **write-through index** are all implicit hook points.
+
+**Candidate events** (taxonomy, for when needs arise): `post-create` /
+`post-update` / `pre`/`post-delete`; `post-complete`; `post-promote`;
+`on-materialize`; `on-reminder-due`; `on-occurrence-due`; `pre`/`post-reconcile`;
+`pre-write` (validation/reject).
+
+**Realize now:** `on-reminder-due` — it's how reminder delivery is delegated
+(`notify-send` etc.). Defer all others until a concrete use appears.
+
+**Cautions (decided constraints):**
+- **Local / per-device, not synced** (like `.git/hooks`). Good for *side effects*
+  (notify, sync-out); **be wary of vault-mutating hooks** — they can fight
+  Syncthing / diverge per device.
+- **Invocation-driven, not ambient** — no daemon, so time-based hooks
+  (`on-reminder-due`, `on-occurrence-due`) only fire when reckon runs; they need an
+  external **cron tick** (`rk tick` / `rk remind due`).
+- **Opt-in, visible, logged** — hooks make behavior non-local; keep them
+  discoverable and traceable.
+
 ## Remaining design punch list
 
 Split by needs-a-decision vs decided-needs-spec vs deferred. Group A is the real
@@ -882,9 +968,11 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
    stable named-view layer, read-only, node-NDJSON output (+ raw-rows mode),
    versioned saved views, `--lang` for future languages, MCP as a thin shim. See
    the "Design: agent query surface" section.
-3. **Scheduling / reminders / recurrence model** — scheduled vs deadline;
-   reminders (ephemeral); recurring tasks & checklists; timezones. Cross-cuts
-   todo + ephemeral + checklist.
+3. ~~Scheduling / reminders / recurrence model~~ — **Decided 2026-06-21:**
+   reminders = standalone-or-attached trigger (delivery delegated); recurrence =
+   org repeaters; advance = virtual occurrences materializing lazy-on-need;
+   timezones = hybrid (floating dates / absolute events / local reminders). See
+   "Design: scheduling, reminders & recurrence".
 4. ~~Index freshness / rebuild model~~ — **Decided 2026-06-21:** lazy reconcile
    on read + write-through for reckon's own changes + explicit `rk index` full
    rebuild; hash-authoritative detection; per-file + `index_meta` state in
@@ -918,16 +1006,18 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
 
 ### C. Deferred / acknowledged (no action now)
 
-12. Reactive event bus (YAGNI).
+12. Reactive event bus — **reframed as git-style hooks** (daemonless); seam
+    reserved, `on-reminder-due` realized, rest deferred. See "Design: hooks".
 13. Attachments / binary (base64-field or `loc`-reference escape hatch).
 14. Budgeting module via hledger/format (future; embrace & extend).
 15. Multi-level fragment nesting (only if needed).
 16. `storage == interchange` alternative (considered; declined unless "one
     format" appeals).
 
-**Critical path:** #1, #2, #4, #5, #6 decided — **#3** (scheduling / reminders /
-recurrence, partly fed by #1's org model) is the only open Group-A item. B is
-mechanical projection of the canonical node. Tracking issue: `reckon-53fu`.
+**Critical path:** **all of Group A decided.** Remaining = Group B specs
+(mechanical projection of the canonical node) + Group C deferred. Hooks reserved
+as a seam (realize `on-reminder-due`, defer the rest). Tracking issue:
+`reckon-53fu`.
 
 ## Principle: embrace & extend (reuse existing tools/formats)
 
@@ -1171,6 +1261,29 @@ reckon and Obsidian keep resolving `[[old]]`, zero file churn (Syncthing-safe; n
 mass rewrites). Dangling links allowed as forward-references — stored as
 unresolved edges, auto-resolve on target creation, queryable. Aliases node-level
 only; case-insensitive, spaces allowed, forbid `# | [ ] ^`.
+
+### 2026-06-21 — Scheduling/reminders/recurrence (A#3) decided
+Builds on #1's org `scheduled`/`deadline`/today-pin; all scheduling in frontmatter
+props. Reminders = a time-trigger that stands alone (ephemeral `reminder` node) or
+attaches (`remind:` prop); delivery delegated/daemonless (`on-reminder-due` hook).
+Recurrence syntax = org repeaters (`+`/`++`/`.+`) + optional RRULE. Advance model =
+**virtual occurrences that materialize lazily on need** (note/link, pile-up, or
+pin), projected from `repeat:` using the log's `did` entries as the done-cursor;
+checklists always materialize a run — one mechanism, per-tool defaults, no
+generator daemon. Timezones = hybrid (floating date-only do-dates; absolute
+RFC3339-with-offset event/log timestamps; wall-clock-local reminders). Conceptual
+win: the type decomposition replaces org's one-entry-with-`:LOGBOOK:`-drawer with
+first-class rule / ephemeral-instance / log nodes.
+
+### 2026-06-21 — Hooks reserved as a daemonless extension seam
+The deferred reactive event bus is reframed as **git-style hooks** — synchronous
+user scripts on lifecycle events, configured in `.reckon/hooks/` (embrace &
+extend). Already-latent hook points: complete→log, promotion, materialize-on-need,
+write-through index. Decision: **reserve the seam, realize only `on-reminder-due`
+now** (reminder delivery), defer the rest (YAGNI). Constraints: hooks are
+local/per-device and not synced (good for side-effects, wary of vault-mutating
+ones that fight Syncthing); invocation-driven, not ambient (time-based hooks need
+a cron tick); opt-in, visible, logged.
 
 ## Parking lot / notes
 
