@@ -21,6 +21,7 @@ shared plain-text + git substrate with a derived property-graph index. The
 | Write glue | pipe + emit-side disposition (`--ref` / `--pop`) + generic `--import` |
 | Keystone | the canonical node (per-tool `parse`/`serialize` pair) — **gating; see round-trip spike** |
 | Boundaries | Go packages + one multi-call `rk` binary + `rk-<name>` PATH extensions |
+| AI | first-class via **agent-ergonomic verbs** (the `bd` standard); core is model-free; agents are porcelains; determinism boundary = tool/LLM boundary |
 | Build call | warranted — but **honest reuse ≈ 20–35%, not ~60%** (tasks/notes/checklists are DB-primary today — truth-inversion is the long pole). See 2026-06-22 amendments. |
 
 **What's next (mechanics, all downhill from the canonical node):**
@@ -610,6 +611,12 @@ Because tools are packages, the binary layout is a *build-time* choice: one
 separate binaries. Same code, either or both targets. **Commit now to the
 contract (node format + boundary discipline), not the process count.**
 
+**Every verb is agent-ergonomic** (the `bd` standard — see "AI as a first-class
+participant"): crisp semantic verbs, structured (`--json`/NDJSON) output beside a
+human-pretty mode, precise scoping for token economy, self-describing help, and a
+stable contract. The CLI, the TUI, and an MCP server are all **porcelains** over
+the same verb surface; the core stays model-free and porcelain-agnostic.
+
 ## Relationship to existing systems & to current reckon
 
 ### To current reckon — closer than the README suggests
@@ -795,6 +802,75 @@ Decisions:
 - **Language-agnostic transport** — `rk query --lang sql|…` defaulting to SQL, so
   Cypher/Datalog can slot in later behind the same surface without changing
   callers (honors "don't paint into a corner").
+- **Agent-ergonomic by the `bd` standard** (see "AI as a first-class
+  participant"): structured output, precise projection/`--fields`/`--limit` for
+  token economy, deterministic, stable contract.
+
+## Design: AI as a first-class participant
+
+> Status: **DECIDED 2026-06-23.** A cross-cutting pillar, not a module.
+
+### The law — the determinism boundary IS the tool/LLM boundary
+Anything context-insensitive and always-done-the-same → a **deterministic tool**
+(core verb / external program / MCP). Anything needing **judgment over fuzzy or
+high-volume natural language** → the **LLM, in porcelain**. A tool earns its keep
+two ways at once: **correctness** (deterministic, repeatable) and **token
+economy** (keeps junk out of the context window — the `rg`-reads-a-slice,
+`jq`-filters-the-blob principle). A good verb returns *exactly* the needed nodes,
+so an agent never drags a whole file/corpus into context to do what a tool could
+do deterministically.
+
+This is a reusable **design test** for every feature: *always-the-same, or
+judgment?* It already explains prior calls — recurrence advance is always-the-same
+→ a deterministic verb (stored `scheduled` cursor); link extraction splits cleanly
+(syntactic `[[x]]`/`SNP-####` refs = deterministic tool; "*should* these relate?"
+= judgment = an agent suggests it).
+
+### What "first-class" means here — the `bd` standard
+AI-first-class = **the verbs have the handles an agent grasps fast and uses
+efficiently** (`bd`/beads is the exemplar — a tool built for agents). It is **not
+an AI module**; it is an ergonomic discipline applied to the verb surface from day
+one. Hard requirements on every `rk` verb:
+1. **Crisp semantic verbs** — the agent calls *operations* (`rk ready`/`query`/
+   `promote`/`today`), never reasons about storage.
+2. **Structured output for agents by default** — `--json` / NDJSON (the canonical
+   node envelope *is* this); human-pretty is the other mode. One verb, two
+   presentations.
+3. **Precise scoping = token economy as a first-class verb concern** — projection,
+   `--fields`, `--limit`, filters. Return the slice, not the file.
+4. **Self-describing / next-step hints** — discoverable help; the agent learns the
+   tool from the tool.
+5. **Deterministic + stable contract** — same input → same output; the surface
+   doesn't churn under the agent.
+
+### How AI sits in the architecture
+- **Core = a deterministic, agent-ergonomic, model-free verb surface over the node
+  substrate** — the *context-engine* (retrieval) + the *hands* (validated action
+  verbs). It privileges no model and no porcelain.
+- **The index is a retrieval store** — FTS + graph traversal + recency = RAG over
+  your own substrate, built in.
+- **Read-only `rk query` = AI safety by construction** — an agent runs arbitrary
+  retrieval and *cannot* corrupt truth through that path; writes go through
+  validating verbs.
+- **Agents are porcelains.** Some porcelains *are* agents (`rk-brief`, a triage
+  agent, an auto-linker) — **peers to the TUI and the CLI**, all sitting on the
+  same verb surface and node substrate. Human and agent are **symmetric
+  consumers**; this keeps "first-class" from meaning "special-cased."
+- **MCP is just another porcelain** over the same verbs (TUI = human, CLI =
+  human/script, MCP = agent). So the v1 work is *making the verbs agent-ergonomic*,
+  not "building MCP"; the MCP server is a thin wrapper that follows.
+- **AI output re-enters as nodes** — a brief/summary/extraction comes back as a
+  node (`type: brief`, `author: <model>`, `derived-from` edges to sources),
+  queryable/linkable/attributed. Same substrate in, same substrate out — no
+  separate AI plane.
+- **Model-free core / model-by-config porcelain** — the deterministic core never
+  embeds a model; only judgment-porcelain does, and it selects local (Ollama) vs
+  Claude by config, swappable per-tool, no kernel change. (This is *why*
+  synthesis stays out of core — out-of-core protects the swappable AI layer.)
+
+### `rk-brief` as the law in miniature
+*gather* (deterministic `rk query` — cheap tokens) + *condense* (judgment — LLM) +
+*present*; output a `brief` node so it composes. A flourish, but a composable one.
 
 ## Design: index freshness & rebuild (decided — punch list A#4)
 
@@ -1110,7 +1186,9 @@ disposable, never synced) · ULID inline + aliases, `#^frag` only when linked ·
 **`author` on the node** · tools **log + todo + note** (ephemeral/durable as a
 light todo property) · **`rk query`** (SQL over stable views, read-only) ·
 **`rk today`** split actuator · **recurrence via stored `scheduled` cursor** ·
-`merge=union`+sort+dedup on the log.
+`merge=union`+sort+dedup on the log · **agent-ergonomic verbs from day one** (the
+`bd` standard: structured output, token-economy scoping, self-description,
+stability) + **model-free core** (AI behaviors are porcelain, model-by-config).
 **DEFERRED until a lived consumer:** read-time synthesis (reserve `rk-brief`
 seam) · work feeders `rk-jira`/`rk-gh` · the `--ref/--pop/--cp` disposition zoo
 (ship one transactional `rk promote` first) · hooks beyond `on-reminder-due` ·
@@ -1401,6 +1479,25 @@ multi-persona provenance live in `rk-jira`/`rk-gh`; **`rk today` = split actuato
 losslessness = `merge=union`+sort+dedup; recurrence = **stored `scheduled` cursor,
 org-style, log as audit** (was log-derived done-cursor — changed for robustness +
 org-fidelity; locus-of-state principle); a **Lean v1 scope** section added.
+
+### 2026-06-23 — AI as a first-class participant (pillar)
+Resolved the apparent tension between "synthesis-out-of-core" and "AI
+first-class": first-class ≠ in-kernel. The law = **the determinism boundary is the
+tool/LLM boundary** — always-the-same → deterministic verb (correctness + token
+economy, the `rg`/`jq` principle); judgment over fuzzy/high-volume NL → LLM in
+porcelain. "First-class" = the verb surface meets the **`bd` standard** (crisp
+semantic verbs, structured `--json`/NDJSON output, precise scoping for tokens,
+self-describing, stable) — an ergonomic discipline, not an AI module. Core = a
+deterministic, agent-ergonomic, **model-free** verb surface over the node
+substrate (context-engine via FTS+graph retrieval; hands via validated verbs);
+read-only `rk query` = safety by construction. Agents are **porcelains** (peers to
+TUI/CLI; some porcelains *are* agents — `rk-brief`, triage, auto-link); **MCP is
+just another porcelain** over the verbs, so v1 work = agent-ergonomic verbs, not
+"build MCP." **AI output re-enters as nodes** (`author=<model>`, `derived-from`),
+human/agent symmetric. Model-by-config in porcelain (local Ollama / Claude),
+swappable — which is *why* synthesis stays out of core. `rk-brief` = gather
+(deterministic query) + condense (LLM) + present → a `brief` node. See "Design: AI
+as a first-class participant".
 
 ## Parking lot / notes
 
