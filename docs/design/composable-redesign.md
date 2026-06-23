@@ -554,7 +554,10 @@ Everything else reduces to that pair:
 - **index** = `parse` every file → upsert nodes/edges/FTS/aliases.
 - **resolve** = query the index.
 
-> **GATING (added 2026-06-22 — post-assessment).** This pair is the keystone, and
+> **GATING (added 2026-06-22 — post-assessment). → PASSED 2026-06-23**, see
+> `spike-roundtrip-verdict.md` + `internal/spike/roundtrip/` (round-trip identity,
+> surgical span edits, group-file sibling preservation, ~396k-exec fuzz, 0
+> failures). This pair is the keystone, and
 > it is **not "downhill / Group B."** Under files-as-truth, a `serialize` bug
 > **silently rewrites the authoritative file** — the one failure the whole design
 > exists to prevent. Two non-negotiables before any tool writes a truth file:
