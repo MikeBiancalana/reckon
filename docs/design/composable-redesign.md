@@ -19,9 +19,9 @@ shared plain-text + git substrate with a derived property-graph index. The
 | Identity | ULID (inline, type-agnostic) + `#frag` block IDs + human aliases |
 | Read glue | graph-query over a property-graph index in SQLite (per-device, never synced) |
 | Write glue | pipe + emit-side disposition (`--ref` / `--pop`) + generic `--import` |
-| Keystone | the canonical node (per-tool `parse`/`serialize` pair) |
+| Keystone | the canonical node (per-tool `parse`/`serialize` pair) — **gating; see round-trip spike** |
 | Boundaries | Go packages + one multi-call `rk` binary + `rk-<name>` PATH extensions |
-| Build call | warranted — current reckon is ~60% there; a refactor, not a rewrite |
+| Build call | warranted — but **honest reuse ≈ 20–35%, not ~60%** (tasks/notes/checklists are DB-primary today — truth-inversion is the long pole). See 2026-06-22 amendments. |
 
 **What's next (mechanics, all downhill from the canonical node):**
 1. **Index schema** — SQLite `nodes` / `edges` / `fts` / `aliases`; per-device,
@@ -35,7 +35,12 @@ shared plain-text + git substrate with a derived property-graph index. The
    the unified node + edges graph; salvage parser / storage / TUI.
 
 See the **Remaining design punch list** section for the full breakdown (open
-decisions vs. specs-to-write vs. deferred).
+decisions vs. specs-to-write vs. deferred), the **Lean v1 scope** section for the
+first build target, and the **2026-06-22 amendments** (post-assessment) for the
+gating round-trip spike, the corrected reuse estimate, the `author` field, the
+recurrence-cursor change, and the synthesis/actuator boundaries. Companion docs:
+`composable-redesign-assessment.md` (critique) and `composable-redesign-rebuttal.md`
+(resolution).
 
 **How to resume / hand off.** Read this file top-to-bottom for the full
 reasoning; the **Decision log** records every call with rationale, and **Open
@@ -459,6 +464,7 @@ Spec it once; the plumbing collapses into it.
 | `ulid` | inline + env | yes¹ | string(26) | canonical identity (Crockford base32). ¹absent only on unaddressed emit; import mints it |
 | `type` | inline + env | yes | string | node type — a *property*, never in the ULID |
 | `time` | inline + env | yes | RFC3339 | semantic timestamp (may differ from the ULID's mint time, e.g. backdated log) |
+| `author` | inline + env | yes³ | string | provenance — who wrote it (`mike` / agent persona / peer id). ³cheap; harmless solo, required once any agent/multi-writer rides the core. Added 2026-06-22 |
 | `body` | inline + env | yes | string | text content (markdown) |
 | `aliases` | inline + env | no | [string] | human handles resolving to this ULID; unique in the alias namespace; non-authoritative |
 | `props` | env (from inline fields) | no | object | per-type open bag (todo: `state`,`due`; note: `tags`,`title`; run: `items`). Core indexes generically, does not schematize |
@@ -547,6 +553,21 @@ Everything else reduces to that pair:
 - **index** = `parse` every file → upsert nodes/edges/FTS/aliases.
 - **resolve** = query the index.
 
+> **GATING (added 2026-06-22 — post-assessment).** This pair is the keystone, and
+> it is **not "downhill / Group B."** Under files-as-truth, a `serialize` bug
+> **silently rewrites the authoritative file** — the one failure the whole design
+> exists to prevent. Two non-negotiables before any tool writes a truth file:
+> - **Span-local write-back.** A tool rewrites **only the spans it owns** (e.g. a
+>   single `scheduled:` field) and **byte-preserves all unmodeled prose**. Do
+>   *not* regenerate the whole file (current `journal/service.go`'s `WriteJournal`
+>   does exactly the wrong thing). This is also what makes human hand-edits and
+>   tool writes coexist safely — i.e. what reproduces org-mode's dwimmy
+>   hand-editability outside Emacs.
+> - **Round-trip fuzz gate:** `parse(serialize(parse(f))) == f`, seeded with
+>   **real** Obsidian/Logseq/agent input (blockquotes, code fences,
+>   `[[t|label]]`, `#^block`, `![[ ]]`, `#tag`, extra frontmatter, git conflict
+>   markers, `.sync-conflict` copies). Must pass on real input first.
+
 ## Program boundaries & the `rk` dispatcher
 
 Question: separate binaries vs. one multi-call binary. Resolved via a middle path.
@@ -609,14 +630,20 @@ Code inspection (2026-06-19) shows the redesign's DNA already present:
 | Redesign change | vs current |
 |---|---|
 | One unified node + one edges graph across all types | per-type tables; links only note↔note. Generalize `note_links` → universal typed edges |
-| All types = plain-text-truth, index disposable | journal is markdown; tasks/notes/checklists appear SQLite-primary. Invert → text truth everywhere (biggest change; verify current truth) |
+| All types = plain-text-truth, index disposable | **VERIFIED 2026-06-22: tasks/notes/checklists are SQLite-PRIMARY today** (`notes_repository.go:34`, `checklist/repository.go:32` write SQLite as authority; `rebuild.go` rebuilds only the journal from files). Markdown is an *export artifact* — the inverse of the pillar. **Inverting this is the long pole.** |
 | Packages behind multi-call `rk` + PATH extensions | one program, no extension point |
 | Promotion, block `#frag`, alias resolver, agent-first | none (note-level links only, human-first) |
 | xid → ULID | trivial |
 
-**Verdict: a refactor of an already-modular codebase ~60% of the way there, not a
-greenfield rewrite.** Salvageable: parser, storage, TUI (→ a view over the
-index), xid, `note_links` logic.
+**Verdict (corrected 2026-06-22): honest reuse ≈ 20–35%, not ~60%.** The original
+estimate read surface signals (package layout, `xid`, `note_links`, a SQLite
+index) without tracing *truth direction*. Code-tracing shows tasks/notes/
+checklists are DB-primary (markdown = export), so the differentiated core (unified
+node+edge graph, resolver, promotion/NDJSON, query-views, recurrence) is ≈ 0%
+present and the **truth-inversion is the long pole**. Still not a from-scratch
+greenfield — salvageable: package structure, the SQLite-index *concept*, the
+journal round-trip, slug logic, TUI components — but scope it as a substantial new
+build, not a light refactor.
 
 ### To other systems — borrowed parts, unshipped whole
 
@@ -889,25 +916,43 @@ in `rk today`.
 - **Syntax = org repeaters** on `scheduled`/`deadline`: `+1w` (fixed), `++1w`
   (skip to next future), `.+3d` (N after completion). Compact, plain-text, the
   user already knows org. Optional iCal `RRULE` escape hatch for complex rules.
-- **Advance model = virtual occurrences that materialize on need** — dissolves the
-  advance-in-place vs. instance-generation dichotomy:
+- **Advance model = virtual occurrences with a STORED cursor** (org-style;
+  **amended 2026-06-22**, see note) — dissolves the advance-in-place vs.
+  instance-generation dichotomy:
   - A recurring rule is a **durable node** that **projects** occurrences.
-  - Occurrences are **virtual** — computed from `repeat:` + the **log's `did`
-    entries as the done-cursor** (no single mutable date to hand-manage; the
-    auto-logged completions from #1 *are* the history). `rk today` shows a virtual
-    occurrence as an actionable row; completing it logs a `did` and the projection
-    advances. Advance-in-place's tidiness for trivial chores (water plants stays
-    virtual, zero clutter).
+  - The cursor is the rule node's own **`scheduled:` prop** — a clean, structured,
+    hand-editable slot. On completion the handler **advances `scheduled`** exactly
+    like org: `+Nd` catch-up · `++Nd` skip-to-future · `.+Nd` from-completion-date,
+    **and** writes a `did` log entry as **audit** (not as the source of truth).
+    `rk today` shows the current occurrence as an actionable row; completing it
+    advances the stored cursor. Advance-in-place's tidiness for trivial chores
+    (water plants stays one tidy node, zero clutter).
   - An occurrence **materializes** into a real **ephemeral task instance**
     (promotion: rule → instance) **lazily, on need**: when it (a) gets a
     note/subtask/link, (b) **piles up** (a new occurrence comes due while the prior
-    is still open → both coexist), or (c) is pinned/kept. This is the "durable rule
-    emits ephemeral instances" model, for substantive/stacking occurrences.
+    is still open → both coexist), or (c) is pinned/kept. The cursor tracks the
+    leading edge; stacked/overdue cycles become materialized instances, each with
+    its own state. This is the "durable rule emits ephemeral instances" model.
   - **Checklists always materialize a run** (decided earlier) = the
     always-materialize end of the same spectrum.
-  - One mechanism, per-tool defaults. Cost: a projection function (expand
-    `repeat:` using the log as cursor) + the lazy materialize trigger. **No
-    generator daemon.**
+  - One mechanism, per-tool defaults. Cost: the org advance algorithm on
+    completion (a span-local write to `scheduled:`) + the lazy materialize trigger.
+    **No generator daemon.**
+
+> **Amendment 2026-06-22 — store the cursor, don't derive it from the log.** The
+> original proposal computed occurrences from the **log's `did` entries** (log as
+> load-bearing state). Changed: the cursor lives in the rule's `scheduled:` prop;
+> the log is audit (it *can* rebuild the cursor for recovery, but is never on the
+> hot path). Rationale: org-mode — the model the owner loves — keeps its cursor in
+> a structured `SCHEDULED:` slot and **never** recomputes the next date by scanning
+> `:LOGBOOK:`; "be like org" therefore means *stored cursor*. The real principle is
+> **locus of state**: a labeled structured slot is deterministic and hand-fixable;
+> state smeared across prose and derived is neither (which log line is the cursor?
+> editing prose silently moves it). Bonus: the cursor lives in *text* and survives
+> index-blow-away, which is *more* "text is truth, index disposable," not less.
+> (Concurrency on the log was also downgraded — the "15 writers" was sessions
+> alive, ~1–2 actually write the log; `merge=union`+sort+ULID-dedup keeps appends
+> lossless and clean as cheap insurance.)
 
 ### Timezones (A#3d)
 - **Hybrid:** do-dates (`scheduled`/`deadline`) = **date-only, floating** (a
@@ -956,7 +1001,9 @@ The pattern is already latent: **complete→log**, **promotion**,
 ## Remaining design punch list
 
 Split by needs-a-decision vs decided-needs-spec vs deferred. Group A is the real
-remaining *design* work; B is downhill from the keystone; C needs no action now.
+remaining *design* work; B is mostly mechanical projection of the keystone —
+**except the `parse`/`serialize` round-trip, promoted 2026-06-22 to a gating
+Group-A spike** (see amendments); C needs no action now.
 
 ### A. Open design decisions (a call is needed)
 
@@ -1014,10 +1061,60 @@ remaining *design* work; B is downhill from the keystone; C needs no action now.
 16. `storage == interchange` alternative (considered; declined unless "one
     format" appeals).
 
-**Critical path:** **all of Group A decided.** Remaining = Group B specs
-(mechanical projection of the canonical node) + Group C deferred. Hooks reserved
-as a seam (realize `on-reminder-due`, defer the rest). Tracking issue:
-`reckon-53fu`.
+**Critical path:** all of Group A decided. **A 2026-06-22 assessment then promoted
+the `parse`/`serialize` round-trip into a GATING Group-A spike** (it is no longer
+"downhill") — see the Parser-contract GATING note and the amendments below.
+Remaining = the round-trip spike + Group B specs + Group C deferred. Tracking
+issue: `reckon-53fu`.
+
+## 2026-06-22 amendments (post-assessment)
+
+A 5-lens, code-grounded assessment (`composable-redesign-assessment.md`) and the
+owner's resolution (`composable-redesign-rebuttal.md`) produced these amendments.
+Sorted: **(A) accepted universal**, **(B) work-specific — extension-resident**,
+**(C) owner's call — settled**.
+
+**A — accepted (changes folded into the doc above):**
+- **Round-trip is GATING**, not downhill: span-local write-back + a
+  `parse(serialize(parse(f)))==f` fuzz gate on real Obsidian/Logseq/agent input,
+  before any tool writes a truth file. (See Parser-contract GATING note.)
+- **Reuse estimate corrected** ~60% → ~20–35%; tasks/notes/checklists are
+  DB-primary today; **truth-inversion = long pole**.
+- **`author`/provenance field added** to the canonical node.
+- **Concurrency real but downgraded** (1–2 real log writers, not 15);
+  `merge=union`+sort+ULID-dedup on `log/*.md` = cheap lossless insurance.
+
+**B — work-specific; core must NOT be recaptured** (the owner left the 2026-06-15
+design precisely to avoid this):
+- **Read-time synthesis is NOT core.** Reserve an **`rk-brief` extension seam**
+  over the index; build only when a firehose (work, ~15 agents) makes the flat-log
+  read fail. The general tool's "daily review" stays a query/concatenation.
+- **Work task model** (anchored auto-reconcile vs Jira/GitHub, remote staleness,
+  multi-persona provenance, Jira-key aliases) lives in **`rk-jira`/`rk-gh`
+  extensions**. Core freshness stays local-file-only.
+- **`rk today` = split actuator:** native nodes actuated in-list; external work
+  tickets **read-only + jump** (driving a ticket done *from the agenda* would be
+  the reconcile engine the owner refused).
+
+**C — owner's call, settled:** journal losslessness = `merge=union`+sort+dedup ·
+`rk today` split actuator · synthesis = reserved seam (not dead, not core) ·
+recurrence = **stored `scheduled` cursor (org-style), log as audit** (kept as a v1
+feature) · lean v1 (below).
+
+## Lean v1 scope
+
+Build the minimum; grow on use. **IN:** plain-text markdown + git (+ Syncthing
+mobile) · **gating** `parse`/`serialize` with span-local write-back + round-trip
+fuzz gate · SQLite property-graph index (lazy-reconcile-on-read + `rk index`,
+disposable, never synced) · ULID inline + aliases, `#^frag` only when linked ·
+**`author` on the node** · tools **log + todo + note** (ephemeral/durable as a
+light todo property) · **`rk query`** (SQL over stable views, read-only) ·
+**`rk today`** split actuator · **recurrence via stored `scheduled` cursor** ·
+`merge=union`+sort+dedup on the log.
+**DEFERRED until a lived consumer:** read-time synthesis (reserve `rk-brief`
+seam) · work feeders `rk-jira`/`rk-gh` · the `--ref/--pop/--cp` disposition zoo
+(ship one transactional `rk promote` first) · hooks beyond `on-reminder-due` ·
+checklist tool · multi-level fragments.
 
 ## Principle: embrace & extend (reuse existing tools/formats)
 
@@ -1284,6 +1381,26 @@ now** (reminder delivery), defer the rest (YAGNI). Constraints: hooks are
 local/per-device and not synced (good for side-effects, wary of vault-mutating
 ones that fight Syncthing); invocation-driven, not ambient (time-based hooks need
 a cron tick); opt-in, visible, logged.
+
+### 2026-06-22 — Post-assessment amendments
+A code-grounded 5-lens assessment (`composable-redesign-assessment.md`) + owner
+resolution (`composable-redesign-rebuttal.md`). Accepted as universal: (1) the
+`parse`/`serialize` round-trip is **gating**, not downhill — span-local write-back
++ a `parse(serialize(parse(f)))==f` fuzz gate on real Obsidian/Logseq/agent input
+before any truth write (also what makes hand-edit + tool-write coexist, i.e.
+reproduces org's dwimmy feel); (2) reuse estimate corrected ~60% → ~20–35% —
+tasks/notes/checklists are **DB-primary today** (verified: `notes_repository.go:34`,
+`checklist/repository.go:32`, `rebuild.go` journal-only), truth-inversion is the
+long pole; (3) **`author` field added** to the canonical node; (4) concurrency
+real but **downgraded** (1–2 real log writers) — `merge=union`+sort+ULID-dedup as
+cheap insurance. Held the line (work-specific, extension-resident — the owner left
+the 2026-06-15 design to avoid recapture): read-time **synthesis is not core**
+(reserve `rk-brief` seam); work Jira/GitHub reconcile + remote staleness +
+multi-persona provenance live in `rk-jira`/`rk-gh`; **`rk today` = split actuator**
+(native actuated, external read-only+jump). Owner's calls settled: journal
+losslessness = `merge=union`+sort+dedup; recurrence = **stored `scheduled` cursor,
+org-style, log as audit** (was log-derived done-cursor — changed for robustness +
+org-fidelity; locus-of-state principle); a **Lean v1 scope** section added.
 
 ## Parking lot / notes
 
