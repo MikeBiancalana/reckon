@@ -2,6 +2,7 @@ package node
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -45,6 +46,37 @@ func TestULIDTimeSortable(t *testing.T) {
 			t.Fatalf("ULID not time-sortable at step %d: %q <= %q", i, u, prev)
 		}
 		prev = u
+	}
+}
+
+// AC5 — concurrency-safe: minting from many goroutines yields no collisions and
+// no data race (run with -race). The shared monotonic entropy is mutex-guarded.
+func TestULIDConcurrentMintUnique(t *testing.T) {
+	const goroutines, per = 16, 500
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			local := make([]string, 0, per)
+			for i := 0; i < per; i++ {
+				local = append(local, Mint())
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, u := range local {
+				if seen[u] {
+					t.Errorf("concurrent duplicate ULID: %q", u)
+				}
+				seen[u] = true
+			}
+		}()
+	}
+	wg.Wait()
+	if len(seen) != goroutines*per {
+		t.Errorf("want %d unique ULIDs, got %d", goroutines*per, len(seen))
 	}
 }
 
