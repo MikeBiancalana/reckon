@@ -60,3 +60,20 @@ Per the owner's stated intent — instantiate the minimum, grow as used. **IN:**
 
 ## Convergence note
 The composable design and the 6-15 design agree on ~80% of the core. They diverged exactly on the work-coupling (reconcile / provenance / concurrency / synthesis) — the split the 6-15 "Decision point" section predicted, and the seam (`rk-<name>` extensions) the composable doc independently arrived at. The panel improved on the 6-15 synthesis: the cheap lossless-log answer (`merge=union` + sort + dedup) keeps files-as-truth everywhere — no DB-backed log tool needed, so the global DB-first lock is retired in favor of a lighter, file-native fix.
+
+## Round 2 — post-rebuttal convergence (2026-06-23)
+
+Reviewed `composable-redesign-rebuttal.md` + the amendments folded into `composable-redesign.md` (keystone reclassified to gating Group-A; `author` field added; recurrence → stored `scheduled` cursor; concurrency trip-wire recorded; synthesis as a reserved `rk-brief` seam; the new "AI as a first-class participant" pillar).
+
+**Verdict: converged. Direction sound, core settled — no disagreement with the resolution.** The rebuttal accepts the two gating findings in full (keystone→gating; ~60%→20-35% truth-inversion as the long pole) and correctly **quarantines synthesis + Jira-reconcile as work-extensions** rather than letting them recapture the core — the discipline the owner left the 6-15 design to get. Two resolutions are net improvements over the original assessment framing:
+- **Recurrence via stored `scheduled` cursor (log = audit)** dissolves the H5 log-integrity fragility *and* is more org-faithful than the log-derived cursor — better than either prior position.
+- **The AI-as-first-class pillar** ("the determinism boundary is the tool/LLM boundary"; model-free core; agents-as-porcelains; MCP-as-just-another-porcelain; AI output re-enters as nodes with `author=<model>` + `derived-from`) resolves the synthesis-out-of-core tension cleanly. Read-only `rk query` = safety by construction.
+
+The concurrency downgrade (sessions-alive ≠ sessions-writing-the-log; 1–2 real log writers) is a legitimate factual correction; the `merge=union` fix went in regardless as cheap insurance.
+
+### Open watch-items (edges for the build, not objections)
+
+1. **Span-local write-back is the load-bearing unproven bet.** Correctly gated. But byte-preserving unmodeled prose *while* tool and human edit the same file needs span anchoring that survives edits above/below the span — hard for markdown. Promise nothing downstream until the spike passes, and **pre-name a fallback** (e.g. DB-truth for the single most-structured type) so a *failed* spike reroutes the design instead of stranding it. Don't discover the fallback under pressure.
+2. **Lean v1 is a scope list, not a sequence.** Sequence *within* v1: keystone spike → substrate + log capture + index + `rk query` (this alone replaces logseq's journal + retrieval — the highest-use surfaces) → prove the substrate → *then* todo / `rk today` / recurrence. Don't build the agenda before log+query earn trust.
+3. **Keep `merge=union` scoped to `log/*.md`.** Correct for the append-only log; **unsafe for frontmatter** on file-per-item todos/notes (union-merging two edits to the same `scheduled:` key garbles it). Residual edge = concurrent frontmatter edits to the *same* node — rare, surfaces as a git conflict not silent loss (acceptable) — but name it, and keep a post-write "did my ULID land?" verify as the trip-wire.
+4. **Migration is part of the long pole, not a Group-B footnote.** Moving existing DB-primary tasks/notes/checklists to text-truth is the *same workstream* as span-local write-back. Elevate it beside the keystone, or the 20–35% reuse estimate quietly grows.
