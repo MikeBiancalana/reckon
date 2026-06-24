@@ -76,8 +76,8 @@ func TestFindExternal_NotExecutable(t *testing.T) {
 func TestFirstNonFlag(t *testing.T) {
 	fs := pflag.NewFlagSet("rk", pflag.ContinueOnError)
 	fs.String("vault", "", "vault dir")         // non-bool: next arg is its value
-	fs.Bool("json", false, "json output")        // bool: never consumes a following arg
-	fs.Bool("ndjson", false, "ndjson output")    // bool
+	fs.Bool("json", false, "json output")       // bool: never consumes a following arg
+	fs.Bool("ndjson", false, "ndjson output")   // bool
 	fs.BoolP("quiet", "q", false, "quiet mode") // bool with shorthand -q
 
 	tests := []struct {

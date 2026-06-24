@@ -56,8 +56,10 @@ func (wr *Writer) Print(v any) error {
 		if err != nil {
 			return fmt.Errorf("output marshal: %w", err)
 		}
-		_, err = fmt.Fprintf(wr.w, "%s\n", data)
-		return err
+		if _, err := fmt.Fprintf(wr.w, "%s\n", data); err != nil {
+			return fmt.Errorf("output write: %w", err)
+		}
+		return nil
 	default: // Pretty
 		var s string
 		switch t := v.(type) {
@@ -68,8 +70,10 @@ func (wr *Writer) Print(v any) error {
 		default:
 			s = fmt.Sprintf("%v", v)
 		}
-		_, err := fmt.Fprintf(wr.w, "%s\n", s)
-		return err
+		if _, err := fmt.Fprintf(wr.w, "%s\n", s); err != nil {
+			return fmt.Errorf("output write: %w", err)
+		}
+		return nil
 	}
 }
 
@@ -83,8 +87,10 @@ func (wr *Writer) PrintAll(vs []any) error {
 		if err != nil {
 			return fmt.Errorf("output marshal array: %w", err)
 		}
-		_, err = fmt.Fprintf(wr.w, "%s\n", data)
-		return err
+		if _, err := fmt.Fprintf(wr.w, "%s\n", data); err != nil {
+			return fmt.Errorf("output write array: %w", err)
+		}
+		return nil
 	default: // NDJSON and Pretty: one element at a time
 		for _, v := range vs {
 			if err := wr.Print(v); err != nil {
