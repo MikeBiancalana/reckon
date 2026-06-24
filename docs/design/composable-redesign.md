@@ -492,6 +492,19 @@ Spec it once; the plumbing collapses into it.
    may be unresolved (alias or ULID); the resolver maps them.
 5. **Type-agnostic ULID** → `--pop` move preserves identity across a type change;
    inbound links survive promotion.
+6. **Create renders through one primitive (2026-06-24).** Building a node from
+   typed fields uses a single shared `node.Render(n) → text` (inverse of the
+   parser), so every create/import/promotion path emits canonical markdown that
+   is itself round-trip-stable (`serialize(parse(render(n))) == render(n)`) — the
+   create-path counterpart to byte-preserving edits, gated like the edit path.
+   `node.NewNode` mints the ULID on create. (Closes review finding H1.)
+7. **Index never mutates truth files (ULID mint policy, 2026-06-24).** Tools that
+   *create* nodes mint a ULID; the indexer never writes into source files, so a
+   hand/Obsidian-authored id-less file keys on `file:<relpath>` and is not
+   rename-stable until a tool touches it. An explicit, opt-in **`rk adopt`**
+   stamps ULIDs into id-less files (a user-initiated mutation), giving
+   Obsidian-authored files a path to first-class without the index ever writing
+   truth. (Review finding M2.)
 
 ### Examples
 

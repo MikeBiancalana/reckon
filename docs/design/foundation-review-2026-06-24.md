@@ -49,3 +49,29 @@ The parser reads `id:` but never mints; the index keys a ULID-less file as `file
 ## Bottom line
 
 The hard call (byte-preserving keystone) is correct and cleanly built; the index is solid. The one thing to nail before tools land on the foundation is **H1 — the create/render path needs the same round-trip discipline and gate the edit path already has.** **M2–M5** are cheap now and ugly to retrofit once data exists (especially the `~/.reckon` config overlap and duplicate-ULID detection). Everything in LOW is wiring that the next tickets (T3/T4) will exercise — track that they do.
+
+## Disposition (2026-06-24, owner session)
+
+Triaged; all findings accepted. Actions:
+
+- **H1 — DONE this session.** Added `node.Render(n) → text` (inverse of the
+  parser) + `node.NewNode` (mint-on-create) + a create-round-trip gate
+  (`internal/node/render_test.go`): `parse(render(n))` reproduces the node,
+  `serialize(parse(render(n))) == render(n)`, render idempotence, Obsidian-shaped
+  quoted refs. Suites green, build OK. Tracked as `reckon-s0ix` (closed); wired as
+  a prerequisite of T4. Design invariant #6 added.
+- **M2 — policy recorded** (design invariant #7): index never mutates truth;
+  create mints; `rk adopt` stamps id-less Obsidian files opt-in. Ticket
+  `reckon-9bfx` (before T8/T9).
+- **M3 + M4 — ticket `reckon-5b44`** (duplicate-ULID + alias-collision
+  detection/warn in reconcile), before T4.
+- **M5 — ticket `reckon-lrw2`** (resolve `~/.reckon` legacy/vault overlap; keep
+  resolution pure), before T4.
+- **M-parser-scope — ticket `reckon-vj55`** (enumerate supported subset; handle
+  block-scalar YAML, CRLF, inline-code-inert, multi-target refs; real-Obsidian
+  tests), before T8.
+- **L1 + L2 — folded into T3 acceptance** (`reckon-p0zs`): wire
+  `Reconcile()`-on-read at every read entry point (first exercises
+  `Reconcile`/`Mint`); emit nodes via the guarded `node.WriteNDJSON`.
+- **L3 (Windows lock) / L4 (mtime-preserving edits)** — accepted as known; dev
+  target is linux/darwin, `rk index` full rebuild is the L4 recovery.
