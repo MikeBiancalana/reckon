@@ -69,16 +69,5 @@ var queryCmd = &cobra.Command{
 	},
 }
 
-// indexCmd is a v1 stub for the "rk index" command.
-var indexCmd = &cobra.Command{
-	Use:         "index",
-	Short:       "Build or rebuild the vault index",
-	Long:        "Build or rebuild the per-device index cache from the vault. (v1 stub — not yet implemented)",
-	Annotations: map[string]string{"requiresDB": "false"},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("index: %w", errNotImplemented)
-	},
-}
-
 // errNotImplemented is the sentinel returned by v1 stub commands.
 var errNotImplemented = fmt.Errorf("not yet implemented (v1-T0 stub)")
