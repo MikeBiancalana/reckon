@@ -11,8 +11,6 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/logger"
 	notessvc "github.com/MikeBiancalana/reckon/internal/service"
 	"github.com/MikeBiancalana/reckon/internal/storage"
-	"github.com/MikeBiancalana/reckon/internal/tui"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -37,9 +35,12 @@ var (
 	quietFlag          bool
 	logFileFlag        string
 	logLevelFlag       string
+	jsonFlag           bool
+	ndjsonFlag         bool
+	vaultFlag          string
 )
 
-// buildLoggerConfig creates a logger configuration from flags and environment variables
+// buildLoggerConfig creates a logger configuration from flags and environment variables.
 func buildLoggerConfig(isTUIMode bool) logger.Config {
 	cfg := logger.Config{
 		Level:   logLevelFlag,
@@ -67,44 +68,52 @@ func buildLoggerConfig(isTUIMode bool) logger.Config {
 	return cfg
 }
 
-// RootCmd is the root command for the CLI
+// RootCmd is the root command for the CLI. Bare invocation (no subcommand) prints help.
 var RootCmd = &cobra.Command{
 	Use:   "rk",
 	Short: "Reckon - CLI Productivity System",
 	Long:  `A terminal-based productivity tool combining daily journaling, task management, and knowledge base.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Reconfigure logger for TUI mode
-		cfg := buildLoggerConfig(true)
-
-		if err := logger.InitializeWithConfig(cfg); err != nil {
-			return fmt.Errorf("failed to initialize logger for TUI mode: %w", err)
-		}
-
-		// Default behavior: launch TUI
-		model := tui.NewModel(journalService)
-		if journalTaskService != nil {
-			model.SetJournalTaskService(journalTaskService)
-		}
-		if notesService != nil {
-			model.SetNotesService(notesService)
-		}
-		p := tea.NewProgram(model, tea.WithAltScreen())
-		_, err := p.Run()
-		return err
-	},
+	// No RunE: bare "rk" prints help (git-style).
 }
 
 func init() {
-	// Initialize logger and service
-	cobra.OnInitialize(initLogger, initService)
+	// PersistentPreRunE replaces cobra.OnInitialize: it runs only for actual
+	// commands (not --help), validates flag exclusivity, and skips DB init for
+	// commands annotated requiresDB=false.
+	RootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		// Mutually exclusive output mode flags
+		if jsonFlag && ndjsonFlag {
+			return fmt.Errorf("--json and --ndjson are mutually exclusive")
+		}
 
-	// Add global flags
+		if err := initLoggerE(); err != nil {
+			return err
+		}
+
+		// Walk cmd and its ancestors: if any is annotated requiresDB=false, skip DB.
+		requiresDB := true
+		for c := cmd; c != nil; c = c.Parent() {
+			if v, ok := c.Annotations["requiresDB"]; ok && v == "false" {
+				requiresDB = false
+				break
+			}
+		}
+		if requiresDB {
+			return initServiceE()
+		}
+		return nil
+	}
+
+	// Persistent flags — available to all subcommands
 	RootCmd.PersistentFlags().StringVar(&dateFlag, "date", "", "Date to operate on in YYYY-MM-DD format")
 	RootCmd.PersistentFlags().BoolVarP(&quietFlag, "quiet", "q", false, "Suppress non-essential output")
 	RootCmd.PersistentFlags().StringVar(&logFileFlag, "log-file", "", "Path to log file (default: ~/.reckon/logs/reckon.log in TUI mode, stderr otherwise)")
 	RootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "", "Log level: DEBUG, INFO, WARN, ERROR (default: INFO)")
+	RootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+	RootCmd.PersistentFlags().BoolVar(&ndjsonFlag, "ndjson", false, "Output as newline-delimited JSON")
+	RootCmd.PersistentFlags().StringVar(&vaultFlag, "vault", "", "Override vault directory (default: $RECKON_VAULT or ~/.reckon)")
 
-	// Add subcommands
+	// v0 subcommands (preserved verbatim)
 	RootCmd.AddCommand(GetLogCommand())
 	RootCmd.AddCommand(GetNoteCommand())
 	RootCmd.AddCommand(GetNotesCommand())
@@ -116,37 +125,39 @@ func init() {
 	RootCmd.AddCommand(GetTaskCommand())
 	RootCmd.AddCommand(GetWinCommand())
 	RootCmd.AddCommand(GetChecklistCommand())
+
+	// v1 subcommands
+	RootCmd.AddCommand(tuiCmd)
+	RootCmd.AddCommand(addCmd)
+	RootCmd.AddCommand(todoCmd)
+	RootCmd.AddCommand(queryCmd)
+	RootCmd.AddCommand(indexCmd)
 }
 
-// initLogger initializes the logger with command-line flags
-// This is called via cobra.OnInitialize for non-TUI commands
-func initLogger() {
+// initLoggerE initializes the logger with command-line flags.
+// Returns a wrapped error instead of calling os.Exit (per REVIEW_PATTERNS).
+func initLoggerE() error {
 	cfg := buildLoggerConfig(false)
-
 	if err := logger.InitializeWithConfig(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing logger: %v\n", err)
-		os.Exit(ExitCodeGeneralErr)
+		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
-
-	// Log initialization for debugging
 	logger.Info("reckon initialized", "version", "dev", "log_file", logger.GetLogFile(), "log_level", cfg.Level)
+	return nil
 }
 
-// initService initializes the journal service
-func initService() {
+// initServiceE initializes all service layer dependencies.
+// Returns a wrapped error instead of calling os.Exit (per REVIEW_PATTERNS).
+func initServiceE() error {
 	dbPath, err := config.DatabasePath()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting database path: %v\n", err)
-		os.Exit(ExitCodeGeneralErr)
+		return fmt.Errorf("failed to get database path: %w", err)
 	}
 
 	db, err := storage.NewDatabase(dbPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
-		os.Exit(ExitCodeGeneralErr)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// log := logger.GetLogger()
 	repo := journal.NewRepository(db)
 	fileStore := storage.NewFileStore()
 	journalService = journal.NewService(repo, fileStore)
@@ -154,16 +165,16 @@ func initService() {
 	journalTaskRepo := journal.NewTaskRepository(db)
 	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
 
-	// Initialize notes service
 	notesRepo := notessvc.NewNotesRepository(db)
 	notesService = notessvc.NewNotesService(notesRepo)
 
-	// Initialize checklist service
 	checklistRepo := checklist.NewRepository(db)
 	checklistService = checklist.NewService(checklistRepo)
+
+	return nil
 }
 
-// getEffectiveDate returns the date to operate on, either from --date flag or today
+// getEffectiveDate returns the date to operate on, either from --date flag or today.
 func getEffectiveDate() (string, error) {
 	if dateFlag != "" {
 		if _, err := time.Parse("2006-01-02", dateFlag); err != nil {
@@ -174,8 +185,20 @@ func getEffectiveDate() (string, error) {
 	return time.Now().Format("2006-01-02"), nil
 }
 
-// Execute runs the root command
+// Execute runs the root command with git-style external dispatch.
+// It attempts to dispatch to an external rk-<verb> binary before falling
+// through to cobra's built-in command tree. Returns an error on failure;
+// main should call os.Exit(1) on non-nil return.
 func Execute() error {
 	defer logger.Close()
+
+	handled, err := maybeDispatch(os.Args[1:])
+	if handled {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "rk: %v\n", err)
+		}
+		return err
+	}
+
 	return RootCmd.Execute()
 }
