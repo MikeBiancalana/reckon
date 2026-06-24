@@ -1,0 +1,8 @@
+# reckon git attributes
+#
+# Append-only daily log files use a union merge driver so concurrent
+# appends from multiple devices combine instead of conflicting. Scoped to
+# log/*.md ONLY — other markdown (todo/, notes/, README, etc.) must use the
+# default 3-way merge so real edit conflicts surface. (v1-T0 watch-item #3,
+# log-only.)
+log/*.md merge=union
