@@ -8,6 +8,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// futureDate returns an absolute date string safely in the future (relative to
+// now), so date-picker tests needing a valid non-past date never become
+// time-bombs that fail once the calendar passes a hardcoded literal.
+func futureDate() string {
+	return time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+}
+
 func TestNewDatePicker(t *testing.T) {
 	dp := NewDatePicker("Schedule Task")
 
@@ -78,11 +85,12 @@ func TestDatePickerGetValue(t *testing.T) {
 	dp.Show()
 
 	// Simulate typing
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
+	d := futureDate()
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(d)})
 
 	value := dp.GetValue()
-	if value != "2026-06-15" {
-		t.Errorf("Expected value to be '2026-06-15', got %q", value)
+	if value != d {
+		t.Errorf("Expected value to be %q, got %q", d, value)
 	}
 }
 
@@ -116,7 +124,7 @@ func TestDatePickerUpdateEnterValid(t *testing.T) {
 	dp.Show()
 
 	// Type valid date
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(futureDate())})
 
 	// Press Enter
 	dp.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -165,15 +173,16 @@ func TestDatePickerPreviewAbsoluteDate(t *testing.T) {
 	dp.Show()
 
 	// Type absolute date
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
+	d := futureDate()
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(d)})
 
 	// Should have preview
 	if dp.preview == "" {
 		t.Error("Expected preview for valid date")
 	}
 
-	if !strings.Contains(dp.preview, "2026-06-15") {
-		t.Errorf("Expected preview to contain date '2026-06-15', got: %s", dp.preview)
+	if !strings.Contains(dp.preview, d) {
+		t.Errorf("Expected preview to contain date %q, got: %s", d, dp.preview)
 	}
 }
 
@@ -277,7 +286,9 @@ func TestDatePickerParsedDate(t *testing.T) {
 	dp.Show()
 
 	// Type valid absolute date
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
+	future := time.Now().AddDate(0, 0, 30)
+	d := future.Format("2006-01-02")
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(d)})
 
 	date, err := dp.ParsedDate()
 
@@ -285,8 +296,8 @@ func TestDatePickerParsedDate(t *testing.T) {
 		t.Errorf("Expected no error, got: %v", err)
 	}
 
-	if date.Year() != 2026 || date.Month() != time.June || date.Day() != 15 {
-		t.Errorf("Expected date 2026-06-15, got %v", date)
+	if date.Year() != future.Year() || date.Month() != future.Month() || date.Day() != future.Day() {
+		t.Errorf("Expected date %s, got %v", d, date)
 	}
 }
 
@@ -336,8 +347,9 @@ func TestDatePickerMultipleShowHideCycles(t *testing.T) {
 
 	// Cycle 1
 	dp.Show()
-	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2026-06-15")})
-	if dp.GetValue() != "2026-06-15" {
+	d := futureDate()
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(d)})
+	if dp.GetValue() != d {
 		t.Error("Expected input to be stored")
 	}
 	dp.Hide()
@@ -364,7 +376,7 @@ func TestDatePickerUpdatePreview(t *testing.T) {
 		},
 		{
 			name:          "valid absolute date",
-			input:         "2026-06-15",
+			input:         futureDate(),
 			expectError:   false,
 			expectPreview: true,
 		},
