@@ -44,6 +44,9 @@ func TestLoad_VaultEnvOverride(t *testing.T) {
 	vault := "/tmp/myvault"
 	t.Setenv("RECKON_VAULT", vault)
 	t.Setenv("RECKON_CACHE", "")
+	// Clear XDG_CACHE_HOME so an ambient value (possibly inside the vault) cannot
+	// trip the cache-inside-vault guard and fail this test for the wrong reason.
+	t.Setenv("XDG_CACHE_HOME", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -89,7 +92,7 @@ func TestNewConfig_TempVaultHermetic(t *testing.T) {
 	if home != "" && homeStatBefore != nil {
 		homeStatAfter, _ := os.Stat(home)
 		if homeStatAfter != nil && homeStatBefore.ModTime() != homeStatAfter.ModTime() {
-			t.Logf("warning: HOME modification time changed — NewConfig may have touched ~")
+			t.Errorf("HOME modification time changed — NewConfig touched ~ (must be pure, AC-2/IR-3)")
 		}
 	}
 }

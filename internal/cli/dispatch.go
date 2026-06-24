@@ -47,13 +47,19 @@ func findExternal(name string) (string, error) {
 // as bool (no value consumed). "--" terminates flag scanning.
 func firstNonFlag(args []string, flags *pflag.FlagSet) string {
 	skipNext := false
+	pastDoubleDash := false
 	for _, arg := range args {
+		if pastDoubleDash {
+			// Everything after "--" is positional, even if it looks like a flag.
+			return arg
+		}
 		if skipNext {
 			skipNext = false
 			continue
 		}
-		// "--" ends flag parsing; everything after is positional
+		// "--" ends flag parsing; everything after is positional.
 		if arg == "--" {
+			pastDoubleDash = true
 			continue
 		}
 		if strings.HasPrefix(arg, "--") {
