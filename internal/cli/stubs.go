@@ -58,16 +58,5 @@ var todoCmd = &cobra.Command{
 	},
 }
 
-// queryCmd is a v1 stub for the "rk query" command.
-var queryCmd = &cobra.Command{
-	Use:         "query",
-	Short:       "Query the vault index",
-	Long:        "Query the vault index using a structured expression. (v1 stub — not yet implemented)",
-	Annotations: map[string]string{"requiresDB": "false"},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("query: %w", errNotImplemented)
-	},
-}
-
 // errNotImplemented is the sentinel returned by v1 stub commands.
 var errNotImplemented = fmt.Errorf("not yet implemented (v1-T0 stub)")
