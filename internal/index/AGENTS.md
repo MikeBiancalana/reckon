@@ -29,13 +29,21 @@ private so storage can be refactored without breaking callers):
 | `node_props` | `id, key, value` |
 | `aliases` | `alias, id` |
 | `fts` | `id, body` |
+| `fts_search` | `id, body` (fts5 vtable — supports `MATCH`) |
 
 `id` is the node's index identity: its inline **ULID** when present, else a
 surrogate `file:<relpath>`. Edge `dst` is the raw parser target (a ULID or alias,
 unresolved); `dst_key` is the resolved node id, or NULL = **dangling**.
 
-> **Known wrinkle for T3:** FTS5 `MATCH` needs the virtual table, not a view; the
-> `fts` view exposes columns only. T3 decides the sanctioned MATCH surface.
+> **Full-text search (reckon-a4eh):** FTS5 `MATCH` needs the virtual table, not a
+> view, so the fts5 store is exposed directly as the public `fts_search` vtable —
+> the sanctioned MATCH surface. The `fts` view (same columns) stays for plain
+> column scans but cannot forward `MATCH`. Example:
+> `SELECT id FROM fts_search WHERE fts_search MATCH 'term' ORDER BY bm25(fts_search)`.
+> `fts_search` is the only public physical table; all other physical tables remain
+> private (`_`-prefixed). Read-only enforcement is unchanged: writes (incl. fts5
+> `'rebuild'`/`'optimize'` commands) are blocked by the read-only connection and
+> the DML denylist.
 
 ## Freshness model (design A#4)
 

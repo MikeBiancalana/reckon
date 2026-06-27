@@ -40,7 +40,11 @@ var queryCmd = &cobra.Command{
 	Long: "Run a read-only SQL SELECT against the vault index's stable views " +
 		"(nodes, edges, node_props, aliases, fts). Results are emitted as canonical " +
 		"node NDJSON by default, or as raw result rows with --raw. The query is " +
-		"executed against a read-only connection and non-SELECT statements are rejected.",
+		"executed against a read-only connection and non-SELECT statements are rejected.\n\n" +
+		"Full-text search uses the fts_search vtable, e.g.:\n" +
+		"  rk query \"SELECT id FROM fts_search WHERE fts_search MATCH 'hello'\"\n" +
+		"Rank results with ORDER BY bm25(fts_search). The fts view exposes the same " +
+		"columns (id, body) for plain scans but does not support MATCH.",
 	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ArbitraryArgs,
@@ -241,7 +245,6 @@ func openReadOnlyIndex(dbPath string) (*sql.DB, error) {
 var (
 	denyRe    = regexp.MustCompile(`\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|REINDEX|VACUUM|PRAGMA|TRIGGER|GRANT|RENAME)\b`)
 	privateRe = regexp.MustCompile(`\b_[A-Za-z]\w*`)
-	matchRe   = regexp.MustCompile(`\bMATCH\b`)
 	wordRe    = regexp.MustCompile(`[A-Za-z]+`)
 )
 
@@ -274,13 +277,13 @@ func validateReadOnlySQL(raw string) error {
 	}
 
 	if tbl := privateRe.FindString(noTrail); tbl != "" {
-		return fmt.Errorf("query: access to private table %q is not allowed; query the public views (nodes, edges, node_props, aliases, fts)", tbl)
+		return fmt.Errorf("query: access to private table %q is not allowed; query the public views (nodes, edges, node_props, aliases, fts, fts_search)", tbl)
 	}
 
-	if matchRe.MatchString(upper) {
-		return errors.New("query: full-text MATCH is not supported in v1 (the fts view exposes columns only); full-text search is a planned follow-up")
-	}
-
+	// Full-text search is sanctioned via the public fts_search vtable, so MATCH is
+	// permitted: SQLite enforces that MATCH targets a real fts5 table (the fts view
+	// cannot forward it), and the read-only connection + private-table guard above
+	// keep MATCH from reaching anything writable or private.
 	return nil
 }
 

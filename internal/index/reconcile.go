@@ -256,7 +256,7 @@ func insertNode(tx *sql.Tx, key string, n *node.Node, rel, hash string, mtime in
 			return fmt.Errorf("index: insert alias %q: %w", a, err)
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO _fts(node_key,body) VALUES(?,?)`, key, n.Body); err != nil {
+	if _, err := tx.Exec(`INSERT INTO fts_search(id,body) VALUES(?,?)`, key, n.Body); err != nil {
 		return fmt.Errorf("index: insert fts %q: %w", key, err)
 	}
 	for _, l := range n.Links {
@@ -278,7 +278,7 @@ func deleteOwned(tx *sql.Tx, keys []string) error {
 			`DELETE FROM _edges WHERE src_key=?`,
 			`DELETE FROM _props WHERE node_key=?`,
 			`DELETE FROM _aliases WHERE node_key=?`,
-			`DELETE FROM _fts WHERE node_key=?`,
+			`DELETE FROM fts_search WHERE id=?`,
 			`DELETE FROM _nodes WHERE node_key=?`,
 		} {
 			if _, err := tx.Exec(q, k); err != nil {
@@ -314,7 +314,7 @@ func sweepKeys(tx *sql.Tx, present map[string]bool) error {
 		`DELETE FROM _edges   WHERE src_key  NOT IN (SELECT k FROM _present)`,
 		`DELETE FROM _props   WHERE node_key NOT IN (SELECT k FROM _present)`,
 		`DELETE FROM _aliases WHERE node_key NOT IN (SELECT k FROM _present)`,
-		`DELETE FROM _fts     WHERE node_key NOT IN (SELECT k FROM _present)`,
+		`DELETE FROM fts_search WHERE id   NOT IN (SELECT k FROM _present)`,
 		`DELETE FROM _nodes   WHERE node_key NOT IN (SELECT k FROM _present)`,
 	} {
 		if _, err := tx.Exec(q); err != nil {
