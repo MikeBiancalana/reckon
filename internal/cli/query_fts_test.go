@@ -230,3 +230,39 @@ func TestQueryFTSPrivateBlocked(t *testing.T) {
 		t.Errorf("FTS-private: expected 'private' in error, got: %v", err)
 	}
 }
+
+// FTS-shadow: fts5's auto-created backing tables (fts_search_data, …) are NOT
+// _-prefixed, so they must be blocked by the dedicated shadow-table guard rather
+// than leaking internal index structure through user SQL.
+func TestQueryFTSShadowBlocked(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	writeTestNode(t, vault, "a.md", node.Mint(), "note", "hello")
+	buildIndex(t, vault)
+
+	stdout, _, err := runQuery(t, vault, "SELECT * FROM fts_search_data")
+	if err == nil {
+		t.Fatal("FTS-shadow: expected rejection of fts5 backing table, got nil")
+	}
+	if stdout != "" {
+		t.Errorf("FTS-shadow: expected empty stdout, got: %q", stdout)
+	}
+}
+
+// FTS-view-match: MATCH against the plain `fts` view (which cannot forward MATCH)
+// surfaces an error rather than silently empty output. This pins the post-change
+// behavior of the removed matchRe validator rule.
+func TestQueryFTSMatchOnViewErrors(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	writeTestNode(t, vault, "a.md", node.Mint(), "note", "hello")
+	buildIndex(t, vault)
+
+	stdout, _, err := runQuery(t, vault, "SELECT id FROM fts WHERE fts MATCH 'hello'")
+	if err == nil {
+		t.Fatal("FTS-view-match: expected error for MATCH against the fts view, got nil")
+	}
+	if stdout != "" {
+		t.Errorf("FTS-view-match: expected empty stdout, got: %q", stdout)
+	}
+}

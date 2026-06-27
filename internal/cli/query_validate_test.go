@@ -52,6 +52,9 @@ func TestValidateReadOnlySQL(t *testing.T) {
 		{"write cte", "WITH x AS (DELETE FROM _nodes RETURNING *) SELECT * FROM x", "write"},
 		{"private table", "SELECT * FROM _nodes", "private"},
 		{"private fts", "SELECT * FROM _fts", "private"},
+		{"fts shadow data", "SELECT * FROM fts_search_data", "fts5 internal"},
+		{"fts shadow config", "SELECT k, v FROM fts_search_config", "fts5 internal"},
+		{"fts vtable insert", "INSERT INTO fts_search(id,body) VALUES('x','y')", "select"},
 		{"bad leading keyword", "SELEKT * FROM nodes", "select"},
 	}
 	for _, tc := range reject {

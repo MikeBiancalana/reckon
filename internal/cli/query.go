@@ -246,6 +246,13 @@ var (
 	denyRe    = regexp.MustCompile(`\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|REINDEX|VACUUM|PRAGMA|TRIGGER|GRANT|RENAME)\b`)
 	privateRe = regexp.MustCompile(`\b_[A-Za-z]\w*`)
 	wordRe    = regexp.MustCompile(`[A-Za-z]+`)
+	// ftsShadowRe matches fts5's auto-created backing tables (fts_search_data,
+	// fts_search_idx, fts_search_docsize, fts_search_config). They are internal
+	// index structure, not part of the public contract, and unlike the other
+	// private tables they are NOT _-prefixed (fts5 names them after the vtable),
+	// so privateRe misses them. The bare `fts_search` vtable is the sanctioned
+	// surface and is deliberately not matched (no trailing underscore + word).
+	ftsShadowRe = regexp.MustCompile(`(?i)\bfts_search_\w+`)
 )
 
 // validateReadOnlySQL rejects anything that is not a single read-only SELECT/CTE.
@@ -280,10 +287,16 @@ func validateReadOnlySQL(raw string) error {
 		return fmt.Errorf("query: access to private table %q is not allowed; query the public views (nodes, edges, node_props, aliases, fts, fts_search)", tbl)
 	}
 
+	if tbl := ftsShadowRe.FindString(noTrail); tbl != "" {
+		return fmt.Errorf("query: access to fts5 internal table %q is not allowed; query the fts_search vtable with MATCH", tbl)
+	}
+
 	// Full-text search is sanctioned via the public fts_search vtable, so MATCH is
-	// permitted: SQLite enforces that MATCH targets a real fts5 table (the fts view
-	// cannot forward it), and the read-only connection + private-table guard above
-	// keep MATCH from reaching anything writable or private.
+	// permitted. SQLite enforces that MATCH targets a real fts5 table (the fts view
+	// cannot forward it). Writes can never happen: the read-only connection blocks
+	// them at the OS level and denyRe rejects DML/DDL keywords (including the fts5
+	// 'rebuild'/'optimize' INSERT commands). The two checks above keep user SQL off
+	// the _-prefixed private tables and fts5's own backing tables.
 	return nil
 }
 
