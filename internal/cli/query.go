@@ -40,7 +40,11 @@ var queryCmd = &cobra.Command{
 	Long: "Run a read-only SQL SELECT against the vault index's stable views " +
 		"(nodes, edges, node_props, aliases, fts). Results are emitted as canonical " +
 		"node NDJSON by default, or as raw result rows with --raw. The query is " +
-		"executed against a read-only connection and non-SELECT statements are rejected.",
+		"executed against a read-only connection and non-SELECT statements are rejected.\n\n" +
+		"Full-text search uses the fts_search vtable, e.g.:\n" +
+		"  rk query \"SELECT id FROM fts_search WHERE fts_search MATCH 'hello'\"\n" +
+		"Rank results with ORDER BY bm25(fts_search). The fts view exposes the same " +
+		"columns (id, body) for plain scans but does not support MATCH.",
 	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ArbitraryArgs,
@@ -241,8 +245,14 @@ func openReadOnlyIndex(dbPath string) (*sql.DB, error) {
 var (
 	denyRe    = regexp.MustCompile(`\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|REINDEX|VACUUM|PRAGMA|TRIGGER|GRANT|RENAME)\b`)
 	privateRe = regexp.MustCompile(`\b_[A-Za-z]\w*`)
-	matchRe   = regexp.MustCompile(`\bMATCH\b`)
 	wordRe    = regexp.MustCompile(`[A-Za-z]+`)
+	// ftsShadowRe matches fts5's auto-created backing tables (fts_search_data,
+	// fts_search_idx, fts_search_docsize, fts_search_config). They are internal
+	// index structure, not part of the public contract, and unlike the other
+	// private tables they are NOT _-prefixed (fts5 names them after the vtable),
+	// so privateRe misses them. The bare `fts_search` vtable is the sanctioned
+	// surface and is deliberately not matched (no trailing underscore + word).
+	ftsShadowRe = regexp.MustCompile(`(?i)\bfts_search_\w+`)
 )
 
 // validateReadOnlySQL rejects anything that is not a single read-only SELECT/CTE.
@@ -274,13 +284,19 @@ func validateReadOnlySQL(raw string) error {
 	}
 
 	if tbl := privateRe.FindString(noTrail); tbl != "" {
-		return fmt.Errorf("query: access to private table %q is not allowed; query the public views (nodes, edges, node_props, aliases, fts)", tbl)
+		return fmt.Errorf("query: access to private table %q is not allowed; query the public views (nodes, edges, node_props, aliases, fts, fts_search)", tbl)
 	}
 
-	if matchRe.MatchString(upper) {
-		return errors.New("query: full-text MATCH is not supported in v1 (the fts view exposes columns only); full-text search is a planned follow-up")
+	if tbl := ftsShadowRe.FindString(noTrail); tbl != "" {
+		return fmt.Errorf("query: access to fts5 internal table %q is not allowed; query the fts_search vtable with MATCH", tbl)
 	}
 
+	// Full-text search is sanctioned via the public fts_search vtable, so MATCH is
+	// permitted. SQLite enforces that MATCH targets a real fts5 table (the fts view
+	// cannot forward it). Writes can never happen: the read-only connection blocks
+	// them at the OS level and denyRe rejects DML/DDL keywords (including the fts5
+	// 'rebuild'/'optimize' INSERT commands). The two checks above keep user SQL off
+	// the _-prefixed private tables and fts5's own backing tables.
 	return nil
 }
 

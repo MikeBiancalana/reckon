@@ -4,15 +4,21 @@ package index
 // derived, disposable store: there are NO migrations. When this constant is
 // greater than the value persisted in _index_meta, Open performs a full rebuild
 // from the vault text instead.
-const SchemaVersion = 1
+//
+// v2 (reckon-a4eh): the FTS5 store was promoted from the private `_fts` table to
+// the public, MATCH-capable `fts_search` vtable.
+const SchemaVersion = 2
 
 // BuilderVersion identifies the code that built the index (display/debounce only,
 // never correctness).
 const BuilderVersion = "v1-T2"
 
 // schemaDDL creates the private physical tables and the STABLE PUBLIC VIEWS that
-// form the query contract (T3 reads only the views; physical tables stay private
-// so storage can be refactored without breaking callers).
+// form the query contract (callers read only the views; physical tables stay
+// private so storage can be refactored without breaking callers). The sole
+// public physical object is `fts_search`: an fts5 vtable must carry its own name
+// for MATCH to resolve, so it is exposed directly (no leading underscore) as the
+// sanctioned full-text surface. The `fts` view stays for plain column scans.
 //
 // Identity: node_key is the inline ULID when present, else a surrogate
 // "file:<relpath>". ulid holds the real inline ULID (may be ”). Edges store the
@@ -58,7 +64,7 @@ CREATE TABLE _aliases (
     PRIMARY KEY (alias, node_key)
 );
 
-CREATE VIRTUAL TABLE _fts USING fts5(node_key UNINDEXED, body);
+CREATE VIRTUAL TABLE fts_search USING fts5(id UNINDEXED, body);
 
 CREATE TABLE _file_meta (
     path  TEXT PRIMARY KEY,
@@ -81,7 +87,7 @@ CREATE VIEW node_props AS
 CREATE VIEW aliases AS
     SELECT alias, node_key AS id FROM _aliases;
 CREATE VIEW fts AS
-    SELECT node_key AS id, body FROM _fts;
+    SELECT id, body FROM fts_search;
 `
 
 // dropDDL tears down every physical table and view. Order: views first (they
@@ -96,7 +102,7 @@ DROP TABLE IF EXISTS _nodes;
 DROP TABLE IF EXISTS _edges;
 DROP TABLE IF EXISTS _props;
 DROP TABLE IF EXISTS _aliases;
-DROP TABLE IF EXISTS _fts;
+DROP TABLE IF EXISTS fts_search;
 DROP TABLE IF EXISTS _file_meta;
 DROP TABLE IF EXISTS _index_meta;
 `

@@ -22,6 +22,10 @@ func TestValidateReadOnlySQL(t *testing.T) {
 		"SELECT id FROM nodes WHERE body LIKE 'a_b'",   // underscore inside a literal
 		"SELECT id FROM node_props WHERE key='status'", // underscore mid-identifier (public view)
 		"SELECT dst_key FROM edges",                    // underscore mid-identifier column
+		// Full-text search via the public fts_search vtable is sanctioned: MATCH is
+		// no longer rejected at validation (reckon-a4eh).
+		"SELECT id FROM fts_search WHERE fts_search MATCH 'hello'",
+		"SELECT id FROM fts_search WHERE fts_search MATCH 'hello' ORDER BY bm25(fts_search)",
 	}
 	for _, q := range accept {
 		if err := validateReadOnlySQL(q); err != nil {
@@ -48,7 +52,9 @@ func TestValidateReadOnlySQL(t *testing.T) {
 		{"write cte", "WITH x AS (DELETE FROM _nodes RETURNING *) SELECT * FROM x", "write"},
 		{"private table", "SELECT * FROM _nodes", "private"},
 		{"private fts", "SELECT * FROM _fts", "private"},
-		{"fts match", "SELECT id FROM fts WHERE fts MATCH 'hello'", "match"},
+		{"fts shadow data", "SELECT * FROM fts_search_data", "fts5 internal"},
+		{"fts shadow config", "SELECT k, v FROM fts_search_config", "fts5 internal"},
+		{"fts vtable insert", "INSERT INTO fts_search(id,body) VALUES('x','y')", "select"},
 		{"bad leading keyword", "SELEKT * FROM nodes", "select"},
 	}
 	for _, tc := range reject {
