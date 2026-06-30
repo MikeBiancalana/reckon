@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reckon — One Node, Many Representations</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171d26; --panel2:#1d2530; --ink:#e6edf3; --dim:#9aa7b4;
+    --line:#2a3340; --accent:#6ea8fe;
+    /* datum colors */
+    --k-id:#b692f6; --k-meta:#5ec8c8; --k-body:#e8a13a; --k-alias:#5fbf72;
+    --k-prop:#5b9bf0; --k-link:#ef6f8c; --k-frag:#8b97a3; --k-meta2:#c2cad4;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  code,pre,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  header{padding:36px 24px 18px;max-width:1180px;margin:0 auto}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.4px}
+  h2{font-size:21px;margin:38px 0 12px;letter-spacing:-.2px;
+    border-bottom:1px solid var(--line);padding-bottom:6px}
+  h3{font-size:15px;margin:0 0 8px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+  .quote{color:var(--dim);font-style:italic;margin:8px 0 0}
+  .lede{color:var(--dim);max-width:780px}
+  main{max-width:1180px;margin:0 auto;padding:0 24px 80px}
+  a{color:var(--accent)}
+
+  /* sticky legend */
+  .legend{position:sticky;top:0;z-index:20;background:rgba(15,20,25,.92);
+    backdrop-filter:blur(6px);border-bottom:1px solid var(--line);
+    display:flex;flex-wrap:wrap;gap:6px 10px;padding:10px 24px;margin:0 -24px 8px}
+  .legend small{color:var(--dim);align-self:center;margin-right:4px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel);font-size:12px;cursor:pointer;user-select:none}
+  .dot{width:9px;height:9px;border-radius:50%}
+
+  /* the color of a datum, applied to chips and table cells */
+  .k-id .dot,.t-id{background:var(--k-id)} .t-id{color:#150f22}
+  .k-meta .dot,.t-meta{background:var(--k-meta)} .t-meta{color:#06201f}
+  .k-body .dot,.t-body{background:var(--k-body)} .t-body{color:#241500}
+  .k-alias .dot,.t-alias{background:var(--k-alias)} .t-alias{color:#08210f}
+  .k-prop .dot,.t-prop{background:var(--k-prop)} .t-prop{color:#04152b}
+  .k-link .dot,.t-link{background:var(--k-link)} .t-link{color:#2a0712}
+  .k-frag .dot,.t-frag{background:var(--k-frag)} .t-frag{color:#10161c}
+  .k-sys .dot,.t-sys{background:var(--k-meta2)} .t-sys{color:#0c1116}
+
+  /* inline highlightable datum token */
+  .z{border-radius:4px;padding:0 3px;color:#0d1117;font-weight:600;transition:outline .1s,box-shadow .1s}
+  .z.t-id{background:var(--k-id)} .z.t-meta{background:var(--k-meta)}
+  .z.t-body{background:var(--k-body)} .z.t-alias{background:var(--k-alias)}
+  .z.t-prop{background:var(--k-prop)} .z.t-link{background:var(--k-link)}
+  .z.t-frag{background:var(--k-frag)} .z.t-sys{background:var(--k-meta2)}
+  .hl{outline:2px solid #fff;box-shadow:0 0 0 3px rgba(255,255,255,.25);border-radius:4px}
+
+  .grid{display:grid;gap:16px}
+  .cols-4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:1000px){.cols-4{grid-template-columns:1fr 1fr}}
+  @media(max-width:620px){.cols-4{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .card .tag{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px}
+  .card h4{margin:2px 0 4px;font-size:16px}
+  .card .sub{color:var(--dim);font-size:12px;margin:0 0 10px}
+  pre{background:#0b0f14;border:1px solid var(--line);border-radius:8px;padding:12px;
+    overflow:auto;font-size:12.5px;line-height:1.5;margin:0}
+  .flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--dim);
+    font-size:13px;margin:6px 0 2px}
+  .node-box{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 12px;color:var(--ink)}
+  .arr{color:var(--accent);font-weight:700}
+  .arr small{color:var(--dim);font-weight:400}
+
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);position:sticky;top:46px;z-index:5}
+  td.rep{color:var(--dim);font-family:ui-monospace,monospace;font-size:12px}
+  .yes{color:#7ee2a0;font-weight:700} .no{color:#ff8095;font-weight:700}
+  .dup{background:rgba(232,161,58,.10)}
+  .badge{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:6px;border:1px solid var(--line);color:var(--dim)}
+
+  .note{border-left:3px solid var(--accent);background:var(--panel);
+    border-radius:0 8px 8px 0;padding:10px 14px;margin:10px 0}
+  .note.warn{border-left-color:var(--k-body)}
+  .note.gap{border-left-color:var(--k-link)}
+  .note b{color:var(--ink)}
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.twocol{grid-template-columns:1fr}}
+  .bytes{font-family:ui-monospace,monospace;font-size:12.5px;line-height:1.9;word-break:break-all}
+  .bytes .span{background:var(--k-prop);color:#04152b;border-radius:3px;padding:1px 2px;font-weight:700}
+  .fade{color:var(--dim)}
+  ul.tight{margin:6px 0;padding-left:18px} ul.tight li{margin:3px 0}
+  footer{max-width:1180px;margin:0 auto;padding:24px;color:var(--dim);font-size:13px;border-top:1px solid var(--line)}
+  .hint{font-size:12px;color:var(--dim);margin:2px 0 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>One Node, Many Representations</h1>
+  <p class="quote">“Representation is the essence of programming.” — Fred Brooks, <i>The Mythical Man-Month</i></p>
+  <p class="lede">A single reckon node lives in <b>four</b> shapes at once. Each is optimized for a different job;
+  the same facts are arranged differently in each. Hover any colored token to light up the <i>same datum</i> everywhere it appears.</p>
+</header>
+
+<div class="legend" id="legend">
+  <small>datum:</small>
+  <span class="chip k-id"  data-k="id"><span class="dot"></span>identity (ULID)</span>
+  <span class="chip k-meta" data-k="meta"><span class="dot"></span>scalar meta (type/time/author)</span>
+  <span class="chip k-body" data-k="body"><span class="dot"></span>body text</span>
+  <span class="chip k-alias" data-k="alias"><span class="dot"></span>aliases</span>
+  <span class="chip k-prop" data-k="prop"><span class="dot"></span>props</span>
+  <span class="chip k-link" data-k="link"><span class="dot"></span>links / edges</span>
+  <span class="chip k-frag" data-k="frag"><span class="dot"></span>fragments</span>
+  <span class="chip k-sys"  data-k="sys"><span class="dot"></span>index/file metadata</span>
+</div>
+
+<main>
+
+  <h2>The transforms — how the shapes relate</h2>
+  <div class="flow">
+    <span class="node-box">disk <code>.md</code><br><span class="fade">source of truth</span></span>
+    <span class="arr">— Parse →</span>
+    <span class="node-box"><code>node.Node</code><br><span class="fade">in-memory aggregate</span></span>
+    <span class="arr">← Serialize / Render —</span>
+    <span class="node-box">disk <code>.md</code></span>
+  </div>
+  <div class="flow">
+    <span class="node-box"><code>node.Node</code></span>
+    <span class="arr">— Envelope →</span>
+    <span class="node-box">NDJSON<br><span class="fade">interchange / wire</span></span>
+    <span class="arr">— reconcile / insert →</span>
+    <span class="node-box">SQLite index<br><span class="fade">normalized graph</span></span>
+    <span class="arr">— reconstruct →</span>
+    <span class="node-box">NDJSON<br><span class="fade">query output</span></span>
+  </div>
+  <p class="hint">Every operation in the system is one of these arrows. <code>Raw</code> bytes are authoritative; every other shape is <i>derived</i> from them (and rebuildable).</p>
+
+  <h2>The same node, four ways</h2>
+  <div class="grid cols-4">
+
+    <div class="card">
+      <span class="tag">1 · persistent · truth</span>
+      <h4>Disk file</h4>
+      <p class="sub"><code>todos/01J9Z…HED.md</code> — what you and Obsidian edit</p>
+<pre>---
+id: <span class="z t-id" data-k="id">01J9Z…HED</span>
+type: <span class="z t-meta" data-k="meta">todo</span>
+time: <span class="z t-meta" data-k="meta">2026-06-30T09:14…</span>
+author: <span class="z t-meta" data-k="meta">mike</span>
+aliases: [<span class="z t-alias" data-k="alias">buy-milk</span>]
+state: <span class="z t-prop" data-k="prop">open</span>
+scheduled: <span class="z t-prop" data-k="prop">2026-07-02</span>
+depends: "<span class="z t-link" data-k="link">[[01J9Z2QH8M]]</span>"
+---
+<span class="z t-body" data-k="body">Buy milk for the week.
+See [[grocery-plan]] for brands.</span> <span class="z t-frag" data-k="frag">^p3</span>
+</pre>
+      <p class="hint">Bytes, exactly. Frontmatter (YAML-ish) + markdown body.</p>
+    </div>
+
+    <div class="card">
+      <span class="tag">2 · transient · denormalized</span>
+      <h4><code>node.Node</code> (Go struct)</h4>
+      <p class="sub">one aggregate object; <code>Raw</code> + a derived view</p>
+<pre><span class="fade">Raw  []byte</span>  <span class="fade">// whole file, authoritative</span>
+ULID   <span class="z t-id" data-k="id">"01J9Z…HED"</span>
+Type   <span class="z t-meta" data-k="meta">"todo"</span>
+Time   <span class="z t-meta" data-k="meta">"2026-06-30T…"</span>
+Author <span class="z t-meta" data-k="meta">"mike"</span>
+Body   <span class="z t-body" data-k="body">"Buy milk… ^p3\n"</span>
+Aliases [<span class="z t-alias" data-k="alias">"buy-milk"</span>]
+Props  {<span class="z t-prop" data-k="prop">state:open, scheduled:2026-07-02</span>}
+Links  [<span class="z t-link" data-k="link">{depends,01J9Z2QH8M}</span>,
+        <span class="z t-link" data-k="link">{references,grocery-plan}</span>]
+Fragments [<span class="z t-frag" data-k="frag">{id:p3}</span>]
+Loc    {file:"todos/01J9Z…HED.md"}
+<span class="fade">— unexported parse bookkeeping —
+frontmatter{…}  fieldSpans{…}  bodySpan</span>
+</pre>
+      <p class="hint">Note: <code>Body</code> duplicates <code>Raw[bodySpan:]</code>.</p>
+    </div>
+
+    <div class="card">
+      <span class="tag">3 · transient · interchange</span>
+      <h4>NDJSON envelope</h4>
+      <p class="sub">one physical line on the wire (pretty-printed here)</p>
+<pre>{
+ "v":1,
+ "ulid":"<span class="z t-id" data-k="id">01J9Z…HED</span>",
+ "type":"<span class="z t-meta" data-k="meta">todo</span>",
+ "time":"<span class="z t-meta" data-k="meta">2026-06-30T…</span>",
+ "author":"<span class="z t-meta" data-k="meta">mike</span>",
+ "body":"<span class="z t-body" data-k="body">Buy milk… ^p3\n</span>",
+ "aliases":["<span class="z t-alias" data-k="alias">buy-milk</span>"],
+ "props":{<span class="z t-prop" data-k="prop">"state":"open",
+   "scheduled":"2026-07-02"</span>},
+ "fragments":[<span class="z t-frag" data-k="frag">{"id":"p3"}</span>],
+ "links":[<span class="z t-link" data-k="link">{"rel":"depends","to":"01J9Z2QH8M"},
+   {"rel":"references","to":"grocery-plan"}</span>],
+ "loc":{"file":"todos/01J9Z…HED.md"}
+}</pre>
+      <p class="hint">Mirrors the exported fields. Carries <b>fragments</b>.</p>
+    </div>
+
+    <div class="card">
+      <span class="tag">4 · persistent · normalized · disposable</span>
+      <h4>SQLite index</h4>
+      <p class="sub">one aggregate split across tables (a property graph)</p>
+<pre><span class="fade">_nodes</span>
+ node_key=<span class="z t-sys" data-k="sys">01J9Z…HED</span> ulid=<span class="z t-id" data-k="id">01J9Z…HED</span>
+ type=<span class="z t-meta" data-k="meta">todo</span> author=<span class="z t-meta" data-k="meta">mike</span>
+ body=<span class="z t-body" data-k="body">"Buy milk…"</span> loc_file=todos/…md
+ hash=<span class="z t-sys" data-k="sys">9f…</span> mtime=<span class="z t-sys" data-k="sys">1719…</span>
+<span class="fade">_props</span>   (…,<span class="z t-prop" data-k="prop">state,open</span>)(…,<span class="z t-prop" data-k="prop">scheduled,…</span>)
+<span class="fade">_aliases</span> (<span class="z t-alias" data-k="alias">buy-milk</span>, …)
+<span class="fade">_edges</span>  (…,<span class="z t-link" data-k="link">depends,01J9Z2QH8M</span>,dst_key)
+         (…,<span class="z t-link" data-k="link">references,grocery-plan</span>,dst_key)
+<span class="fade">fts_search</span> (id, <span class="z t-body" data-k="body">"Buy milk… ^p3"</span>)
+<span class="fade">_file_meta</span> (path,<span class="z t-sys" data-k="sys">hash,mtime</span>,ulids)
+<span class="fade">— no fragments row —</span>
+</pre>
+      <p class="hint"><b>body</b> stored twice (<code>_nodes</code> + <code>fts_search</code>).</p>
+    </div>
+  </div>
+
+  <h2>Where does each datum live? — the representation matrix</h2>
+  <p class="lede">The heart of it. Rows are data; columns are representations. This makes the
+  <b>duplication</b> (highlighted) and the one <b>gap</b> impossible to miss.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>datum</th>
+        <th>Disk <code>.md</code><br><span class="badge">truth</span></th>
+        <th><code>Node</code> (mem)<br><span class="badge">denormalized</span></th>
+        <th>NDJSON<br><span class="badge">wire</span></th>
+        <th>SQLite index<br><span class="badge">normalized</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr data-k="id">
+        <td><span class="z t-id">identity / ULID</span></td>
+        <td class="rep">frontmatter <code>id:</code></td>
+        <td class="rep"><code>.ULID</code> (+ <code>.frontmatter[id]</code>)</td>
+        <td class="rep"><code>ulid</code></td>
+        <td class="rep"><code>_nodes.ulid</code> + <code>node_key</code></td>
+      </tr>
+      <tr data-k="body" class="dup">
+        <td><span class="z t-body">body text</span> <span class="badge">×5</span></td>
+        <td class="rep">after <code>---</code></td>
+        <td class="rep"><code>.Raw[bodySpan:]</code> <b>and</b> <code>.Body</code></td>
+        <td class="rep"><code>body</code></td>
+        <td class="rep"><code>_nodes.body</code> <b>and</b> <code>fts_search.body</code></td>
+      </tr>
+      <tr data-k="meta">
+        <td><span class="z t-meta">type / time / author</span></td>
+        <td class="rep">frontmatter keys</td>
+        <td class="rep"><code>.Type/.Time/.Author</code></td>
+        <td class="rep">same keys</td>
+        <td class="rep"><code>_nodes</code> columns</td>
+      </tr>
+      <tr data-k="alias">
+        <td><span class="z t-alias">aliases</span></td>
+        <td class="rep"><code>aliases: [..]</code></td>
+        <td class="rep"><code>.Aliases[]</code></td>
+        <td class="rep"><code>aliases[]</code></td>
+        <td class="rep"><code>_aliases</code> (one row each)</td>
+      </tr>
+      <tr data-k="prop">
+        <td><span class="z t-prop">props (state, scheduled)</span></td>
+        <td class="rep">scalar frontmatter</td>
+        <td class="rep"><code>.Props{}</code></td>
+        <td class="rep"><code>props{}</code></td>
+        <td class="rep"><code>_props</code> (row per key)</td>
+      </tr>
+      <tr data-k="link">
+        <td><span class="z t-link">links / edges</span></td>
+        <td class="rep">ref-prop <code>depends:</code> + body <code>[[..]]</code></td>
+        <td class="rep"><code>.Links[]</code> (rel = key or "references")</td>
+        <td class="rep"><code>links[]</code></td>
+        <td class="rep"><code>_edges</code> (raw <code>dst</code> + resolved <code>dst_key</code>)</td>
+      </tr>
+      <tr data-k="frag" class="dup">
+        <td><span class="z t-frag">fragments (^p3)</span> <span class="badge">gap</span></td>
+        <td class="rep"><code>^anchor</code> in body</td>
+        <td class="rep"><code>.Fragments[]</code></td>
+        <td class="rep"><code>fragments[]</code></td>
+        <td class="rep"><span class="no">✗ not stored</span></td>
+      </tr>
+      <tr data-k="body">
+        <td><span class="z t-body">raw bytes</span></td>
+        <td class="rep"><span class="yes">✓ the file</span></td>
+        <td class="rep"><code>.Raw</code> (authoritative)</td>
+        <td class="rep"><span class="no">✗ not sent</span></td>
+        <td class="rep"><span class="no">✗ re-read from disk via <code>loc</code></span></td>
+      </tr>
+      <tr>
+        <td>byte spans / offsets</td>
+        <td class="rep">— (implicit)</td>
+        <td class="rep"><code>.fieldSpans / .bodySpan</code></td>
+        <td class="rep"><span class="no">✗</span></td>
+        <td class="rep"><span class="no">✗ recomputed on parse</span></td>
+      </tr>
+      <tr data-k="sys">
+        <td><span class="z t-sys">node_key (surrogate id)</span></td>
+        <td class="rep">— (derived: ULID or <code>file:path</code>)</td>
+        <td class="rep"><span class="no">✗</span></td>
+        <td class="rep"><span class="no">✗</span></td>
+        <td class="rep"><code>_nodes.node_key</code> (PK)</td>
+      </tr>
+      <tr data-k="sys" class="dup">
+        <td><span class="z t-sys">hash / mtime</span></td>
+        <td class="rep">file metadata</td>
+        <td class="rep"><span class="no">✗</span></td>
+        <td class="rep"><code>hash/mtime</code> (derived)</td>
+        <td class="rep"><code>_nodes</code> <b>and</b> <code>_file_meta</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note gap"><b>The gap:</b> <span class="z t-frag" data-k="frag">fragments</span> are parsed into the Node and carried in the NDJSON envelope, but <b>never persisted to the index</b> (no <code>_fragments</code> table; <code>insertNode</code> skips them). Harmless today — <code>ULID#frag</code> link <i>resolution</i> isn't wired yet — but the index will need them once block-links matter.</div>
+  <div class="note warn"><b>The duplication:</b> the <span class="z t-body" data-k="body">body</span> exists in up to five places at once — the disk file, <code>Node.Raw</code>, <code>Node.Body</code>, <code>_nodes.body</code>, and <code>fts_search.body</code>. Two are removable: <code>Node.Body</code> is derivable from <code>Raw</code>+<code>bodySpan</code>; the <code>_nodes.body</code>/<code>fts_search.body</code> pair could collapse via FTS5 external-content. The rest are deliberate (truth vs disposable index).</div>
+
+  <h2>Why two persistent shapes? — denormalized vs normalized</h2>
+  <div class="twocol">
+    <div class="card">
+      <h3>Aggregate (Node / envelope)</h3>
+      <p>One self-contained object: all of a node's facts in a single struct / single JSON line. Optimized for <b>moving a whole node around</b> — parse it, edit it, pipe it, hand it to an agent.</p>
+      <ul class="tight">
+        <li>fast to read/write as a unit</li>
+        <li>no joins to see the whole thing</li>
+        <li>poor for "all nodes linking to X" or full-text — you'd scan every object</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Property graph (SQLite)</h3>
+      <p>The same facts <b>decomposed</b> into relations: <code>_nodes</code> + <code>_edges</code> + <code>_props</code> + <code>_aliases</code> + <code>fts_search</code>. Optimized for <b>asking questions across many nodes</b>.</p>
+      <ul class="tight">
+        <li>graph traversal (edges), filtering (props), search (fts) are cheap</li>
+        <li><code>rk query</code>’s <code>reconstructEnvelopeObject</code> re-assembles rows back into an aggregate envelope on the way out</li>
+        <li>disposable: rebuilt from the disk truth, never synced</li>
+      </ul>
+    </div>
+  </div>
+  <p class="hint">Same information, two shapes. The choice of shape <i>is</i> the engineering — exactly Brooks’s point.</p>
+
+  <h2>The bridge: byte spans make edits surgical</h2>
+  <p class="lede">What lets the in-memory view and the authoritative bytes stay in sync without ever regenerating the file: the parser records the <b>byte offset</b> of each field’s value. An edit splices only that range.</p>
+  <div class="card">
+    <p class="hint"><code>Raw</code> (the authoritative bytes), with <code>fieldSpans["scheduled"]</code> highlighted:</p>
+    <p class="bytes">…\n scheduled:&nbsp;<span class="span" id="spanval">2026-07-02</span>\n depends:&nbsp;"[[01J9Z2QH8M]]"\n …</p>
+    <p class="hint mono">SetField("scheduled","2026-07-09") = copy <code>Raw[:span.Start]</code> + <code>"2026-07-09"</code> + <code>Raw[span.End:]</code> → re-parse. Every other byte preserved; the typed view refreshes.</p>
+    <p class="hint">This is why <code>serialize(parse(f)) == f</code> holds <i>by construction</i>, and why a tool and a human can edit the same file without clobbering — the create/edit keystone.</p>
+  </div>
+
+  <h2>Reading guide</h2>
+  <ul class="tight">
+    <li><b>Truth → object:</b> <code>internal/node/node.go</code> (<code>Parse</code>, <code>deriveView</code>, spans)</li>
+    <li><b>Object → truth:</b> <code>Serialize</code> (edit, byte-preserving) and <code>render.go</code> (create)</li>
+    <li><b>Object → wire:</b> <code>internal/node/envelope.go</code></li>
+    <li><b>Object → graph:</b> <code>internal/index/reconcile.go</code> (<code>insertNode</code>) + <code>schema.go</code> (tables &amp; public views)</li>
+    <li><b>Graph → wire:</b> <code>internal/cli/query.go</code> (<code>reconstructEnvelopeObject</code>)</li>
+    <li>Prose companion: <code>docs/design/code-walkthrough-foundation.md</code></li>
+  </ul>
+
+</main>
+
+<footer>
+  Reckon redesign · node data representations. Self-contained; hover a colored token to trace a datum across all shapes.
+  Generated for the foundation walkthrough (T0–T3).
+</footer>
+
+<script>
+// Hover/focus any colored token or legend chip → highlight every element
+// carrying the same data-k. Pure vanilla; degrades to static color if JS off.
+(function(){
+  function setHot(k,on){
+    if(!k) return;
+    document.querySelectorAll('[data-k="'+k+'"]').forEach(function(el){
+      el.classList.toggle('hl',on);
+    });
+  }
+  document.querySelectorAll('[data-k]').forEach(function(el){
+    el.addEventListener('mouseenter',function(){setHot(el.getAttribute('data-k'),true);});
+    el.addEventListener('mouseleave',function(){setHot(el.getAttribute('data-k'),false);});
+  });
+})();
+</script>
+</body>
+</html>
