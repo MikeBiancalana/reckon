@@ -17,6 +17,15 @@
 // Productionized from the gating spike internal/spike/roundtrip (PASSED:
 // round-trip identity, surgical span edits, group-file sibling preservation,
 // ~396k-exec fuzz, 0 failures).
+//
+// FORMAT COUPLING: parseFrontmatter/deriveView/extractBody/SplitEntries below
+// are markdown-syntax-specific (frontmatter, [[wikilinks]], fenced code, ATX
+// `## ` headers), and Render (render.go) emits markdown. None of that is
+// currently expressed by the Parser interface (parser.go) — a second file
+// format (e.g. org-mode) would need parsing+creation+group-splitting to become
+// per-format concerns on that interface. Today's encapsulation (nothing
+// outside this package touches fieldSpans/bodySpan/frontmatter) is what keeps
+// that a contained, deferrable change rather than a rewrite.
 package node
 
 import (
@@ -304,6 +313,12 @@ func splitRef(inner string) (to, frag string) {
 }
 
 // --- Group files (e.g. a log day): split into entry sub-nodes ----------------
+//
+// FORMAT COUPLING: this section is markdown-ATX-header-specific (`## `) and is
+// a *Node method, not a Parser interface method — group-splitting isn't
+// currently pluggable per format at all (unlike Parse/Serialize). A second
+// format needing group files would need an equivalent hung off its own
+// per-format parser instead.
 
 // Entry is one `## ...` block within a group file, with the byte span of its
 // whole block (header + body) within the file's Raw.
