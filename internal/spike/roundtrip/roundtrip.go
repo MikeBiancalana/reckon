@@ -73,10 +73,10 @@ var (
 	// single-line scalar values only (no block scalars, no nested maps).
 	fmScalarRe = regexp.MustCompile(`^([A-Za-z0-9_-]+):([ \t]*)(.*?)([ \t]*)$`)
 
-	wikilinkRe   = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
-	tagRe        = regexp.MustCompile(`(^|[\s(])#([A-Za-z0-9][A-Za-z0-9_/-]*)`)
+	wikilinkRe    = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
+	tagRe         = regexp.MustCompile(`(^|[\s(])#([A-Za-z0-9][A-Za-z0-9_/-]*)`)
 	blockAnchorRe = regexp.MustCompile(`\s\^([A-Za-z0-9][A-Za-z0-9-]*)\s*$`)
-	fenceRe      = regexp.MustCompile("^(```|~~~)")
+	fenceRe       = regexp.MustCompile("^(```|~~~)")
 )
 
 // Parse builds a byte-preserving Node from raw file bytes.

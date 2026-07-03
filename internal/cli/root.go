@@ -111,7 +111,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "", "Log level: DEBUG, INFO, WARN, ERROR (default: INFO)")
 	RootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
 	RootCmd.PersistentFlags().BoolVar(&ndjsonFlag, "ndjson", false, "Output as newline-delimited JSON")
-	RootCmd.PersistentFlags().StringVar(&vaultFlag, "vault", "", "Override vault directory (default: $RECKON_VAULT or ~/.reckon)")
+	RootCmd.PersistentFlags().StringVar(&vaultFlag, "vault", "", "Override vault directory (default: $RECKON_VAULT or ~/reckon)")
 
 	// v0 subcommands (preserved verbatim)
 	RootCmd.AddCommand(GetLogCommand())
