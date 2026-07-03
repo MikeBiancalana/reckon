@@ -18,7 +18,16 @@ rk
 # IDE
 .idea/
 .vscode/
-.claude/
+# .claude/skills/ and .claude/hooks/ are shared, git-worthy tooling and are
+# tracked. Everything else under .claude/ is local scratch/config -- a
+# blanket `.claude/` ignore can't be selectively un-ignored per-subdir (git
+# won't descend into an excluded parent to evaluate negation patterns), so
+# the local-only pieces are named explicitly instead.
+.claude/work/
+.claude/metrics/
+.claude/feedback/
+.claude/settings.local.json
+.claude/bd-prime-fixed.sh
 *.swp
 *.swo
 *~
