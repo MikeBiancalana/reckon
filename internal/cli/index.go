@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/index"
@@ -35,13 +36,18 @@ var indexCmd = &cobra.Command{
 		}
 		defer ix.Close()
 
-		if err := ix.Rebuild(); err != nil {
+		st, err := ix.Rebuild()
+		if err != nil {
 			return fmt.Errorf("index: rebuild: %w", err)
 		}
 
 		res, err := indexSummary(ix, cfg)
 		if err != nil {
 			return err
+		}
+		res.Warnings = st.Warnings
+		if res.Warnings == nil {
+			res.Warnings = []index.Warning{}
 		}
 
 		// In pretty mode --quiet suppresses the status line; structured output is
@@ -55,16 +61,37 @@ var indexCmd = &cobra.Command{
 
 // indexResult is the structured summary of a rebuild.
 type indexResult struct {
-	VaultID string `json:"vault_id"`
-	Nodes   int    `json:"nodes"`
-	Edges   int    `json:"edges"`
-	Aliases int    `json:"aliases"`
+	VaultID  string          `json:"vault_id"`
+	Nodes    int             `json:"nodes"`
+	Edges    int             `json:"edges"`
+	Aliases  int             `json:"aliases"`
+	Warnings []index.Warning `json:"warnings"`
 }
 
-// Pretty renders the human-readable status line (output.Writer prefers this).
+// Pretty renders the human-readable status line (output.Writer prefers this),
+// followed by one indented line per warning when the pass found any.
 func (r indexResult) Pretty() string {
-	return fmt.Sprintf("Rebuilt index %s: %d nodes, %d edges, %d aliases",
+	line := fmt.Sprintf("Rebuilt index %s: %d nodes, %d edges, %d aliases",
 		r.VaultID, r.Nodes, r.Edges, r.Aliases)
+	if len(r.Warnings) == 0 {
+		return line
+	}
+
+	var b strings.Builder
+	b.WriteString(line)
+	fmt.Fprintf(&b, "\nwarnings (%d):", len(r.Warnings))
+	for _, w := range r.Warnings {
+		b.WriteString("\n  ")
+		switch w.Kind {
+		case "duplicate_ulid":
+			fmt.Fprintf(&b, "duplicate ULID %s: %s", w.ULID, strings.Join(w.Files, ", "))
+		case "alias_collision":
+			fmt.Fprintf(&b, "alias %q on %d nodes: %s", w.Alias, len(w.NodeKeys), strings.Join(w.Files, ", "))
+		default:
+			b.WriteString(w.Kind)
+		}
+	}
+	return b.String()
 }
 
 func indexSummary(ix *index.Index, cfg *config.Config) (indexResult, error) {

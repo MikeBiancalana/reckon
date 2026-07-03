@@ -64,6 +64,41 @@ func count(t *testing.T, ix *Index, query string, args ...any) int {
 	return n
 }
 
+// filterWarnings returns the warnings of the given kind ("duplicate_ulid" or
+// "alias_collision"), for assertions that don't want to care about ordering
+// between kinds.
+func filterWarnings(ws []Warning, kind string) []Warning {
+	var out []Warning
+	for _, w := range ws {
+		if w.Kind == kind {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// multiNodeParser is a stub Parser that always returns a fixed set of nodes for
+// any file's raw bytes, regardless of content. It exists so a test can put two
+// nodes sharing a ULID inside a single file without needing a real multi-entry
+// (group-file) parser implementation.
+type multiNodeParser struct{ nodes []*node.Node }
+
+func (p multiNodeParser) Parse(raw []byte, loc node.Loc) ([]*node.Node, error) {
+	out := make([]*node.Node, len(p.nodes))
+	for i, n := range p.nodes {
+		clone := *n
+		clone.Loc = loc
+		out[i] = &clone
+	}
+	return out, nil
+}
+
+func (p multiNodeParser) Serialize(n *node.Node) ([]byte, error) {
+	return n.Serialize(), nil
+}
+
+var _ node.Parser = multiNodeParser{}
+
 func TestRebuildPopulatesViews(t *testing.T) {
 	cfg, vault := testVault(t)
 	idA, idB := node.Mint(), node.Mint()
@@ -79,7 +114,7 @@ func TestRebuildPopulatesViews(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer ix.Close()
-	if err := ix.Rebuild(); err != nil {
+	if _, err := ix.Rebuild(); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 
@@ -163,11 +198,11 @@ func TestRebuildDeterministic(t *testing.T) {
 	}
 	defer ix.Close()
 
-	if err := ix.Rebuild(); err != nil {
+	if _, err := ix.Rebuild(); err != nil {
 		t.Fatalf("rebuild1: %v", err)
 	}
 	d1 := dumpAll(t, ix)
-	if err := ix.Rebuild(); err != nil {
+	if _, err := ix.Rebuild(); err != nil {
 		t.Fatalf("rebuild2: %v", err)
 	}
 	d2 := dumpAll(t, ix)
@@ -186,7 +221,7 @@ func TestReconcileAddEditDelete(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer ix.Close()
-	if err := ix.Rebuild(); err != nil {
+	if _, err := ix.Rebuild(); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 
@@ -237,7 +272,7 @@ func TestReconcileRenameKeyedByULID(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer ix.Close()
-	if err := ix.Rebuild(); err != nil {
+	if _, err := ix.Rebuild(); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 
@@ -280,7 +315,7 @@ func TestReconcileMtimeFastPath(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer ix.Close()
-	if err := ix.Rebuild(); err != nil {
+	if _, err := ix.Rebuild(); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	st, err := ix.Reconcile()
@@ -300,7 +335,7 @@ func TestSchemaVersionAutoRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := ix.Rebuild(); err != nil {
+	if _, err := ix.Rebuild(); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	// Force a stale schema_version and a marker row.
@@ -346,7 +381,7 @@ func TestIgnoreGlobsAndConflictMarkers(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer ix.Close()
-	if err := ix.Rebuild(); err != nil {
+	if _, err := ix.Rebuild(); err != nil {
 		t.Fatalf("rebuild must tolerate malformed files: %v", err)
 	}
 	if got := count(t, ix, "SELECT count(*) FROM nodes"); got != 1 {
@@ -380,5 +415,402 @@ func TestDBPathUnderCache(t *testing.T) {
 	}
 	if !strings.HasSuffix(p, "index.db") {
 		t.Errorf("DBPath %q does not end in index.db", p)
+	}
+}
+
+// --- M3/M4: duplicate-ULID + alias-collision warnings (reckon-5b44) ---------
+
+// TestReconcileDuplicateULIDWarns covers AC scenario 1: two files sharing a
+// non-empty ULID produce exactly one duplicate-ULID warning naming both files.
+func TestReconcileDuplicateULIDWarns(t *testing.T) {
+	cfg, vault := testVault(t)
+	dupID := node.Mint()
+	writeFile(t, vault, "a.md", noteFile(dupID, "body a"))
+	writeFile(t, vault, "b.md", noteFile(dupID, "body b"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	dupWarnings := filterWarnings(st.Warnings, "duplicate_ulid")
+	if len(dupWarnings) != 1 {
+		t.Fatalf("duplicate_ulid warnings = %d, want 1 (got %+v)", len(dupWarnings), st.Warnings)
+	}
+	w := dupWarnings[0]
+	if w.ULID != dupID {
+		t.Errorf("warning ULID = %q, want %q", w.ULID, dupID)
+	}
+	if got := strings.Join(w.Files, ","); got != "a.md,b.md" {
+		t.Errorf("warning Files = %q, want %q", got, "a.md,b.md")
+	}
+}
+
+// TestReconcileDuplicateULIDThreeFiles covers AC scenario 2: 3+ files sharing
+// one ULID produce a single warning naming all of them, not pairwise warnings.
+func TestReconcileDuplicateULIDThreeFiles(t *testing.T) {
+	cfg, vault := testVault(t)
+	dupID := node.Mint()
+	writeFile(t, vault, "a.md", noteFile(dupID, "body a"))
+	writeFile(t, vault, "b.md", noteFile(dupID, "body b"))
+	writeFile(t, vault, "c.md", noteFile(dupID, "body c"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	dupWarnings := filterWarnings(st.Warnings, "duplicate_ulid")
+	if len(dupWarnings) != 1 {
+		t.Fatalf("duplicate_ulid warnings = %d, want 1 (got %+v)", len(dupWarnings), st.Warnings)
+	}
+	if got := strings.Join(dupWarnings[0].Files, ","); got != "a.md,b.md,c.md" {
+		t.Errorf("warning Files = %q, want %q", got, "a.md,b.md,c.md")
+	}
+}
+
+// TestReconcileNoDuplicateWarningForEmptyULID covers AC scenario 3: files with
+// no id: (empty-string ULID, surrogate file:-keyed) must never be reported as a
+// duplicate, no matter how many of them exist.
+func TestReconcileNoDuplicateWarningForEmptyULID(t *testing.T) {
+	cfg, vault := testVault(t)
+	writeFile(t, vault, "a.md", "---\ntype: note\n---\nbody a\n")
+	writeFile(t, vault, "b.md", "---\ntype: note\n---\nbody b\n")
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	if got := len(filterWarnings(st.Warnings, "duplicate_ulid")); got != 0 {
+		t.Errorf("duplicate_ulid warnings = %d, want 0 for empty-ULID surrogate-keyed files (got %+v)", got, st.Warnings)
+	}
+}
+
+// TestReconcileDuplicateULIDDetectedOnMtimeFastPath covers AC scenario 4: a
+// duplicate-ULID pair already indexed must still be reported when a later
+// Reconcile() takes the mtime fast-path for both files (no reparse).
+func TestReconcileDuplicateULIDDetectedOnMtimeFastPath(t *testing.T) {
+	cfg, vault := testVault(t)
+	dupID := node.Mint()
+	writeFile(t, vault, "a.md", noteFile(dupID, "body a"))
+	writeFile(t, vault, "b.md", noteFile(dupID, "body b"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+	if _, err := ix.Rebuild(); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	// Neither file touched: Reconcile should take the mtime fast-path for both,
+	// yet the duplicate-ULID warning must still be reported every pass.
+	st, err := ix.Reconcile()
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if st.Reparsed != 0 {
+		t.Fatalf("Reparsed = %d, want 0 (mtime fast-path)", st.Reparsed)
+	}
+	if got := len(filterWarnings(st.Warnings, "duplicate_ulid")); got != 1 {
+		t.Errorf("duplicate_ulid warnings after fast-path reconcile = %d, want 1 (got %+v)", got, st.Warnings)
+	}
+}
+
+// TestReconcileDuplicateULIDResolvesOnDelete covers AC scenario 5: once one of
+// the colliding files is deleted, the next Reconcile() reports zero
+// duplicate-ULID warnings and the survivor is indexed normally.
+func TestReconcileDuplicateULIDResolvesOnDelete(t *testing.T) {
+	cfg, vault := testVault(t)
+	dupID := node.Mint()
+	writeFile(t, vault, "a.md", noteFile(dupID, "body a"))
+	writeFile(t, vault, "b.md", noteFile(dupID, "body b"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if got := len(filterWarnings(st.Warnings, "duplicate_ulid")); got != 1 {
+		t.Fatalf("precondition: duplicate_ulid warnings = %d, want 1", got)
+	}
+
+	if err := os.Remove(filepath.Join(vault, "b.md")); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	st, err = ix.Reconcile()
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := len(filterWarnings(st.Warnings, "duplicate_ulid")); got != 0 {
+		t.Errorf("duplicate_ulid warnings after delete = %d, want 0 (got %+v)", got, st.Warnings)
+	}
+	if got := count(t, ix, "SELECT count(*) FROM nodes WHERE id=?", dupID); got != 1 {
+		t.Errorf("survivor node count for id=%s = %d, want 1", dupID, got)
+	}
+}
+
+// TestReconcileDuplicateULIDWithinFile covers AC scenario 6: a single file
+// whose parser yields two nodes sharing a non-empty ULID (e.g. two hand-authored
+// frontmatter blocks) must warn, not crash or silently drop a node.
+func TestReconcileDuplicateULIDWithinFile(t *testing.T) {
+	cfg, vault := testVault(t)
+	dupID := node.Mint()
+	writeFile(t, vault, "both.md", "---\nid: "+dupID+"\ntype: note\n---\ntwo nodes, one file\n")
+
+	parser := multiNodeParser{nodes: []*node.Node{
+		{ULID: dupID, Type: "note", Body: "first node body\n"},
+		{ULID: dupID, Type: "note", Body: "second node body\n"},
+	}}
+
+	ix, err := OpenWithParser(cfg, parser)
+	if err != nil {
+		t.Fatalf("OpenWithParser: %v", err)
+	}
+	defer ix.Close()
+
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	dupWarnings := filterWarnings(st.Warnings, "duplicate_ulid")
+	if len(dupWarnings) != 1 {
+		t.Fatalf("duplicate_ulid warnings = %d, want 1 (got %+v)", len(dupWarnings), st.Warnings)
+	}
+	if got := strings.Join(dupWarnings[0].Files, ","); got != "both.md" {
+		t.Errorf("warning Files = %q, want %q", got, "both.md")
+	}
+}
+
+// TestReconcileAliasCollisionWarns covers AC scenario 7: two different nodes
+// declaring the same alias produce one alias-collision warning naming both
+// node_keys/files, and resolveEdges' existing lowest-node_key tiebreak still
+// resolves a reference to that alias deterministically.
+func TestReconcileAliasCollisionWarns(t *testing.T) {
+	cfg, vault := testVault(t)
+	idA, idB := node.Mint(), node.Mint()
+	writeFile(t, vault, "a.md", noteFile(idA, "body a", "aliases: shared"))
+	writeFile(t, vault, "b.md", noteFile(idB, "body b", "aliases: shared"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	aliasWarnings := filterWarnings(st.Warnings, "alias_collision")
+	if len(aliasWarnings) != 1 {
+		t.Fatalf("alias_collision warnings = %d, want 1 (got %+v)", len(aliasWarnings), st.Warnings)
+	}
+	w := aliasWarnings[0]
+	if w.Alias != "shared" {
+		t.Errorf("warning Alias = %q, want %q", w.Alias, "shared")
+	}
+	wantKeys := []string{idA, idB}
+	sort.Strings(wantKeys)
+	if got := strings.Join(w.NodeKeys, ","); got != strings.Join(wantKeys, ",") {
+		t.Errorf("warning NodeKeys = %v, want %v", w.NodeKeys, wantKeys)
+	}
+	if got := strings.Join(w.Files, ","); got != "a.md,b.md" {
+		t.Errorf("warning Files = %q, want %q", got, "a.md,b.md")
+	}
+
+	// resolveEdges' existing lowest-node_key tiebreak must still resolve a
+	// reference to the colliding alias deterministically (unchanged behavior).
+	writeFile(t, vault, "c.md", noteFile(node.Mint(), "see [[shared]]"))
+	if _, err := ix.Reconcile(); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	want := idA
+	if idB < idA {
+		want = idB
+	}
+	if got := count(t, ix, "SELECT count(*) FROM edges WHERE dst='shared' AND dst_key=?", want); got != 1 {
+		t.Errorf("edge to shared alias did not resolve to lowest node_key %s", want)
+	}
+}
+
+// TestReconcileAliasCollisionThreeNodes covers AC scenario 8: an alias shared
+// by 3+ nodes produces a single warning listing all of them, not pairwise.
+func TestReconcileAliasCollisionThreeNodes(t *testing.T) {
+	cfg, vault := testVault(t)
+	idA, idB, idC := node.Mint(), node.Mint(), node.Mint()
+	writeFile(t, vault, "a.md", noteFile(idA, "body a", "aliases: shared"))
+	writeFile(t, vault, "b.md", noteFile(idB, "body b", "aliases: shared"))
+	writeFile(t, vault, "c.md", noteFile(idC, "body c", "aliases: shared"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	aliasWarnings := filterWarnings(st.Warnings, "alias_collision")
+	if len(aliasWarnings) != 1 {
+		t.Fatalf("alias_collision warnings = %d, want 1 (got %+v)", len(aliasWarnings), st.Warnings)
+	}
+	w := aliasWarnings[0]
+	if len(w.NodeKeys) != 3 {
+		t.Errorf("warning NodeKeys = %v, want 3 entries", w.NodeKeys)
+	}
+	if got := strings.Join(w.Files, ","); got != "a.md,b.md,c.md" {
+		t.Errorf("warning Files = %q, want %q", got, "a.md,b.md,c.md")
+	}
+}
+
+// TestReconcileAliasCollisionResolvesOnEdit covers AC scenario 9: once one of
+// the colliding files is edited to remove the alias, the next Reconcile()
+// reports zero alias-collision warnings for it.
+func TestReconcileAliasCollisionResolvesOnEdit(t *testing.T) {
+	cfg, vault := testVault(t)
+	idA, idB := node.Mint(), node.Mint()
+	writeFile(t, vault, "a.md", noteFile(idA, "body a", "aliases: shared"))
+	writeFile(t, vault, "b.md", noteFile(idB, "body b", "aliases: shared"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if got := len(filterWarnings(st.Warnings, "alias_collision")); got != 1 {
+		t.Fatalf("precondition: alias_collision warnings = %d, want 1", got)
+	}
+
+	writeFile(t, vault, "b.md", noteFile(idB, "body b edited"))
+	st, err = ix.Reconcile()
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := len(filterWarnings(st.Warnings, "alias_collision")); got != 0 {
+		t.Errorf("alias_collision warnings after edit = %d, want 0 (got %+v)", got, st.Warnings)
+	}
+}
+
+// TestReconcileDuplicateULIDAndAliasCollisionIndependent covers AC scenario 10
+// (cross-cutting): a node that is part of both a ULID collision and an alias
+// collision must produce both warnings, each correctly scoped, with neither
+// swallowing the other.
+func TestReconcileDuplicateULIDAndAliasCollisionIndependent(t *testing.T) {
+	cfg, vault := testVault(t)
+	dupID, idC := node.Mint(), node.Mint()
+	// a.md and b.md collide on ULID. Both declare the same alias so it survives
+	// on node_key=dupID regardless of which file the walk visits last; that
+	// alias separately collides with c.md's alias.
+	writeFile(t, vault, "a.md", noteFile(dupID, "body a", "aliases: sharedAlias"))
+	writeFile(t, vault, "b.md", noteFile(dupID, "body b", "aliases: sharedAlias"))
+	writeFile(t, vault, "c.md", noteFile(idC, "body c", "aliases: sharedAlias"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	dupWarnings := filterWarnings(st.Warnings, "duplicate_ulid")
+	if len(dupWarnings) != 1 {
+		t.Fatalf("duplicate_ulid warnings = %d, want 1 (got %+v)", len(dupWarnings), st.Warnings)
+	}
+	if got := strings.Join(dupWarnings[0].Files, ","); got != "a.md,b.md" {
+		t.Errorf("duplicate_ulid Files = %q, want %q", got, "a.md,b.md")
+	}
+
+	aliasWarnings := filterWarnings(st.Warnings, "alias_collision")
+	if len(aliasWarnings) != 1 {
+		t.Fatalf("alias_collision warnings = %d, want 1 (got %+v)", len(aliasWarnings), st.Warnings)
+	}
+	w := aliasWarnings[0]
+	if w.Alias != "sharedAlias" {
+		t.Errorf("alias_collision Alias = %q, want %q", w.Alias, "sharedAlias")
+	}
+	// Exactly two node_keys: the collapsed a/b pair (dupID) and idC -- the ULID
+	// collision must not leak a and b in as two separate alias-collision entries.
+	if len(w.NodeKeys) != 2 {
+		t.Errorf("alias_collision NodeKeys = %v, want 2 entries", w.NodeKeys)
+	}
+	// node_key=dupID's surviving _nodes row is loc_file=b.md (lexically last of
+	// a.md/b.md in the walk), so the alias-collision file list is b.md + c.md.
+	if got := strings.Join(w.Files, ","); got != "b.md,c.md" {
+		t.Errorf("alias_collision Files = %q, want %q", got, "b.md,c.md")
+	}
+}
+
+// TestReconcileDuplicateULIDSurvivesRename covers the recommended edge case
+// (AC section 3): renaming one of the colliding files changes its path but not
+// its ULID, so the collision must still be reported -- rename alone doesn't fix it.
+func TestReconcileDuplicateULIDSurvivesRename(t *testing.T) {
+	cfg, vault := testVault(t)
+	dupID := node.Mint()
+	writeFile(t, vault, "a.md", noteFile(dupID, "body a"))
+	writeFile(t, vault, "b.md", noteFile(dupID, "body b"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+	st, err := ix.Rebuild()
+	if err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if got := len(filterWarnings(st.Warnings, "duplicate_ulid")); got != 1 {
+		t.Fatalf("precondition: duplicate_ulid warnings = %d, want 1", got)
+	}
+
+	if err := os.Rename(filepath.Join(vault, "b.md"), filepath.Join(vault, "b-renamed.md")); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	st, err = ix.Reconcile()
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	dupWarnings := filterWarnings(st.Warnings, "duplicate_ulid")
+	if len(dupWarnings) != 1 {
+		t.Errorf("duplicate_ulid warnings after rename = %d, want 1 (rename alone doesn't resolve a collision)", len(dupWarnings))
+	} else if got := strings.Join(dupWarnings[0].Files, ","); got != "a.md,b-renamed.md" {
+		t.Errorf("duplicate_ulid Files after rename = %q, want %q", got, "a.md,b-renamed.md")
 	}
 }
