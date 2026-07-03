@@ -504,7 +504,9 @@ Spec it once; the plumbing collapses into it.
    rename-stable until a tool touches it. An explicit, opt-in **`rk adopt`**
    stamps ULIDs into id-less files (a user-initiated mutation), giving
    Obsidian-authored files a path to first-class without the index ever writing
-   truth. (Review finding M2.)
+   truth. (Review finding M2; `rk adopt` implemented in reckon-9bfx via
+   `node.InsertField`, minting through the same `node.Mint` that
+   `node.NewNode` uses.)
 
 ### Examples
 
