@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -127,6 +128,7 @@ func (ix *Index) reconcileTx(tx *sql.Tx) (Stats, error) {
 
 	present := map[string]bool{}   // node keys that exist after this pass
 	diskPaths := map[string]bool{} // relpaths seen on disk
+	occ := map[string][]string{}   // node key -> relpaths that claimed it this pass (dup detection)
 
 	walkErr := filepath.WalkDir(ix.cfg.VaultDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -158,6 +160,7 @@ func (ix *Index) reconcileTx(tx *sql.Tx) (Stats, error) {
 		// Fast-path: mtime unchanged -> trust stored nodes.
 		if prev, ok := stored[rel]; ok && prev.mtime == mtime {
 			markPresent(present, prev.ulids)
+			markOccurrence(occ, prev.ulids, rel)
 			return nil
 		}
 
@@ -173,6 +176,7 @@ func (ix *Index) reconcileTx(tx *sql.Tx) (Stats, error) {
 				return err
 			}
 			markPresent(present, prev.ulids)
+			markOccurrence(occ, prev.ulids, rel)
 			return nil
 		}
 
@@ -190,6 +194,7 @@ func (ix *Index) reconcileTx(tx *sql.Tx) (Stats, error) {
 		}
 		st.Reparsed++
 		markPresent(present, keys)
+		markOccurrence(occ, keys, rel)
 		return nil
 	})
 	if walkErr != nil && !os.IsNotExist(walkErr) {
@@ -208,6 +213,12 @@ func (ix *Index) reconcileTx(tx *sql.Tx) (Stats, error) {
 	if err := resolveEdges(tx); err != nil {
 		return st, err
 	}
+
+	warnings, err := collectWarnings(tx, occ)
+	if err != nil {
+		return st, err
+	}
+	st.Warnings = warnings
 	return st, nil
 }
 
@@ -375,6 +386,114 @@ func resolveEdges(tx *sql.Tx) error {
 	return nil
 }
 
+// collectWarnings builds the non-fatal data-quality warnings for this pass:
+// duplicate-ULID collisions from the live occurrence map built during the walk
+// (occ), and alias collisions from a post-sweep query over the surviving
+// _aliases/_nodes state. The result is sorted by (Kind, ULID-or-Alias) for
+// determinism, with each warning's Files/NodeKeys sorted and deduped. Always
+// returns a non-nil slice ([]Warning{} when clean) so JSON marshals to [].
+func collectWarnings(tx *sql.Tx, occ map[string][]string) ([]Warning, error) {
+	warnings := []Warning{}
+	for key, files := range occ {
+		if len(files) < 2 {
+			continue
+		}
+		warnings = append(warnings, Warning{
+			Kind:  "duplicate_ulid",
+			ULID:  key,
+			Files: sortedUnique(files),
+		})
+	}
+
+	aliasWarnings, err := aliasCollisionWarnings(tx)
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, aliasWarnings...)
+
+	sort.Slice(warnings, func(i, j int) bool {
+		a, b := warnings[i], warnings[j]
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		return warningSortKey(a) < warningSortKey(b)
+	})
+	return warnings, nil
+}
+
+// warningSortKey returns the value collectWarnings sorts a Warning by within
+// its Kind: the shared ULID for duplicate_ulid, the shared alias otherwise.
+func warningSortKey(w Warning) string {
+	if w.Kind == "duplicate_ulid" {
+		return w.ULID
+	}
+	return w.Alias
+}
+
+// aliasCollisionWarnings queries the post-sweep _aliases/_nodes state for any
+// alias claimed by more than one surviving node_key. Run after the sweep (and
+// after any INSERT OR REPLACE collapse of a duplicate-ULID pair to one _nodes
+// row), so it naturally reports only the alias's currently-live node_keys and
+// their loc_file — never a stale or already-collapsed file.
+func aliasCollisionWarnings(tx *sql.Tx) ([]Warning, error) {
+	rows, err := tx.Query(`
+		SELECT a.alias, a.node_key, n.loc_file
+		FROM _aliases a
+		JOIN _nodes n ON n.node_key = a.node_key
+		WHERE a.alias IN (
+			SELECT alias FROM _aliases GROUP BY alias HAVING COUNT(DISTINCT node_key) > 1
+		)
+		ORDER BY a.alias, a.node_key`)
+	if err != nil {
+		return nil, fmt.Errorf("index: query alias collisions: %w", err)
+	}
+	defer rows.Close()
+
+	byAlias := map[string]*Warning{}
+	var order []string
+	for rows.Next() {
+		var alias, nodeKey, locFile string
+		if err := rows.Scan(&alias, &nodeKey, &locFile); err != nil {
+			return nil, fmt.Errorf("index: scan alias collision: %w", err)
+		}
+		w, ok := byAlias[alias]
+		if !ok {
+			w = &Warning{Kind: "alias_collision", Alias: alias}
+			byAlias[alias] = w
+			order = append(order, alias)
+		}
+		w.NodeKeys = append(w.NodeKeys, nodeKey)
+		w.Files = append(w.Files, locFile)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("index: read alias collisions: %w", err)
+	}
+
+	out := make([]Warning, 0, len(order))
+	for _, alias := range order {
+		w := byAlias[alias]
+		w.NodeKeys = sortedUnique(w.NodeKeys)
+		w.Files = sortedUnique(w.Files)
+		out = append(out, *w)
+	}
+	return out, nil
+}
+
+// sortedUnique returns a sorted copy of ss with duplicates removed.
+func sortedUnique(ss []string) []string {
+	seen := make(map[string]bool, len(ss))
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // --- meta + file_meta helpers ------------------------------------------------
 
 func (ix *Index) initMeta(tx *sql.Tx) error {
@@ -452,6 +571,16 @@ func deleteFileMeta(tx *sql.Tx, path string) error {
 func markPresent(present map[string]bool, keys []string) {
 	for _, k := range keys {
 		present[k] = true
+	}
+}
+
+// markOccurrence records that rel claimed each of keys during this pass, for
+// duplicate-ULID detection in collectWarnings. A surrogate "file:<rel>" key can
+// only ever be claimed once (it is derived from rel itself), so this
+// necessarily only accumulates >1 entries for real, non-empty ULIDs.
+func markOccurrence(occ map[string][]string, keys []string, rel string) {
+	for _, k := range keys {
+		occ[k] = append(occ[k], rel)
 	}
 }
 
