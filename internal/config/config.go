@@ -103,7 +103,7 @@ type Config struct {
 }
 
 // Load resolves Config from environment variables and XDG/home defaults.
-// VaultDir: RECKON_VAULT env else $HOME/.reckon.
+// VaultDir: RECKON_VAULT env else $HOME/reckon.
 // CacheDir: RECKON_CACHE env else $XDG_CACHE_HOME/reckon else $HOME/.cache/reckon.
 func Load() (*Config, error) {
 	return LoadWithOverrides("", "")
@@ -116,8 +116,9 @@ func NewConfig(vaultDir string) (*Config, error) {
 }
 
 // LoadWithOverrides resolves Config with optional overrides for vault and cache dirs.
-// Empty strings fall back to env vars and then OS defaults. Returns an error if
-// cacheDir is inside vaultDir (would cause the cache to be git-synced).
+// Empty strings fall back to env vars and then OS defaults (VaultDir defaults to
+// $HOME/reckon). Returns an error if cacheDir is inside vaultDir (would cause the
+// cache to be git-synced).
 func LoadWithOverrides(vaultDir, cacheDir string) (*Config, error) {
 	// Resolve vault dir
 	if vaultDir == "" {
@@ -128,7 +129,7 @@ func LoadWithOverrides(vaultDir, cacheDir string) (*Config, error) {
 			if err != nil {
 				return nil, fmt.Errorf("config: resolve vault dir: %w", err)
 			}
-			vaultDir = filepath.Join(home, ".reckon")
+			vaultDir = filepath.Join(home, AppName) // $HOME/reckon
 		}
 	}
 
