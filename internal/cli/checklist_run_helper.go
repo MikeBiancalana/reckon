@@ -112,7 +112,12 @@ func (m checklistRunModel) View() string {
 	}
 
 	if m.completed {
-		lines = append(lines, "✓ Complete!")
+		// Bubble Tea's standard renderer erases the very last rendered line
+		// when the program exits (so the shell prompt doesn't land mid-line).
+		// Append a trailing blank line so that erasure claims empty space
+		// instead of the completion message, keeping it visible in
+		// scrollback after the TUI quits.
+		lines = append(lines, "✓ Complete!", "")
 	} else {
 		lines = append(lines, checklistHintStyle.Render("j/k: move  space/enter: toggle  a: abandon  q: quit"))
 	}
