@@ -1,0 +1,39 @@
+{
+  "ticket_id": "reckon-9bfx",
+  "phase": "implementer",
+  "worktree": ".worktrees/reckon-9bfx",
+  "subsystem": "cli",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 1,
+    "implementer": 0,
+    "preflight": 0,
+    "reviewer": 0
+  },
+  "new_test_names": [
+    "TestInsertField_ExistingBlockNoIDKey",
+    "TestInsertField_NoFrontmatterBlock",
+    "TestInsertField_RefusesUnterminatedBlock",
+    "TestInsertField_RefusesExistingKey",
+    "TestInsertField_LeadingDashesNotFrontmatterFence",
+    "TestInsertField_RoundTrip",
+    "TestAdoptCmd_StampsMissingIDIntoExistingBlock",
+    "TestAdoptCmd_InsertsBlockIntoFileWithNone",
+    "TestAdoptCmd_NoOpOnAlreadyIDdFile",
+    "TestAdoptCmd_IdempotentAcrossTwoRuns",
+    "TestAdoptCmd_MixedBatchDistinctULIDs",
+    "TestAdoptCmd_DirectoryWalkSkipsIgnoredPaths",
+    "TestAdoptCmd_ExplicitNonMarkdownFileErrors",
+    "TestAdoptCmd_ConflictMarkerFileErrors",
+    "TestAdoptCmd_CRLFFileErrors",
+    "TestAdoptCmd_UnterminatedFrontmatterErrors",
+    "TestAdoptCmd_NeverTouchesIndex",
+    "TestAdoptCmd_MintedULIDIsValidFormat",
+    "TestAdoptCmd_PathOutsideVaultErrors",
+    "TestAdoptCmd_QuietSuppressesPrettyStatusLine",
+    "TestAdoptCmd_PrettyOutputMentionsAdoptedFile"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": null,
+  "status": "in_progress"
+}
