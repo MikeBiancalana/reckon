@@ -15,7 +15,7 @@ mkdir -p .claude/feedback
 mkdir -p .claude/metrics
 
 # Count reviews this week
-REVIEW_COUNT=$(find .claude/work/*/review.md -mtime -7 2>/dev/null | wc -l)
+REVIEW_COUNT=$(find ticket-work/*/review.md -mtime -7 2>/dev/null | wc -l)
 
 # Start report
 cat > "$REPORT_FILE" <<EOF

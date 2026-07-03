@@ -34,11 +34,11 @@ echo ""
 if [ $# -eq 1 ]; then
     # Single ticket
     TICKET_ID="$1"
-    REVIEW_FILES=(".claude/work/$TICKET_ID/review.md")
+    REVIEW_FILES=("ticket-work/$TICKET_ID/review.md")
     echo "📄 Analyzing: $TICKET_ID"
 else
     # All reviews from past week
-    REVIEW_FILES=($(find .claude/work/*/review.md -mtime -7 2>/dev/null || true))
+    REVIEW_FILES=($(find ticket-work/*/review.md -mtime -7 2>/dev/null || true))
     if [ ${#REVIEW_FILES[@]} -eq 0 ]; then
         echo "❌ No reviews found from past week"
         exit 1

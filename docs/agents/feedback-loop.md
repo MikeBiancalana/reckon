@@ -37,7 +37,7 @@ Without the feedback loop, we'll keep catching the same issues in review. With i
 
 ### 1. Parse Review Findings
 
-After a code review completes, read `.claude/work/<ticket-id>/review.md`.
+After a code review completes, read `ticket-work/<ticket-id>/review.md`.
 
 **Extract structured data:**
 
@@ -60,7 +60,7 @@ EOF
 chmod +x /tmp/extract_patterns.sh
 
 # Run on review file
-/tmp/extract_patterns.sh .claude/work/reckon-abc/review.md
+/tmp/extract_patterns.sh ticket-work/reckon-abc/review.md
 ```
 
 **Output example:**
@@ -91,7 +91,7 @@ Look for similar issues in past reviews:
 ```bash
 # Find similar issues across all reviews
 PATTERN="Missing error context"
-grep -r "$PATTERN" .claude/work/*/review.md | wc -l
+grep -r "$PATTERN" ticket-work/*/review.md | wc -l
 ```
 
 **Update frequency in REVIEW_PATTERNS.md:**
@@ -432,7 +432,7 @@ echo "Generated: $(date)"
 echo ""
 
 # Find all review files
-for review in .claude/work/*/review.md; do
+for review in ticket-work/*/review.md; do
   ticket_id=$(basename $(dirname "$review"))
 
   # Extract issues
@@ -446,7 +446,7 @@ done
 # Pattern frequency
 echo "## Pattern Frequency"
 for pattern in "unwrapped error" "missing defer" "closure capture" "nil check"; do
-  count=$(grep -ir "$pattern" .claude/work/*/review.md | wc -l)
+  count=$(grep -ir "$pattern" ticket-work/*/review.md | wc -l)
   echo "- $pattern: $count occurrences"
 done
 ```

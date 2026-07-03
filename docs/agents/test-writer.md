@@ -7,7 +7,7 @@
 ## Context Required
 
 **Always read:**
-1. Plan document: `.claude/work/<ticket-id>/plan.md`
+1. Plan document: `ticket-work/<ticket-id>/plan.md`
 2. Testing strategy: `docs/TESTING.md`
 3. Subsystem guide for test patterns:
    - `internal/tui/AGENTS.md` (TUI testing section)
@@ -24,7 +24,7 @@
 ```json
 {
   "ticket_id": "reckon-abc",
-  "plan_path": ".claude/work/reckon-abc/plan.md",
+  "plan_path": "ticket-work/reckon-abc/plan.md",
   "subsystem": "cli|tui|journal|storage"
 }
 ```

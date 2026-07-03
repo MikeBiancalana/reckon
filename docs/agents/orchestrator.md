@@ -33,10 +33,10 @@ The orchestrator chains together the specialist agents (planner → test-writer 
 
 ```bash
 # Create work directory
-mkdir -p .claude/work/<ticket-id>
+mkdir -p ticket-work/<ticket-id>
 
 # Get ticket details
-bd show <ticket-id> > .claude/work/<ticket-id>/ticket.txt
+bd show <ticket-id> > ticket-work/<ticket-id>/ticket.txt
 
 # Determine subsystem if not provided
 # Look at ticket description, affected files, labels
@@ -55,7 +55,7 @@ bd show <ticket-id> > .claude/work/<ticket-id>/ticket.txt
 }
 ```
 
-**Output:** `.claude/work/<ticket-id>/plan.md`
+**Output:** `ticket-work/<ticket-id>/plan.md`
 
 **Validation:**
 - Plan file exists
@@ -72,7 +72,7 @@ bd show <ticket-id> > .claude/work/<ticket-id>/ticket.txt
 ```json
 {
   "ticket_id": "reckon-abc",
-  "plan_path": ".claude/work/reckon-abc/plan.md",
+  "plan_path": "ticket-work/reckon-abc/plan.md",
   "subsystem": "cli"
 }
 ```
@@ -96,7 +96,7 @@ go test -run TestNewFeature ./... 2>&1 | grep -q "FAIL"
 ```json
 {
   "ticket_id": "reckon-abc",
-  "plan_path": ".claude/work/reckon-abc/plan.md",
+  "plan_path": "ticket-work/reckon-abc/plan.md",
   "test_files": ["path/to/test.go"],
   "subsystem": "cli"
 }
@@ -129,7 +129,7 @@ echo $?  # Should be 0
 }
 ```
 
-**Output:** `.claude/work/<ticket-id>/preflight-report.md`
+**Output:** `ticket-work/<ticket-id>/preflight-report.md`
 
 **Validation:**
 - Status == PASS or PASS WITH WARNINGS
@@ -152,13 +152,13 @@ echo $?  # Should be 0
 {
   "ticket_id": "reckon-abc",
   "changed_files": ["file1.go", "file2_test.go"],
-  "plan_path": ".claude/work/reckon-abc/plan.md",
-  "preflight_report_path": ".claude/work/reckon-abc/preflight-report.md",
+  "plan_path": "ticket-work/reckon-abc/plan.md",
+  "preflight_report_path": "ticket-work/reckon-abc/preflight-report.md",
   "subsystem": "cli"
 }
 ```
 
-**Output:** `.claude/work/<ticket-id>/review.md`
+**Output:** `ticket-work/<ticket-id>/review.md`
 
 **Validation:**
 - Verdict in {APPROVE, APPROVE WITH CHANGES, REQUEST CHANGES}
@@ -182,12 +182,12 @@ echo $?  # Should be 0
 
 ```bash
 # 1. Extract patterns from review
-grep -A 5 "### Issues" .claude/work/<ticket-id>/review.md > /tmp/issues.txt
+grep -A 5 "### Issues" ticket-work/<ticket-id>/review.md > /tmp/issues.txt
 
 # 2. Check frequency of each pattern
 for pattern in "unwrapped error" "missing defer" "closure capture" "nil check"; do
-  count=$(grep -ir "$pattern" .claude/work/*/review.md | wc -l)
-  echo "$pattern: $count occurrences" >> .claude/work/<ticket-id>/pattern-frequency.txt
+  count=$(grep -ir "$pattern" ticket-work/*/review.md | wc -l)
+  echo "$pattern: $count occurrences" >> ticket-work/<ticket-id>/pattern-frequency.txt
 done
 
 # 3. Update REVIEW_PATTERNS.md frequency counts
@@ -203,9 +203,9 @@ cat > .claude/metrics/review-<ticket-id>.json <<EOF
   "ticket_id": "<ticket-id>",
   "date": "$(date -I)",
   "subsystem": "<subsystem>",
-  "verdict": "$(grep "Verdict:" .claude/work/<ticket-id>/review.md | cut -d: -f2)",
+  "verdict": "$(grep "Verdict:" ticket-work/<ticket-id>/review.md | cut -d: -f2)",
   "issues_found": [
-    $(sed -n '/### Issues/,/## Design Review/p' .claude/work/<ticket-id>/review.md | \
+    $(sed -n '/### Issues/,/## Design Review/p' ticket-work/<ticket-id>/review.md | \
       grep -oP "(?<=\*\*\[)[^]]*" | jq -R . | jq -s .)
   ],
   "retry_counts": {
@@ -246,7 +246,7 @@ fi
 **Final actions:**
 ```bash
 # Create summary
-cat > .claude/work/<ticket-id>/summary.md <<EOF
+cat > ticket-work/<ticket-id>/summary.md <<EOF
 # Implementation Summary: <ticket-id>
 
 ## Status: COMPLETE
@@ -274,7 +274,7 @@ $(cat pattern-frequency.txt)
 EOF
 
 # Update beads ticket
-bd update <ticket-id> --notes="Implementation complete. See .claude/work/<ticket-id>/summary.md"
+bd update <ticket-id> --notes="Implementation complete. See ticket-work/<ticket-id>/summary.md"
 ```
 
 ## Error Handling
@@ -309,7 +309,7 @@ When max retries exceeded:
 2. [What was tried]
 
 ## Artifacts:
-- Plan: .claude/work/<ticket-id>/plan.md
+- Plan: ticket-work/<ticket-id>/plan.md
 - Latest error: <error message>
 - Changed files: <list>
 
@@ -319,7 +319,7 @@ When max retries exceeded:
 
 ## Workflow State
 
-Track state in `.claude/work/<ticket-id>/state.json`:
+Track state in `ticket-work/<ticket-id>/state.json`:
 
 ```json
 {
@@ -362,10 +362,10 @@ Track state in `.claude/work/<ticket-id>/state.json`:
   "status": "complete",
   "ticket_id": "reckon-abc",
   "artifacts": {
-    "plan": ".claude/work/reckon-abc/plan.md",
-    "preflight": ".claude/work/reckon-abc/preflight-report.md",
-    "review": ".claude/work/reckon-abc/review.md",
-    "summary": ".claude/work/reckon-abc/summary.md"
+    "plan": "ticket-work/reckon-abc/plan.md",
+    "preflight": "ticket-work/reckon-abc/preflight-report.md",
+    "review": "ticket-work/reckon-abc/review.md",
+    "summary": "ticket-work/reckon-abc/summary.md"
   },
   "verdict": "APPROVE",
   "changed_files": ["file1.go", "file2_test.go"],
@@ -381,8 +381,8 @@ Track state in `.claude/work/<ticket-id>/state.json`:
   "stuck_phase": "implementer",
   "reason": "Max retry attempts exceeded",
   "artifacts": {
-    "plan": ".claude/work/reckon-abc/plan.md",
-    "error_log": ".claude/work/reckon-abc/errors.txt"
+    "plan": "ticket-work/reckon-abc/plan.md",
+    "error_log": "ticket-work/reckon-abc/errors.txt"
   },
   "recommendation": "Review test expectations - may be asking for wrong behavior"
 }

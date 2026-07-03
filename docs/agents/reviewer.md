@@ -7,8 +7,8 @@
 ## Context Required
 
 **Always read:**
-1. Original plan: `.claude/work/<ticket-id>/plan.md`
-2. Preflight report: `.claude/work/<ticket-id>/preflight-report.md`
+1. Original plan: `ticket-work/<ticket-id>/plan.md`
+2. Preflight report: `ticket-work/<ticket-id>/preflight-report.md`
 3. Changed files (git diff)
 4. Subsystem guide for the area being changed
 5. Testing strategy: `docs/TESTING.md`
@@ -23,8 +23,8 @@
 {
   "ticket_id": "reckon-abc",
   "changed_files": ["file1.go", "file2_test.go"],
-  "plan_path": ".claude/work/reckon-abc/plan.md",
-  "preflight_report_path": ".claude/work/reckon-abc/preflight-report.md",
+  "plan_path": "ticket-work/reckon-abc/plan.md",
+  "preflight_report_path": "ticket-work/reckon-abc/preflight-report.md",
   "subsystem": "cli|tui|journal|storage"
 }
 ```
@@ -103,7 +103,7 @@
 
 ## Output Format
 
-Create review: `.claude/work/<ticket-id>/review.md`
+Create review: `ticket-work/<ticket-id>/review.md`
 
 ```markdown
 # Code Review: <ticket-id>

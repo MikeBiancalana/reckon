@@ -442,7 +442,7 @@ When completing a code review:
 
 ### 1. Parse Review Findings
 
-From `.claude/work/<ticket-id>/review.md`, extract:
+From `ticket-work/<ticket-id>/review.md`, extract:
 - Issue category (error handling, resource management, etc.)
 - Specific pattern violated
 - File and line number
@@ -453,7 +453,7 @@ From `.claude/work/<ticket-id>/review.md`, extract:
 Look through previous reviews:
 ```bash
 # Find similar issues
-grep -r "Missing error context" .claude/work/*/review.md | wc -l
+grep -r "Missing error context" ticket-work/*/review.md | wc -l
 ```
 
 ### 3. Update Frequency Count

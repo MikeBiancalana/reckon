@@ -7,7 +7,7 @@
 ## Context Required
 
 **Always read:**
-1. Plan document: `.claude/work/<ticket-id>/plan.md`
+1. Plan document: `ticket-work/<ticket-id>/plan.md`
 2. Test files (if test-first): See what needs to pass
 3. Subsystem guide:
    - `internal/tui/AGENTS.md`
@@ -25,7 +25,7 @@
 ```json
 {
   "ticket_id": "reckon-abc",
-  "plan_path": ".claude/work/reckon-abc/plan.md",
+  "plan_path": "ticket-work/reckon-abc/plan.md",
   "test_files": ["path/to/test.go"],
   "subsystem": "cli|tui|journal|storage"
 }
