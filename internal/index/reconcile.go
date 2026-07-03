@@ -614,3 +614,12 @@ func indexable(name string) bool {
 	}
 	return true
 }
+
+// Indexable is the exported form of indexable, so other packages (e.g.
+// internal/cli's `rk adopt` directory walk) apply the exact same
+// file-eligibility rule the index itself uses, rather than a drifting copy.
+func Indexable(name string) bool { return indexable(name) }
+
+// ShouldSkipDir is the exported form of shouldSkipDir, so other packages can
+// honour the index's directory-skip rules without duplicating them.
+func ShouldSkipDir(name string) bool { return shouldSkipDir(name) }
