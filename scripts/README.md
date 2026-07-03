@@ -92,7 +92,7 @@ These scripts are used by:
 Scripts create and maintain:
 - `.claude/metrics/review-<ticket-id>.json` - Per-review metrics
 - `.claude/feedback/YYYY-MM-DD.md` - Weekly reports
-- `.claude/work/<ticket-id>/pattern-frequency.txt` - Per-ticket pattern counts
+- `ticket-work/<ticket-id>/pattern-frequency.txt` - Per-ticket pattern counts
 
 Scripts help update:
 - `docs/REVIEW_PATTERNS.md` - Pattern library

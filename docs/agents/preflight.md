@@ -150,7 +150,7 @@ grep "^func Test" file_test.go | wc -l
 
 ## Output Format
 
-Create checklist report: `.claude/work/<ticket-id>/preflight-report.md`
+Create checklist report: `ticket-work/<ticket-id>/preflight-report.md`
 
 ```markdown
 # Preflight Check Report: <ticket-id>

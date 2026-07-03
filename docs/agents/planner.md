@@ -61,7 +61,7 @@
 
 ## Output
 
-Create a plan document: `.claude/work/<ticket-id>/plan.md`
+Create a plan document: `ticket-work/<ticket-id>/plan.md`
 
 ```markdown
 # Implementation Plan: <Ticket Title>

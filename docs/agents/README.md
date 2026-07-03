@@ -19,7 +19,7 @@ Divide the workflow into specialized phases, each using the optimal model for th
 ```
 1. Planner (Opus 4.6)
    ├─ Reads: ticket, AGENTS.md, subsystem guides
-   ├─ Output: .claude/work/<ticket-id>/plan.md
+   ├─ Output: ticket-work/<ticket-id>/plan.md
    └─ Handoff: test-writer
 
 2. Test Writer (Sonnet 4.5)
@@ -34,12 +34,12 @@ Divide the workflow into specialized phases, each using the optimal model for th
 
 4. Preflight (Haiku 4.5)
    ├─ Runs: go fmt, go vet, go test, pattern checks
-   ├─ Output: .claude/work/<ticket-id>/preflight-report.md
+   ├─ Output: ticket-work/<ticket-id>/preflight-report.md
    └─ Handoff: reviewer (if PASS) | implementer (if FAIL)
 
 5. Reviewer (Opus 4.6)
    ├─ Reads: plan, preflight report, code, subsystem guides
-   ├─ Output: .claude/work/<ticket-id>/review.md
+   ├─ Output: ticket-work/<ticket-id>/review.md
    └─ Decision: APPROVE | APPROVE WITH CHANGES | REQUEST CHANGES
 ```
 
@@ -60,10 +60,10 @@ Divide the workflow into specialized phases, each using the optimal model for th
 
 ## Workflow Artifacts
 
-All work for a ticket goes in `.claude/work/<ticket-id>/`:
+All work for a ticket goes in `ticket-work/<ticket-id>/`:
 
 ```
-.claude/work/reckon-abc/
+ticket-work/reckon-abc/
 ├── plan.md                 # Design decisions, approach, test scenarios
 ├── preflight-report.md     # Automated + manual check results
 └── review.md               # Deep code review with verdict
@@ -80,10 +80,10 @@ Call agents sequentially for a ticket:
 claude-code --agent planner --input '{"ticket_id": "reckon-abc", "subsystem": "cli"}'
 
 # 2. Write tests
-claude-code --agent test-writer --input '{"ticket_id": "reckon-abc", "plan_path": ".claude/work/reckon-abc/plan.md"}'
+claude-code --agent test-writer --input '{"ticket_id": "reckon-abc", "plan_path": "ticket-work/reckon-abc/plan.md"}'
 
 # 3. Implement
-claude-code --agent implementer --input '{"ticket_id": "reckon-abc", "plan_path": ".claude/work/reckon-abc/plan.md"}'
+claude-code --agent implementer --input '{"ticket_id": "reckon-abc", "plan_path": "ticket-work/reckon-abc/plan.md"}'
 
 # 4. Preflight check
 claude-code --agent preflight --input '{"ticket_id": "reckon-abc", "changed_files": ["file1.go", "file2_test.go"]}'
