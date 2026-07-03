@@ -164,6 +164,73 @@ func TestAdoptCmd_StampsMissingIDIntoExistingBlock(t *testing.T) {
 	}
 }
 
+// Given a file with an `id:` key present but left blank (e.g. an
+// Obsidian-template placeholder like "id: " with no value typed in yet),
+// `rk adopt` fills it via SetField rather than InsertField: InsertField
+// would see the key's span already exists and reject it with an internal
+// "already present" error, which reads as nonsense for a field the user can
+// plainly see is empty (review R1). Filling an existing field is still a
+// real mutation, so the file is reported as Adopted, not Skipped, and every
+// other byte is preserved.
+func TestAdoptCmd_FillsBlankIDField(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	target := filepath.Join(vault, "blank-id.md")
+	const src = "---\nid: \ntype: note\n---\nbody\n"
+	mustWriteFile(t, target, src)
+
+	out, err := runAdopt(t, vault, "--json", target)
+	if err != nil {
+		t.Fatalf("rk adopt: %v (output: %s)", err, out)
+	}
+
+	got := mustReadFile(t, target)
+	if !strings.HasPrefix(got, "---\nid: ") {
+		t.Fatalf("id: line missing/moved: %q", got)
+	}
+	if !strings.HasSuffix(got, "\ntype: note\n---\nbody\n") {
+		t.Fatalf("original bytes disturbed: %q", got)
+	}
+	if strings.Contains(got, "id: \n") {
+		t.Fatalf("id: still blank after adopt: %q", got)
+	}
+
+	n, err := node.Parse([]byte(got))
+	if err != nil {
+		t.Fatalf("re-parse adopted file: %v", err)
+	}
+	if n.ULID == "" {
+		t.Error("ULID still empty after adopt")
+	}
+	if !isValidULID(n.ULID) {
+		t.Errorf("minted id %q is not a valid ULID", n.ULID)
+	}
+	if n.Type != "note" {
+		t.Errorf("Type = %q, want note", n.Type)
+	}
+	if n.Body != "body\n" {
+		t.Errorf("Body = %q, want %q", n.Body, "body\n")
+	}
+
+	var res adoptResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("decode json output %q: %v", out, err)
+	}
+	if len(res.Adopted) != 1 || res.Adopted[0].Path != "blank-id.md" {
+		t.Fatalf("Adopted = %+v, want one entry for blank-id.md", res.Adopted)
+	}
+	if res.Adopted[0].ULID != n.ULID {
+		t.Errorf("reported ULID %q != file's ULID %q", res.Adopted[0].ULID, n.ULID)
+	}
+	if len(res.Skipped) != 0 {
+		t.Errorf("Skipped = %+v, want none (filling a blank id is a mutation, not a no-op)", res.Skipped)
+	}
+	if len(res.Errored) != 0 {
+		t.Errorf("Errored = %+v, want none", res.Errored)
+	}
+}
+
 // Given a file with no frontmatter block at all, `rk adopt` prepends a whole
 // `---\nid: <ULID>\n---\n` block ahead of the original content, which follows
 // byte-for-byte unchanged.

@@ -132,6 +132,10 @@ func adoptPathArg(absVault, argPath string, res *adoptResult) {
 		return
 	}
 
+	// Containment is intentionally lexical only (no filepath.EvalSymlinks): a
+	// symlink inside the vault pointing outside it is not caught. Reviewed
+	// and accepted as a low-severity trust-boundary decision for a
+	// single-user local tool (reckon-9bfx review R2), not an oversight.
 	rel, err := filepath.Rel(absVault, abs)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		res.addErrored(argPath, fmt.Errorf("path %q is outside the vault root %q", argPath, absVault))
@@ -215,7 +219,17 @@ func adoptOneFile(absPath, relDisplay string, res *adoptResult) {
 	}
 
 	id := node.Mint()
-	if err := n.InsertField("id", id); err != nil {
+	if n.HasField("id") {
+		// A present-but-blank `id:` (e.g. an Obsidian template placeholder
+		// with no value typed in yet) already has a recorded span, so
+		// InsertField would reject it as "already present"; SetField is the
+		// right primitive to fill an existing-but-empty field. This is a
+		// real mutation, so it is still reported as adopted, not skipped.
+		if err := n.SetField("id", id); err != nil {
+			res.addErrored(relDisplay, fmt.Errorf("fill blank id: %w", err))
+			return
+		}
+	} else if err := n.InsertField("id", id); err != nil {
 		res.addErrored(relDisplay, fmt.Errorf("insert id: %w", err))
 		return
 	}

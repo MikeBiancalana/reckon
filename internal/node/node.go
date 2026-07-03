@@ -158,6 +158,17 @@ func (n *Node) SetField(key, value string) error {
 	return nil
 }
 
+// HasField reports whether key has a recorded scalar span in the frontmatter
+// block, independent of its value. This is the predicate to use when "key
+// present but blank" (SetField is the right primitive) must be distinguished
+// from "key absent entirely" (InsertField is the right primitive) — a
+// derived typed field being its zero value (e.g. ULID == "") cannot make
+// that distinction, since a literal blank `id: ` line also derives to "".
+func (n *Node) HasField(key string) bool {
+	_, ok := n.fieldSpans[key]
+	return ok
+}
+
 // parseFrontmatter locates a leading `---\n ... \n---\n` block, records the byte
 // span of each scalar value (in source order), and returns the body's byte
 // offset. No frontmatter -> body starts at 0.
