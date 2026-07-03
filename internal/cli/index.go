@@ -35,7 +35,7 @@ var indexCmd = &cobra.Command{
 		}
 		defer ix.Close()
 
-		if err := ix.Rebuild(); err != nil {
+		if _, err := ix.Rebuild(); err != nil {
 			return fmt.Errorf("index: rebuild: %w", err)
 		}
 
@@ -55,10 +55,11 @@ var indexCmd = &cobra.Command{
 
 // indexResult is the structured summary of a rebuild.
 type indexResult struct {
-	VaultID string `json:"vault_id"`
-	Nodes   int    `json:"nodes"`
-	Edges   int    `json:"edges"`
-	Aliases int    `json:"aliases"`
+	VaultID  string          `json:"vault_id"`
+	Nodes    int             `json:"nodes"`
+	Edges    int             `json:"edges"`
+	Aliases  int             `json:"aliases"`
+	Warnings []index.Warning `json:"warnings"`
 }
 
 // Pretty renders the human-readable status line (output.Writer prefers this).

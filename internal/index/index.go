@@ -116,7 +116,8 @@ func (ix *Index) ensureSchema() error {
 		}
 	}
 	// New or stale: rebuild from scratch.
-	return ix.Rebuild()
+	_, err = ix.Rebuild()
+	return err
 }
 
 func (ix *Index) tableExists(name string) (bool, error) {

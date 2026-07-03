@@ -21,47 +21,63 @@ type Stats struct {
 	Scanned  int // markdown files seen on disk
 	Reparsed int // files (re)parsed this pass (new or content-changed)
 	Deleted  int // files removed from the index (gone from disk)
+
+	// Warnings lists non-fatal data-quality issues found during this pass
+	// (e.g. duplicate ULIDs, alias collisions). Recomputed fresh every pass;
+	// a resolved issue simply stops appearing.
+	Warnings []Warning
+}
+
+// Warning is a non-fatal data-quality issue found during a reconcile pass.
+// Warnings are recomputed every pass; a resolved collision stops appearing.
+type Warning struct {
+	Kind     string   `json:"kind"`                // "duplicate_ulid" | "alias_collision"
+	ULID     string   `json:"ulid,omitempty"`      // duplicate_ulid only (== the shared node_key)
+	Alias    string   `json:"alias,omitempty"`     // alias_collision only
+	NodeKeys []string `json:"node_keys,omitempty"` // alias_collision only (sorted)
+	Files    []string `json:"files"`               // colliding file paths (sorted, deduped)
 }
 
 // Rebuild performs a full, deterministic rebuild from vault text: it drops and
 // recreates the physical schema, then indexes every file. The resulting row set
 // is content-derived, so walk order does not affect it.
-func (ix *Index) Rebuild() error {
+func (ix *Index) Rebuild() (Stats, error) {
 	unlock, err := ix.lock()
 	if err != nil {
-		return err
+		return Stats{}, err
 	}
 	defer unlock()
 
 	tx, err := ix.db.Begin()
 	if err != nil {
-		return fmt.Errorf("index: begin rebuild tx: %w", err)
+		return Stats{}, fmt.Errorf("index: begin rebuild tx: %w", err)
 	}
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(dropDDL); err != nil {
-		return fmt.Errorf("index: drop schema: %w", err)
+		return Stats{}, fmt.Errorf("index: drop schema: %w", err)
 	}
 	if _, err := tx.Exec(schemaDDL); err != nil {
-		return fmt.Errorf("index: create schema: %w", err)
+		return Stats{}, fmt.Errorf("index: create schema: %w", err)
 	}
 	if err := ix.initMeta(tx); err != nil {
-		return err
+		return Stats{}, err
 	}
-	if _, err := ix.reconcileTx(tx); err != nil {
-		return err
+	st, err := ix.reconcileTx(tx)
+	if err != nil {
+		return Stats{}, err
 	}
 	now := nowStamp()
 	if err := setMeta(tx, "last_full_rebuild_at", now); err != nil {
-		return err
+		return Stats{}, err
 	}
 	if err := setMeta(tx, "last_reconcile_at", now); err != nil {
-		return err
+		return Stats{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("index: commit rebuild: %w", err)
+		return Stats{}, fmt.Errorf("index: commit rebuild: %w", err)
 	}
-	return nil
+	return st, nil
 }
 
 // Reconcile performs a lazy, hash-authoritative reconcile-on-read: it picks up
