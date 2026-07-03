@@ -327,3 +327,87 @@ func TestRunItemTimestamps(t *testing.T) {
 	assert.True(t, updated.Items[0].CheckedAt.After(before))
 	assert.True(t, updated.Items[0].CheckedAt.Before(after))
 }
+
+func TestAbandonRun(t *testing.T) {
+	svc := setupChecklistTestService(t)
+
+	_, err := svc.CreateTemplate("morning", []string{"Step 1", "Step 2"})
+	require.NoError(t, err)
+
+	run, err := svc.StartRun("morning")
+	require.NoError(t, err)
+
+	// Only check one item — run stays active (not auto-completed).
+	err = svc.CheckItem(run.ID, 0)
+	require.NoError(t, err)
+
+	abandoned, err := svc.AbandonRun("morning")
+	require.NoError(t, err)
+	require.NotNil(t, abandoned)
+	assert.Equal(t, run.ID, abandoned.ID)
+	assert.Equal(t, RunStatusAbandoned, abandoned.Status)
+
+	// No active run remains for the template.
+	_, err = svc.GetActiveRun("morning")
+	assert.Error(t, err)
+
+	// No new run was created.
+	activeRuns, err := svc.ListRuns(false)
+	require.NoError(t, err)
+	assert.Len(t, activeRuns, 0)
+
+	allRuns, err := svc.ListRuns(true)
+	require.NoError(t, err)
+	assert.Len(t, allRuns, 1)
+	assert.Equal(t, run.ID, allRuns[0].ID)
+}
+
+func TestAbandonRunAlreadyAbandoned(t *testing.T) {
+	svc := setupChecklistTestService(t)
+
+	_, err := svc.CreateTemplate("morning", []string{"Step 1"})
+	require.NoError(t, err)
+
+	_, err = svc.StartRun("morning")
+	require.NoError(t, err)
+
+	_, err = svc.AbandonRun("morning")
+	require.NoError(t, err)
+
+	// Second abandon attempt finds no active run.
+	_, err = svc.AbandonRun("morning")
+	assert.Error(t, err)
+}
+
+func TestAbandonRunCompleted(t *testing.T) {
+	svc := setupChecklistTestService(t)
+
+	_, err := svc.CreateTemplate("morning", []string{"Step 1"})
+	require.NoError(t, err)
+
+	run, err := svc.StartRun("morning")
+	require.NoError(t, err)
+
+	// Checking the only item auto-completes the run.
+	err = svc.CheckItem(run.ID, 0)
+	require.NoError(t, err)
+
+	completed, err := svc.GetRunStatus(run.ID)
+	require.NoError(t, err)
+	require.Equal(t, RunStatusCompleted, completed.Status)
+
+	_, err = svc.AbandonRun("morning")
+	assert.Error(t, err)
+
+	// Status is unchanged by the failed abandon attempt.
+	stillCompleted, err := svc.GetRunStatus(run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, RunStatusCompleted, stillCompleted.Status)
+}
+
+func TestAbandonRunTemplateNotFound(t *testing.T) {
+	svc := setupChecklistTestService(t)
+
+	_, err := svc.AbandonRun("ghost-template")
+	assert.Error(t, err)
+}

@@ -42,10 +42,12 @@ func GetChecklistCommand() *cobra.Command {
 	templateCmd.AddCommand(templateItemCmd)
 
 	cmd.AddCommand(templateCmd)
+	cmd.AddCommand(checklistRunCmd())
 	cmd.AddCommand(checklistStartCmd())
 	cmd.AddCommand(checklistCheckCmd())
 	cmd.AddCommand(checklistStatusCmd())
 	cmd.AddCommand(checklistResetCmd())
+	cmd.AddCommand(checklistAbandonCmd())
 	cmd.AddCommand(checklistHistoryCmd())
 
 	return cmd
@@ -201,6 +203,38 @@ func checklistTemplateItemRemoveCmd() *cobra.Command {
 	}
 }
 
+func checklistRunCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "run <template>",
+		Short: "Interactively work a checklist run",
+		Long:  "Opens an inline TUI on the active run for a template, starting a new run if none is active.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if checklistService == nil {
+				return fmt.Errorf("checklist service not initialized")
+			}
+
+			run, _, err := resolveChecklistRun(checklistService, args[0])
+			if err != nil {
+				return fmt.Errorf("failed to resolve checklist run: %w", err)
+			}
+
+			result, err := runChecklistTUI(checklistService, run)
+			if err != nil {
+				return err
+			}
+			if result.err != nil {
+				return result.err
+			}
+
+			if result.abandoned && !quietFlag {
+				fmt.Printf("✗ Abandoned %q\n", result.run.TemplateName)
+			}
+			return nil
+		},
+	}
+}
+
 func checklistStartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start <template>",
@@ -324,6 +358,30 @@ func checklistResetCmd() *cobra.Command {
 			if !quietFlag {
 				fmt.Printf("✓ Reset %q — starting fresh\n", args[0])
 				printRunStatus(run)
+			} else {
+				fmt.Println(run.ID)
+			}
+			return nil
+		},
+	}
+}
+
+func checklistAbandonCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "abandon <template>",
+		Short: "Abandon the active run of a checklist template",
+		Long:  "Marks the active run as abandoned without starting a new run.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if checklistService == nil {
+				return fmt.Errorf("checklist service not initialized")
+			}
+			run, err := checklistService.AbandonRun(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to abandon checklist: %w", err)
+			}
+			if !quietFlag {
+				fmt.Printf("✗ Abandoned %q\n", run.TemplateName)
 			} else {
 				fmt.Println(run.ID)
 			}
