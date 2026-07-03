@@ -212,6 +212,30 @@ func (s *Service) ResetRun(nameOrID string) (*Run, error) {
 	return run, nil
 }
 
+// AbandonRun marks the active run for a template as abandoned without starting
+// a new run. Returns an error if no active run exists for the template (this
+// includes templates whose only run is already completed or abandoned).
+func (s *Service) AbandonRun(nameOrID string) (*Run, error) {
+	tpl, err := s.GetTemplate(nameOrID)
+	if err != nil {
+		return nil, err
+	}
+
+	existing, err := s.repo.GetActiveRunByTemplate(tpl.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for active run: %w", err)
+	}
+	if existing == nil {
+		return nil, fmt.Errorf("no active run for %q (use 'start' to begin)", tpl.Name)
+	}
+
+	if err := s.repo.UpdateRunStatus(existing.ID, RunStatusAbandoned, nil); err != nil {
+		return nil, fmt.Errorf("failed to abandon run: %w", err)
+	}
+	existing.Status = RunStatusAbandoned
+	return existing, nil
+}
+
 // ListRuns returns runs. If includeCompleted is false, only active runs are returned.
 func (s *Service) ListRuns(includeCompleted bool) ([]*Run, error) {
 	return s.repo.ListRuns(!includeCompleted)
