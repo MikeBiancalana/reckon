@@ -93,13 +93,21 @@ type Node struct {
 var (
 	// A scalar frontmatter line: key, the gap after the colon, then the value.
 	// Captures so we can compute the value's exact byte span. Single-line scalar
-	// values only (no block scalars, no nested maps) — matches the proven spike.
+	// values only (no |/> block scalars, no nested maps) — matches the proven
+	// spike. A bare `key:` (empty value) followed by indented `- item`
+	// continuation lines is handled separately (see parseFrontmatter/
+	// scanBlockList) by synthesizing an equivalent flow value before it ever
+	// reaches this regex. See internal/node/AGENTS.md for the full supported
+	// subset.
 	fmScalarRe = regexp.MustCompile(`^([A-Za-z0-9_-]+):([ \t]*)(.*?)([ \t]*)$`)
+
+	// blockItemRe matches one indented `- item` continuation line under a bare
+	// `key:` frontmatter line (Obsidian Properties-panel block-style lists).
+	blockItemRe = regexp.MustCompile(`^[ \t]+-[ \t]*(.*)$`)
 
 	wikilinkRe    = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 	blockAnchorRe = regexp.MustCompile(`\s\^([A-Za-z0-9][A-Za-z0-9-]*)\s*$`)
 	fenceRe       = regexp.MustCompile("^(```|~~~)")
-	refValRe      = regexp.MustCompile(`^\[\[(.+?)\]\]$`)
 )
 
 // Parse builds a byte-preserving Node from raw file bytes (no location).
@@ -169,25 +177,49 @@ func (n *Node) HasField(key string) bool {
 	return ok
 }
 
-// parseFrontmatter locates a leading `---\n ... \n---\n` block, records the byte
-// span of each scalar value (in source order), and returns the body's byte
-// offset. No frontmatter -> body starts at 0.
+// parseFrontmatter locates a leading `---\n ... \n---\n` (or CRLF-delimited)
+// block, records the byte span of each scalar value (in source order), and
+// returns the body's byte offset. No frontmatter -> body starts at 0.
+//
+// EOL handling is lenient and independently checked at each of three spots
+// (opening delimiter, closing delimiter, per-line value extraction) rather
+// than by normalizing the buffer, so every recorded Span stays a valid offset
+// into the untouched Raw bytes (see SetField). See internal/node/AGENTS.md.
 func parseFrontmatter(n *Node, raw []byte) (bodyStart int) {
-	if !bytes.HasPrefix(raw, []byte("---\n")) {
+	var headerLen int
+	switch {
+	case bytes.HasPrefix(raw, []byte("---\r\n")):
+		headerLen = 5
+	case bytes.HasPrefix(raw, []byte("---\n")):
+		headerLen = 4
+	default:
 		return 0
 	}
-	rest := raw[4:]
+	rest := raw[headerLen:]
 	idx := bytes.Index(rest, []byte("\n---"))
 	if idx < 0 {
 		return 0 // unterminated frontmatter -> whole file is body
 	}
-	closeAbs := 4 + idx + 1 // byte offset of the closing "---"
+	closeAbs := headerLen + idx + 1 // byte offset of the closing "---"
 	afterClose := closeAbs + 3
-	if afterClose < len(raw) && raw[afterClose] != '\n' {
-		return 0
+
+	// closeNLLen is the length of the line ending immediately after the
+	// closing "---" (0 if the closing delimiter is the last thing in the
+	// file). Accept either "\n" or "\r\n"; anything else means this isn't a
+	// real closing delimiter (e.g. "---abc") and the whole file is body.
+	closeNLLen := 0
+	if afterClose < len(raw) {
+		switch {
+		case raw[afterClose] == '\n':
+			closeNLLen = 1
+		case raw[afterClose] == '\r' && afterClose+1 < len(raw) && raw[afterClose+1] == '\n':
+			closeNLLen = 2
+		default:
+			return 0
+		}
 	}
 
-	pos := 4
+	pos := headerLen
 	for pos < closeAbs {
 		nl := bytes.IndexByte(raw[pos:closeAbs], '\n')
 		var lineEnd int
@@ -196,11 +228,34 @@ func parseFrontmatter(n *Node, raw []byte) (bodyStart int) {
 		} else {
 			lineEnd = pos + nl
 		}
-		line := string(raw[pos:lineEnd])
+		// effEnd excludes a trailing '\r' from the substring handed to
+		// fmScalarRe/blockItemRe, so captured values never carry a stray \r —
+		// Raw itself is never touched, and valStart/valEnd (computed as pos +
+		// match-index-into-this-substring) remain correct Raw offsets.
+		effEnd := lineEnd
+		if effEnd > pos && raw[effEnd-1] == '\r' {
+			effEnd--
+		}
+		line := string(raw[pos:effEnd])
 		if m := fmScalarRe.FindStringSubmatchIndex(line); m != nil {
 			key := line[m[2]:m[3]]
 			valStart := pos + m[6]
 			valEnd := pos + m[7]
+			if valStart == valEnd && nl >= 0 {
+				// Empty scalar value: check for an indented `- item` block
+				// list continuing on the following lines.
+				if items, nextPos, found := scanBlockList(raw, lineEnd+1, closeAbs); found {
+					if _, seen := n.frontmatter[key]; !seen {
+						n.fmOrder = append(n.fmOrder, key)
+					}
+					n.frontmatter[key] = "[" + strings.Join(items, ", ") + "]"
+					// No fieldSpan: this value has no single contiguous byte
+					// span in Raw (it spans multiple lines), so SetField
+					// correctly refuses to edit it.
+					pos = nextPos
+					continue
+				}
+			}
 			if _, seen := n.frontmatter[key]; !seen {
 				n.fmOrder = append(n.fmOrder, key)
 			}
@@ -214,9 +269,47 @@ func parseFrontmatter(n *Node, raw []byte) (bodyStart int) {
 	}
 
 	if afterClose < len(raw) {
-		return afterClose + 1 // skip the newline after closing ---
+		return afterClose + closeNLLen
 	}
 	return len(raw)
+}
+
+// scanBlockList consumes indented `- item` continuation lines starting at pos
+// (up to limit), returning the trimmed item text of each and the position
+// immediately after the last consumed line. found is false (items nil, nextPos
+// == pos) if the very first line isn't a continuation line — an empty block
+// list (`aliases:` immediately followed by another key or the closing `---`)
+// is not an error, just "no items".
+func scanBlockList(raw []byte, pos, limit int) (items []string, nextPos int, found bool) {
+	start := pos
+	for pos < limit {
+		nl := bytes.IndexByte(raw[pos:limit], '\n')
+		var lineEnd int
+		if nl < 0 {
+			lineEnd = limit
+		} else {
+			lineEnd = pos + nl
+		}
+		effEnd := lineEnd
+		if effEnd > pos && raw[effEnd-1] == '\r' {
+			effEnd--
+		}
+		line := string(raw[pos:effEnd])
+		m := blockItemRe.FindStringSubmatch(line)
+		if m == nil {
+			break
+		}
+		items = append(items, strings.TrimSpace(m[1]))
+		if nl < 0 {
+			pos = limit
+			break
+		}
+		pos = lineEnd + 1
+	}
+	if len(items) == 0 {
+		return nil, start, false
+	}
+	return items, pos, true
 }
 
 // deriveView projects the raw frontmatter into the canonical typed fields:
@@ -235,8 +328,10 @@ func deriveView(n *Node) {
 			continue
 		}
 		val := n.frontmatter[k]
-		if to, frag, ok := parseRefValue(val); ok {
-			n.Links = append(n.Links, Link{Rel: k, To: to, ToFrag: frag})
+		if refs, ok := parseRefValues(val); ok {
+			for _, r := range refs {
+				n.Links = append(n.Links, Link{Rel: k, To: r.To, ToFrag: r.Frag})
+			}
 			continue
 		}
 		if n.Props == nil {
@@ -247,8 +342,10 @@ func deriveView(n *Node) {
 }
 
 // extractBody appends body-derived links (rel=references) and block-anchor
-// fragments, treating fenced code blocks as inert (so [[notalink]] / #nottag
-// inside a fence is correctly ignored — a correctness requirement for the index).
+// fragments, treating fenced code blocks AND inline code spans as inert (so
+// [[notalink]] / #nottag inside either is correctly ignored — a correctness
+// requirement for the index). Indented (4-space) code blocks are not treated
+// as code — an explicit non-goal, see internal/node/AGENTS.md.
 func extractBody(n *Node, raw []byte, bodyStart int) {
 	body := raw[bodyStart:]
 	inFence := false
@@ -261,13 +358,74 @@ func extractBody(n *Node, raw []byte, bodyStart int) {
 		if inFence {
 			continue
 		}
-		for _, lm := range wikilinkRe.FindAllStringSubmatch(line, -1) {
+		masked := maskInlineCode(line)
+		for _, lm := range wikilinkRe.FindAllStringSubmatch(masked, -1) {
 			n.Links = append(n.Links, parseBodyLink(lm[1]))
 		}
-		if bm := blockAnchorRe.FindStringSubmatch(line); bm != nil {
+		if bm := blockAnchorRe.FindStringSubmatch(masked); bm != nil {
 			n.Fragments = append(n.Fragments, Fragment{ID: bm[1]})
 		}
 	}
+}
+
+// maskInlineCode replaces backtick-delimited inline code spans within a single
+// line with equal-length spaces, so position-sensitive regexes (blockAnchorRe's
+// end anchor) still work and non-code content elsewhere on the line is
+// untouched. Backtick run lengths must match exactly to close a span (so a
+// double-backtick span containing a lone nested backtick, e.g. "``a ` b``", is
+// handled per CommonMark's backtick-fence rule). A run with no matching
+// same-length closer before end of line is left as literal text — it must not
+// blind real content (e.g. a real [[link]]) later on the line.
+func maskInlineCode(line string) string {
+	b := []byte(line)
+	out := append([]byte(nil), b...) // full copy: untouched bytes pass through as-is
+	i := 0
+	for i < len(b) {
+		if b[i] != '`' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(b) && b[j] == '`' {
+			j++
+		}
+		runLen := j - i
+
+		// Search for a same-length backtick run to close this span. A
+		// differently-sized run in between is not a valid closer (per
+		// CommonMark's backtick-fence rule) — skip past it and keep looking.
+		k := j
+		closeStart := -1
+		for k < len(b) {
+			if b[k] != '`' {
+				k++
+				continue
+			}
+			m := k
+			for m < len(b) && b[m] == '`' {
+				m++
+			}
+			if m-k == runLen {
+				closeStart = k
+				break
+			}
+			k = m
+		}
+
+		if closeStart < 0 {
+			// Unterminated: leave literal (out already holds the original
+			// bytes here) and resume scanning right after this run.
+			i = j
+			continue
+		}
+
+		spanEnd := closeStart + runLen
+		for p := i; p < spanEnd; p++ {
+			out[p] = ' '
+		}
+		i = spanEnd
+	}
+	return string(out)
 }
 
 // parseAliases reads the `aliases` frontmatter value in scalar (`2026-06-22`) or
@@ -289,19 +447,54 @@ func parseAliases(v string) []string {
 	return []string{v}
 }
 
-// parseRefValue reports whether a frontmatter value is a wikilink reference
-// (optionally double-quoted), returning the resolved target and any fragment.
-func parseRefValue(raw string) (to, frag string, ok bool) {
+// refTarget is one resolved wikilink target from a ref-valued frontmatter
+// value (see parseRefValues).
+type refTarget struct {
+	To   string
+	Frag string
+}
+
+// refListSeparators is the set of characters allowed to remain between/around
+// [[wikilink]] tokens in a ref-valued frontmatter value for it to count as a
+// clean multi-target ref list.
+const refListSeparators = "[],\t \""
+
+// parseRefValues reports whether a frontmatter value is a clean wikilink
+// reference list: one or more [[target]] tokens (optionally the whole value
+// double-quoted), with nothing but separator characters left once every
+// matched token is removed. This is the guard against over-eager
+// linkification: a value like `[[A]], not-a-link` returns ok=false rather
+// than fabricating a garbage Link — the value falls through to Props instead.
+// Single-target `depends: "[[X]]"` returns exactly one refTarget, unchanged
+// from before this value was multi-target-aware.
+func parseRefValues(raw string) (refs []refTarget, ok bool) {
 	s := strings.TrimSpace(raw)
 	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
 		s = s[1 : len(s)-1]
 	}
-	m := refValRe.FindStringSubmatch(s)
-	if m == nil {
-		return "", "", false
+	matches := wikilinkRe.FindAllStringSubmatchIndex(s, -1)
+	if len(matches) == 0 {
+		return nil, false
 	}
-	to, frag = splitRef(m[1])
-	return to, frag, true
+
+	var remainder strings.Builder
+	last := 0
+	for _, m := range matches {
+		remainder.WriteString(s[last:m[0]])
+		last = m[1]
+	}
+	remainder.WriteString(s[last:])
+	for _, r := range remainder.String() {
+		if !strings.ContainsRune(refListSeparators, r) {
+			return nil, false
+		}
+	}
+
+	for _, m := range matches {
+		to, frag := splitRef(s[m[2]:m[3]])
+		refs = append(refs, refTarget{To: to, Frag: frag})
+	}
+	return refs, true
 }
 
 // parseBodyLink turns a wikilink body `target#frag|label` into a references edge.
