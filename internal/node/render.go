@@ -25,7 +25,7 @@ import (
 //     body-link rel "references"), sorted by rel,to.
 //   - Aliases render as an inline list `[a, b]` (parseAliases reads that form).
 //   - A typed-edge link renders as `rel: "[[to#frag]]"` — quoted so it is valid
-//     YAML for Obsidian; the parser strips the quotes (parseRefValue).
+//     YAML for Obsidian; the parser strips the quotes (parseRefValues).
 //   - Body links (rel "references") live in the body text and are NOT re-emitted
 //     as frontmatter.
 //   - With no frontmatter fields at all, only the body is emitted.

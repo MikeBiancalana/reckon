@@ -68,6 +68,13 @@ block key gets **no** `fieldSpan` (see invariant above). An empty block list
 lines) is a no-op — same as an absent key, not an error. A sibling flat/flow
 key elsewhere in the same frontmatter block is never disturbed.
 
+A block-list item containing a literal comma or bracket (e.g. `  - a, b`) is
+a known, documented limitation of the flow-string synthesis: it re-joins as
+`"[a, b, item2]"`, silently mis-splitting into extra items rather than
+preserving `a, b` as one item. This does not corrupt `Raw` — the derived view
+is merely wrong for that shape — and is not fixed here; avoid literal commas
+or brackets inside block-list item text.
+
 Out of scope, silently un-derived (not corrupted — just invisible, same as
 today's status quo for anything not on this list): nested maps
 (`key:\n  sub: val`), YAML flow maps (`{a: 1}`), `|`/`>` block scalars,
