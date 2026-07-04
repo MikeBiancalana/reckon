@@ -73,12 +73,35 @@ func (n *Node) Render() []byte {
 		}
 		return typed[i].To < typed[j].To
 	})
-	for _, l := range typed {
+	// Group by Rel (typed is already sorted by Rel,To so same-Rel links are
+	// contiguous). A rel with exactly one link keeps the exact current
+	// single-line form; a rel with more than one link emits as ONE
+	// comma-joined line so it round-trips through parseRefValues instead of
+	// becoming duplicate frontmatter keys (which parseFrontmatter's
+	// last-line-wins overwrite would collapse to one on reparse).
+	quotedRef := func(l Link) string {
 		ref := l.To
 		if l.ToFrag != "" {
 			ref += "#" + l.ToFrag
 		}
-		add(l.Rel, strconv.Quote("[["+ref+"]]"))
+		return strconv.Quote("[[" + ref + "]]")
+	}
+	for i := 0; i < len(typed); {
+		j := i
+		for j < len(typed) && typed[j].Rel == typed[i].Rel {
+			j++
+		}
+		group := typed[i:j]
+		if len(group) == 1 {
+			add(group[0].Rel, quotedRef(group[0]))
+		} else {
+			parts := make([]string, len(group))
+			for k, l := range group {
+				parts[k] = quotedRef(l)
+			}
+			add(group[0].Rel, strings.Join(parts, ", "))
+		}
+		i = j
 	}
 
 	var out bytes.Buffer
