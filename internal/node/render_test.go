@@ -136,6 +136,62 @@ func TestRenderStableFromParsedFile(t *testing.T) {
 	}
 }
 
+// TestMultiTargetRenderRoundTrip guards the render-side fix for AC(e): two
+// Links sharing one Rel must survive a Render -> Parse round trip as two
+// distinct links, not silently collapse into one via a duplicate frontmatter
+// key (today, Render emits one `rel: "[[to]]"` line per link, so two
+// same-rel links produce two duplicate-keyed lines; parseFrontmatter's
+// per-line loop overwrites n.frontmatter[key] on each occurrence, so only the
+// LAST link survives reparse).
+func TestMultiTargetRenderRoundTrip(t *testing.T) {
+	t.Run("two_same_rel_links_survive_round_trip", func(t *testing.T) {
+		n := &Node{
+			ULID: "01J9Z3K7Q2W8XR4M6N0V5BYHEQ",
+			Type: "todo",
+			Links: []Link{
+				{Rel: "depends", To: "01J9Z2QH8M"},
+				{Rel: "depends", To: "01J9Z2QH9N"},
+			},
+			Body: "Body.\n",
+		}
+
+		rendered := n.Render()
+		parsed, err := Parse(rendered)
+		if err != nil {
+			t.Fatalf("parse(render): %v", err)
+		}
+
+		var got []Link
+		for _, l := range parsed.Links {
+			if l.Rel == "depends" {
+				got = append(got, l)
+			}
+		}
+		if len(got) != 2 {
+			t.Fatalf("want 2 depends links after render+reparse, got %d: %v\nrendered:\n%s", len(got), got, rendered)
+		}
+		targets := map[string]bool{got[0].To: true, got[1].To: true}
+		if !targets["01J9Z2QH8M"] || !targets["01J9Z2QH9N"] {
+			t.Errorf("targets not both preserved: %v (rendered:\n%s)", got, rendered)
+		}
+	})
+
+	// Regression: a single-link rel must keep rendering in the exact current
+	// single-line form.
+	t.Run("single_link_rel_unchanged", func(t *testing.T) {
+		single := &Node{
+			ULID:  "01J9Z3K7Q2W8XR4M6N0V5BYHER",
+			Type:  "todo",
+			Links: []Link{{Rel: "depends-on", To: "01J9Z2QH8M"}},
+			Body:  "Body.\n",
+		}
+		singleRendered := single.Render()
+		if !bytes.Contains(singleRendered, []byte(`depends-on: "[[01J9Z2QH8M]]"`)) {
+			t.Errorf("single-target rel rendering regressed:\n%s", singleRendered)
+		}
+	})
+}
+
 func linkSet(ls []Link) map[Link]bool {
 	m := map[Link]bool{}
 	for _, l := range ls {
