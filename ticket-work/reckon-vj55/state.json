@@ -1,0 +1,24 @@
+{
+  "ticket_id": "reckon-vj55",
+  "phase": "implementer",
+  "worktree": ".worktrees/reckon-vj55",
+  "subsystem": "node",
+  "attempts": {
+    "planner": 2,
+    "test_writer": 1,
+    "implementer": 0,
+    "preflight": 0,
+    "reviewer": 0
+  },
+  "new_test_names": [
+    "TestBlockScalarAliases",
+    "TestCRLFFrontmatter",
+    "TestInlineCodeInert",
+    "TestMultiTargetRefProp",
+    "TestMultiTargetRenderRoundTrip"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": null,
+  "status": "in_progress",
+  "notes": "planner attempt 1 hit a session/API limit (external, not plan-quality) and was retried successfully as attempt 2. Named tests are t.Run-based; parent function FAILs if any subtest fails, which is the red-state gate granularity used here."
+}

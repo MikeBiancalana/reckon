@@ -372,7 +372,7 @@ func extractBody(n *Node, raw []byte, bodyStart int) {
 // line with equal-length spaces, so position-sensitive regexes (blockAnchorRe's
 // end anchor) still work and non-code content elsewhere on the line is
 // untouched. Backtick run lengths must match exactly to close a span (so a
-// double-backtick span containing a lone nested backtick, e.g. "``a ` b``", is
+// double-backtick span containing a lone nested backtick, e.g. "“a ` b“", is
 // handled per CommonMark's backtick-fence rule). A run with no matching
 // same-length closer before end of line is left as literal text — it must not
 // blind real content (e.g. a real [[link]]) later on the line.
