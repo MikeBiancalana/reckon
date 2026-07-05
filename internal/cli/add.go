@@ -94,7 +94,7 @@ func runAddE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	day, err := getEffectiveDate()
+	day, err := effectiveLogDate()
 	if err != nil {
 		return fmt.Errorf("add: %w", err)
 	}
@@ -125,6 +125,34 @@ func runAddE(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return nil
+}
+
+// effectiveLogDate returns the date of the log day file to write: the
+// validated --date flag when the user explicitly set it (delegating to
+// getEffectiveDate for its format validation), else the current UTC
+// calendar date -- deliberately NOT getEffectiveDate()'s own local-clock
+// default.
+//
+// This is the C1 fix (reckon-uv09 review): appendLogEntry composes the
+// entry's `time` field as `day + "T" + hhmm + ":00Z"`, and resolveAtTime's
+// default hhmm is already UTC wall-clock. If day came from
+// getEffectiveDate()'s LOCAL default, the two halves of that composed
+// RFC3339 value would come from two different clocks -- e.g. a Sydney user
+// at local 2026-07-05 08:30 would get day="2026-07-05" (local) +
+// hhmm="22:30" (UTC, since it's already 2026-07-04 22:30 UTC), producing
+// the impossible instant "2026-07-05T22:30:00Z" a full day off from the
+// true UTC instant "2026-07-04T22:30:00Z". Defaulting the day to UTC here
+// keeps both halves on one clock.
+//
+// getEffectiveDate() itself is intentionally left untouched: today.go/
+// week.go and the legacy journal readers rely on its local-clock semantics,
+// and it still owns --date's format validation (used here on the
+// explicit-flag path only).
+func effectiveLogDate() (string, error) {
+	if dateFlag != "" {
+		return getEffectiveDate()
+	}
+	return time.Now().UTC().Format("2006-01-02"), nil
 }
 
 // resolveAtTime validates and returns the HH:MM string for the new entry:

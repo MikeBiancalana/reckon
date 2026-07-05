@@ -35,7 +35,12 @@
 // introduce a literal "## " line (EC-9, defensive -- args are space-joined so
 // this mostly guards embedded-newline/programmatic callers) are both
 // rejected with a non-zero exit and no file write. File selection is
-// log/<getEffectiveDate()>.md (--date picks the day FILE); entry time is
+// log/<effectiveLogDate()>.md (--date, when given, picks the day FILE via
+// getEffectiveDate(); when --date is omitted the day defaults to the
+// current UTC calendar date, NOT getEffectiveDate()'s own local-clock
+// default -- see effectiveLogDate's doc comment in add.go, reckon-uv09
+// review C1: this keeps the day-file date and the entry's HH:MM, which
+// already defaults to UTC below, on one shared clock); entry time is
 // --at HH:MM if given, else current UTC HH:MM (--at backfills the time
 // WITHIN whichever day file was selected -- a distinct concern from --date).
 // The day file's frontmatter is `type: log-day`, aliases containing the
@@ -81,6 +86,15 @@ func runAdd(t *testing.T, vault string, args ...string) (stdout, stderr string, 
 	return outBuf.String(), errBuf.String(), err
 }
 
+// utcToday is the day rk add defaults to when --date is NOT given
+// (effectiveLogDate in add.go): the current UTC calendar date -- NOT
+// getEffectiveDate()'s own local-clock default. Tests below that omit
+// --date must derive their expected "today" from this helper rather than
+// from getEffectiveDate() directly, or they'd only coincidentally pass on a
+// UTC-clocked test host (reckon-uv09 review, C1: the whole point of the fix
+// is that the day file's date and the entry's HH:MM now share one clock).
+func utcToday() string { return time.Now().UTC().Format("2006-01-02") }
+
 // dayLogRelPath is the vault-relative path of a day's log file.
 func dayLogRelPath(date string) string { return "log/" + date + ".md" }
 
@@ -110,10 +124,7 @@ func TestAddCmd_FreshVaultCreatesDayWithOneEntry(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
 
-	today, err := getEffectiveDate()
-	if err != nil {
-		t.Fatalf("getEffectiveDate: %v", err)
-	}
+	today := utcToday()
 
 	if _, err := os.Stat(filepath.Join(vault, "log")); !os.IsNotExist(err) {
 		t.Fatalf("precondition: log/ must not exist yet, stat err = %v", err)
@@ -204,10 +215,7 @@ func TestAddCmd_SecondAppendIsSpanLocal(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
 
-	today, err := getEffectiveDate()
-	if err != nil {
-		t.Fatalf("getEffectiveDate: %v", err)
-	}
+	today := utcToday()
 
 	if _, stderr, err := runAdd(t, vault, "first thing"); err != nil {
 		t.Fatalf("first rk add: %v\nstderr: %s", err, stderr)
@@ -329,10 +337,7 @@ func TestAddCmd_ProvenanceOnEveryEntry(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
 
-	today, err := getEffectiveDate()
-	if err != nil {
-		t.Fatalf("getEffectiveDate: %v", err)
-	}
+	today := utcToday()
 
 	if _, stderr, err := runAdd(t, vault, "first entry", "--author", "agent-x"); err != nil {
 		t.Fatalf("rk add --author: %v\nstderr: %s", err, stderr)
@@ -381,10 +386,7 @@ func TestAddCmd_AtFlagBackfillsTimeIndependentOfULIDMintTime(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
 
-	today, err := getEffectiveDate()
-	if err != nil {
-		t.Fatalf("getEffectiveDate: %v", err)
-	}
+	today := utcToday()
 
 	before := time.Now()
 	out, stderr, err := runAdd(t, vault, "stood up", "--at", "09:15", "--json")
@@ -429,6 +431,76 @@ func TestAddCmd_AtFlagInvalidFormatRejected(t *testing.T) {
 
 	if _, _, err := runAdd(t, vault, "bad time", "--at", "25:99"); err == nil {
 		t.Fatal("expected an error for an invalid --at value, got nil")
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C1 regression (reckon-uv09 code review): the day file's date and the
+// entry's HH:MM must come from ONE clock when --date/--at are both
+// omitted. Before the fix, the day came from getEffectiveDate()'s LOCAL
+// default while HH:MM came from resolveAtTime()'s UTC default; near a day
+// boundary on a non-UTC host the two would disagree by a full day (e.g. a
+// Sydney host at local 2026-07-05 08:30 would produce
+// "2026-07-05T22:30:00Z" instead of the true UTC instant
+// "2026-07-04T22:30:00Z").
+//
+// Faked deterministically by pointing the process-global time.Local at a
+// real non-UTC zone (Australia/Sydney, UTC+10/+11) rather than waiting for
+// (or fabricating) a real wall-clock midnight rollover -- no clock-injection
+// seam is pinned by plan.md for add.go (see TestAddCmd_DayBoundaryRouting's
+// skip rationale above), and mutating time.Local is the standard, safely
+// restorable way to exercise Go's local-vs-UTC formatting divergence
+// without one. Safe here because this package's tests never run with
+// t.Parallel().
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestAddCmd_DefaultDateAndTimeShareOneClock(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	sydney, err := time.LoadLocation("Australia/Sydney")
+	if err != nil {
+		t.Skipf("tzdata unavailable (Australia/Sydney): %v", err)
+	}
+	origLocal := time.Local
+	time.Local = sydney
+	t.Cleanup(func() { time.Local = origLocal })
+
+	wantDay := time.Now().UTC().Format("2006-01-02")
+
+	out, stderr, err := runAdd(t, vault, "clock unification regression", "--json")
+	if err != nil {
+		t.Fatalf("rk add: %v\nstderr: %s", err, stderr)
+	}
+	var res logAddResult
+	mustDecodeJSON(t, out, &res)
+
+	// The day file must be selected from UTC, never from time.Local's
+	// (here, Sydney's) calendar date.
+	if res.Day != wantDay {
+		t.Errorf("Day = %q, want UTC day %q -- the day file must default to UTC, not time.Local's calendar date", res.Day, wantDay)
+	}
+	wantPath := dayLogRelPath(wantDay)
+	if res.Path != wantPath {
+		t.Errorf("Path = %q, want %q", res.Path, wantPath)
+	}
+
+	// The composed `time` field's date component must agree with the day
+	// file it was written into -- i.e. both halves came from the same
+	// clock, the defect this test pins.
+	if !strings.HasPrefix(res.Time, wantDay+"T") {
+		t.Errorf("Time = %q, want date prefix %q (date half and HH:MM half of `time` must share one clock)", res.Time, wantDay)
+	}
+	if !strings.HasSuffix(res.Time, ":00Z") {
+		t.Errorf("Time = %q, want a Z-tagged HH:MM:00 suffix", res.Time)
+	}
+
+	entries := parseLogDayFile(t, vault, wantDay)[1:]
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry in the UTC day file, got %d", len(entries))
+	}
+	if entries[0].Time != res.Time {
+		t.Errorf("parsed entry Time = %q, want %q (reported result)", entries[0].Time, res.Time)
 	}
 }
 
