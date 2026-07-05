@@ -60,9 +60,13 @@ func resetAddFlags(cmd *cobra.Command) {
 	}
 }
 
-// embeddedHeaderRe matches a body that would introduce a literal "## " line
-// (EC-9, defensive): args are space-joined so this mostly guards an
-// embedded-newline / programmatic caller rather than normal shell usage.
+// embeddedHeaderRe matches a body or author value that would introduce a
+// literal "## " line (EC-9, defensive; also E1, reckon-uv09 review: applied
+// to the resolved author too, since a --author/$RECKON_AUTHOR/$USER value
+// containing a newline sits on the same rendered header line and can inject
+// a spurious "## " header just as effectively as a body value can). Args are
+// space-joined so this mostly guards an embedded-newline / programmatic
+// caller rather than normal shell usage.
 var embeddedHeaderRe = regexp.MustCompile(`(?m)^## `)
 
 // logAddResult is the structured summary of one `rk add` run.
@@ -81,6 +85,9 @@ func runAddE(cmd *cobra.Command, args []string) error {
 	defer resetAddFlags(cmd)
 
 	author := resolveAuthor(addAuthorFlag)
+	if embeddedHeaderRe.MatchString(author) {
+		return fmt.Errorf(`add: author must not contain a line starting with "## " (would be mis-split as a new entry)`)
+	}
 	body := strings.TrimSpace(strings.Join(args, " "))
 	if body == "" {
 		return fmt.Errorf("add: empty body text")

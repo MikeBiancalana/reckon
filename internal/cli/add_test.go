@@ -605,6 +605,45 @@ func TestAddCmd_EmbeddedHeaderLineGuard(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// E1 (reckon-uv09 code review): the embedded-"## "-header guard applied to
+// body must also apply to the resolved author -- a --author value
+// containing a newline sits on the same rendered header line
+// ("## HH:MM · <author>") and can inject a spurious "## " header just as
+// effectively as a body value can, turning one entry into two.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestAddCmd_AuthorEmbeddedHeaderLineGuard(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	// Exact exploit shape demonstrated by the review: a newline in --author
+	// followed by a fake "## " header line impersonating a second entry.
+	evilAuthor := "evil\n## injected 23:59 · attacker"
+
+	_, stderr, err := runAdd(t, vault, "legit body", "--author", evilAuthor)
+	if err == nil {
+		t.Fatal("expected an error for an author containing an embedded \"## \" header line, got nil")
+	}
+	combined := strings.ToLower(stderr + err.Error())
+	if !strings.Contains(combined, "author") {
+		t.Errorf("expected an author-specific error message, got stderr=%q err=%v", stderr, err)
+	}
+
+	// No file must be written at all -- the guard runs before any I/O,
+	// mirroring the body guard's own pre-MkdirAll placement.
+	if _, err := os.Stat(filepath.Join(vault, "log")); !os.IsNotExist(err) {
+		t.Errorf("log/ dir must not be created for a rejected author, stat err = %v", err)
+	}
+
+	// A plain newline-free author is unaffected (true-negative, mirroring
+	// the body guard's own midline-hash true-negative case).
+	resetCLIFlags()
+	if _, stderr, err := runAdd(t, vault, "second body", "--author", "mike"); err != nil {
+		t.Fatalf("rk add with a normal --author must succeed: %v\nstderr: %s", err, stderr)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TS-12 (EC-10): day-boundary routing -- best effort, skipped cleanly.
 // ─────────────────────────────────────────────────────────────────────────────
 
