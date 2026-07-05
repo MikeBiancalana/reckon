@@ -47,16 +47,5 @@ var addCmd = &cobra.Command{
 	},
 }
 
-// todoCmd is a v1 stub for the "rk todo" command.
-var todoCmd = &cobra.Command{
-	Use:         "todo",
-	Short:       "List open todo items",
-	Long:        "List open todo items from the vault. (v1 stub — not yet implemented)",
-	Annotations: map[string]string{"requiresDB": "false"},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("todo: %w", errNotImplemented)
-	},
-}
-
 // errNotImplemented is the sentinel returned by v1 stub commands.
 var errNotImplemented = fmt.Errorf("not yet implemented (v1-T0 stub)")
