@@ -80,8 +80,17 @@ one transaction.
   dotfiles, non-`.md`, or `*.sync-conflict-*`.
 - Determinism: the row *set* is content-derived (walk order irrelevant); tests
   compare a sorted dump. Keep new resolver/aggregation queries order-stable.
-- The indexer takes a `node.Parser` (default `MarkdownParser`, one node/file); the
-  log tool (T4) plugs in a group-file parser via `OpenWithParser`.
+- The indexer takes a `node.Parser`. `Open`'s default (v1-T4) is
+  `node.LogParser{}`, **not** `MarkdownParser` — `LogParser` is byte-identical
+  to `MarkdownParser` for every file except a `type: log-day` group file
+  (written by `rk add`, `internal/cli/add.go`), which it splits into a day
+  node plus one `log-entry` node per `## HH:MM · author` block (see
+  `internal/node/AGENTS.md`, "Group files: LogParser and the `id::` marker").
+  Because dispatch is type-driven (not path-driven) and the default is a
+  single vault-wide choice, the DB is identical regardless of which command
+  built it — no per-caller `OpenWithParser` split-brain. A caller only needs
+  `OpenWithParser` with a different parser for a use case this default
+  doesn't cover.
 
 ## Testing
 

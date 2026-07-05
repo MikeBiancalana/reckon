@@ -60,10 +60,14 @@ func DBPath(cfg *config.Config) (string, error) {
 // Open opens (creating if absent) the index for cfg. If the persisted schema
 // version differs from SchemaVersion — or the store is new/empty — Open performs
 // a full Rebuild from the vault text (the index is derived; there are no
-// migrations). The default parser indexes one node per file (node.MarkdownParser);
-// group-file parsers (e.g. the log tool) plug in via OpenWithParser later.
+// migrations). The default parser is node.LogParser, which is byte-identical
+// to node.MarkdownParser for every file EXCEPT a "type: log-day" group file
+// (log/<date>.md), which it splits into a day node plus one log-entry node
+// per `## ` block (v1-T4) — so every reader (rk query, rk todo list, …) sees
+// log entries with zero per-caller changes, and the DB's contents never
+// depend on which command last built it.
 func Open(cfg *config.Config) (*Index, error) {
-	return OpenWithParser(cfg, node.MarkdownParser{})
+	return OpenWithParser(cfg, node.LogParser{})
 }
 
 // OpenWithParser is Open with an explicit per-tool parser.

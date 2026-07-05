@@ -35,17 +35,3 @@ var tuiCmd = &cobra.Command{
 		return err
 	},
 }
-
-// addCmd is a v1 stub for the "rk add" command family.
-var addCmd = &cobra.Command{
-	Use:         "add",
-	Short:       "Add a new node to the vault",
-	Long:        "Add a new node (fact, task, event, …) to the reckon vault. (v1 stub — not yet implemented)",
-	Annotations: map[string]string{"requiresDB": "false"},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("add: %w", errNotImplemented)
-	},
-}
-
-// errNotImplemented is the sentinel returned by v1 stub commands.
-var errNotImplemented = fmt.Errorf("not yet implemented (v1-T0 stub)")

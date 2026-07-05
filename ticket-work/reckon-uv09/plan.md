@@ -1,0 +1,104 @@
+# Implementation Plan — reckon-uv09 (v1-T4: log tool + capture, end-to-end)
+
+## Summary of approach
+
+Graduate the existing `rk add` v1 stub (`internal/cli/stubs.go`) into the real vault-backed capture command — the exact mechanical move PR #148 (reckon-qiua) used for `rk todo` — leaving the legacy DB-journal `rk log` untouched for its owner ticket (reckon-s6oh / T9). Capture writes a `type: log-day` group file under `log/<YYYY-MM-DD>.md` via the create/append recipe already proven by `todo.go` (`NewNode`→`Render`→`Parse`→`writeFileAtomic` on first use; strict byte-preserving EOF append thereafter), stamping each entry with an inline `id:: <ULID>` line and provenance. A new `node.LogParser` (implementing the existing `node.Parser` seam) splits any `type: log-day` file into N+1 nodes and becomes the single vault-wide default inside `index.Open`, so `rk index` / `rk query` / `rk todo list` all see entries with zero per-caller changes. Freshness stays reader-driven (capture → explicit `rk index` → query), matching `rk query`'s existing no-auto-reconcile contract.
+
+## Decisions (the six open questions)
+
+**1. Command-name collision → graduate the `rk add` stub; do not touch legacy `rk log`.**
+`internal/cli/stubs.go`'s `addCmd` is a genuine `errNotImplemented` v1 stub structurally identical to the `todoCmd` stub qiua graduated; the legacy `rk log` is working, tested code (`log_test.go`) whose retirement/migration is explicitly reckon-s6oh (T9) and is depended on by `today.go`/`week.go`/`tui` via `journalService`. Making the new node-based capture verb be `rk add <text...>` (a) matches the ticket's "rk log/add" shorthand, (b) avoids the duplicate-`Use` registration break (EC-12), (c) keeps every legacy test green, and (d) matches the old spec's `rk add --kind log` default-capture intent. Justification: lowest-risk graduation that mirrors an in-repo precedent and defers legacy retirement to the ticket that owns it.
+
+**2. Parser dispatch → one new `node.LogParser`, type-driven, made the default in `index.Open`.**
+`LogParser.Parse` runs `node.ParseAt(raw, loc)` once; if the resulting node's `Type != "log-day"` it returns that single node (byte-for-byte identical to `MarkdownParser` behavior), otherwise it splits into day + entry sub-nodes. Because dispatch keys on the parsed frontmatter `type`, not on path, it is robust to location and identical for every existing note/todo file. Changing `index.Open`'s one default line (`node.MarkdownParser{}` → `node.LogParser{}`) makes the whole vault index build log-aware for *all* readers, so the DB contents are identical regardless of which command last built it. Justification: option (a) from AC §2.3 is the only choice that keeps `rk query`'s read (which never reconciles) consistent with whatever writer built the DB; per-caller `OpenWithParser` (option b) risks tools disagreeing about how `log/*.md` parses.
+
+**3. Per-entry ID encoding → an inline `id:: <ULID>` line as the first body line under each `## ` header.**
+Exact bytes of one entry block:
+```
+## HH:MM · <author>
+id:: 01J9Z3K7Q2W8XR4M6N0V5BYHEF
+<body text>
+```
+This is the design doc's own locked choice ("group file … one ULID per contained node, marked inline per item (`id::`-style)", composable-redesign.md:366). It is visually unambiguous against the day node's frontmatter `id:` (single colon), and it is inert to the core parser — `node.go` has no `::` handling, `extractBody` only reacts to `[[wikilinks]]` and trailing `^anchors`, so an `id::` line is preserved verbatim in `Raw` and survives `TestRoundTripIdentity`/`FuzzRoundTripIdentity` unchanged (verified: no `::` logic anywhere in node.go). The parser reads the ULID back deterministically (no minting at index time → deterministic rebuild); hand-authored entries lacking an `id::` line still index as `log-entry` nodes under the existing `file:<rel>#N` surrogate key (`nodeKey`, reconcile.go:257-267), just without a `contains` edge.
+
+**4. AT= backfill → a `--at HH:MM` CLI flag (24-hour), not an inline token; `--date` selects the day file.**
+`--at` sets the entry header's `HH:MM` (and therefore the parser-reconstructed RFC3339 `time`); the ULID still mints at real wall-clock `node.Mint()`, preserving the design's `time`-vs-mint-time audit split (composable-redesign.md:467). The global `--date YYYY-MM-DD` flag (already `getEffectiveDate()` in root.go) selects *which* day file (past-day backfill). No `--at`/no `--date` → today's file at current UTC `HH:MM`. `--at` without `--date` → today's file at the given `HH:MM`. AT crossing a day boundary is not expressible via `--at` alone (use `--date` for another day); documented. Justification: a flag matches the `todoAddCmd` `--scheduled`/`--deadline` convention and keeps body text pristine (an inline `AT=` token would need stripping and could corrupt pasted/agent bodies, EC-8); the literal `AT=` in the ticket is inherited work_system.sh spelling, not a codebase convention.
+
+**5. Concurrency / same-host race → no lock; documented, accepted risk.**
+The ticket names only `merge=union` (a cross-device, git-merge-time mechanism) as the safety net, and `writeFileAtomic` already guarantees no torn/corrupt file — the worst same-host outcome is a lost update, never corruption. No v1 vault-text tool (`todo.go`/`adopt.go`) takes an advisory lock; only the index locks its own DB. Justification: introducing an flock primitive for vault text is broader than this ticket's scope; TS-7 asserts "no corruption, last writer wins," with a follow-up ticket noted as the concrete fix (flock on the day file, following the index's `lock_unix.go` precedent) if same-host multi-writer becomes real.
+
+**6. Index freshness → `rk add` does NOT auto-reconcile; capture → explicit `rk index` → query is the intended flow.**
+The Done-when clause enumerates three stages ("capture->index->query"), `rk query` (T3) deliberately never reconciles, and no v1 *write* tool reaches into the index package (`todo add` doesn't; only the *read* `todo list` reconciles). Keeping `rk add` a pure vault writer avoids coupling the highest-frequency capture path to the cache/index layer and paying an index-open cost on every capture. Justification: matches the ticket's own three-stage phrasing and every existing write-path's behavior; TS-13 pins the one-index-step-between as intentional, not a defect.
+
+Two secondary calls flowing from the above:
+
+- **Entry `type` vs `kind` (codebase-analysis Open-Q B):** every tool-written entry is uniformly `type: log-entry`; the header's optional kind word (present in the round-trip fixture `## 08:38 progress · mike`) is parsed into `Props["kind"]` when present but `rk add` writes none. Verb aliases (`rk progress`/`rk win`) and a kind taxonomy are out of scope (not in the Done-when).
+- **`contains` edges (Open-Q 7):** included but non-blocking — the `LogParser` synthesizes one `Link{Rel:"contains", To:<entryULID>}` per ULID-bearing entry on the day node (derived, never written into text, consistent with node.go's "forward facts only; aggregates are index-derived" doctrine). Cheap once entries carry ULIDs; enables "today's entries" as a graph query.
+
+## Files to modify
+
+**New — `internal/node/logparser.go`** (the group parser + shared format helpers, single source of truth for the entry byte-format):
+- `type LogParser struct{}` implementing `node.Parser`. `Parse`: `ParseAt` once; if `Type != "log-day"` return `[]*Node{day}`; else iterate `day.SplitEntries()`, build one entry `*Node` per block, append `contains` links to the day node, return `[day, e1, e2, …]`. `Serialize` returns `n.Serialize()` (byte-preserving; entries are never serialized back to their own files).
+- Entry-header regex, e.g. `^## (?P<time>\d{1,2}:\d{2})(?: (?P<kind>\S+))?(?: · (?P<author>.+?))?\s*$`, tolerant of the fixture's optional kind word and of a missing `· author`.
+- Per-entry derivation: ULID from the `id:: <ULID>` line (dropped from `Body`); `Type="log-entry"`; `Time` reconstructed as `<dayDate>T<HH:MM>:00Z` (dayDate from the day node's first alias, else the `log/<date>.md` filename); `Author` from the header; `Body` = entry lines minus header and `id::`, trimmed; `Props["kind"]` if a kind word was present.
+- `func RenderLogEntry(hhmm, author, ulid, body string) string` returning the exact block `## HH:MM · author\nid:: ULID\nbody\n`, called by the writer so writer and parser share one format definition.
+
+**New — `internal/node/logparser_test.go`:** N+1 split count; distinct non-empty entry ULIDs read from `id::`; time reconstruction; kind-word tolerance; hand-authored no-`id::` entries (surrogate-keyed, still split); `contains` links present on the day node; and a new `id::`-bearing day fixture added to `roundtripCorpus` to prove `id::` lines survive `TestRoundTripIdentity`/`FuzzRoundTripIdentity`.
+
+**New — `internal/cli/add.go`** (the graduated command; keeps the var name `addCmd` so root.go needs no edit):
+- `addCmd` = `Use: "add <text...>"`, `Args: cobra.MinimumNArgs(1)`, `Annotations: {"requiresDB":"false"}`, `SilenceUsage: true`, flags `--author`/`--at` (command-local) plus the global `--vault`/`--date`/`--json`/`--ndjson`/`--quiet`.
+- `runAddE`: resolve `mode`/`cfg`/`author` (reuse `resolveAuthor`, todo.go:211); trim+validate body (reject empty, EC-7); reject a body that would introduce a `\n## ` line (EC-9 guard) — args are space-joined so this is defensive; resolve day date via `getEffectiveDate()`; resolve `HH:MM` from `--at` (validated) else current UTC; `os.MkdirAll(cfg.VaultDir/log)`; call `appendLogEntry(...)`; print a `logAddResult` mirroring `todoAddResult`'s pretty/quiet handling.
+- `appendLogEntry`: create path (`os.IsNotExist`) builds the day node `node.NewNode("log-day", "", "# <date>\n\n"+RenderLogEntry(...))`, sets `Aliases=[date]`, `Render`→`Parse`→`writeFileAtomic`; append path reads raw, refuses CRLF (`bytes.Contains(raw, []byte("\r\n"))`, reckon-vj55), appends `"\n"+RenderLogEntry(...)` strictly at EOF, re-parses to validate, `writeFileAtomic`. Reuse `writeFileAtomic` (adopt.go:250) and `relTodoPath`-style helpers verbatim.
+- `logAddResult{Path, ID, Day, Time}` with `Pretty()`.
+
+**New — `internal/cli/add_test.go`:** TS-1..TS-15 (below), reusing `setupQueryVault`/`buildIndex`/`runQuery`/`resetCLIFlags` (query_test.go) and `mustWriteFile`/`isValidULID` (adopt_test.go); follows the TDD-red convention (reference `logAddResult` fields before add.go exists so the package fails to build until implemented).
+
+**Modify — `internal/cli/stubs.go`:** delete the `addCmd` stub block (lines 39-48) and the now-unused `errNotImplemented` var (lines 50-51; grep confirms `addCmd`'s `RunE` is its only code user). Exactly the qiua stub-removal move.
+
+**Modify — `internal/index/index.go`:** change `Open` (line 66) from `OpenWithParser(cfg, node.MarkdownParser{})` to `OpenWithParser(cfg, node.LogParser{})`, and update the adjacent doc comment. Single-line dispatch resolution; no `reconcile.go`/`indexFile` change needed (already generic over N nodes/file).
+
+**Modify (docs) — `internal/node/AGENTS.md` and `internal/index/AGENTS.md`:** document `LogParser`, the `id::` entry format, and that `Open`'s default is now log-aware. `.gitattributes` needs no change (`log/*.md merge=union` already present); `internal/cli/root.go` needs no change (`RootCmd.AddCommand(addCmd)` still resolves to the real command).
+
+## Design decisions (with alternatives considered)
+
+- **Graduate `rk add` vs. rename/replace legacy `rk log` (Decision 1).** Alternatives: replace `logCmd` (retires the DB journal, stepping on T9 and its `today.go`/`week.go`/`tui` readers), or invent a coexistence/vault-shape switch (unprecedented, messy). Chosen graduation is the only option that touches a stub, not working code.
+- **Type-driven default parser vs. path-glob vs. per-caller `OpenWithParser` (Decision 2).** Path-glob (`log/*.md`) would misfire on a non-log `.md` under `log/` and miss a `log-day` file elsewhere; per-caller opens produce a DB whose contents depend on which command built it (the AC §2.3 hazard). Type-driven single default is robust and consistent.
+- **`id::` line vs. block-anchor `^ULID` vs. header suffix vs. HTML comment (Decision 3).** `^ULID` reuses the anchor mechanism but the design explicitly moved fragment addressing to `ULID#frag` with `#` and reserves `id::` for group-item identity; a header suffix pollutes the human-readable line; an HTML comment is unprecedented and would enlarge the fuzz corpus surface. `id::` is the locked design choice and is provably inert to the core parser.
+- **Reconstruct entry `time` from header `HH:MM` (UTC) vs. an explicit `time:: <RFC3339>` line.** An explicit line is TZ-robust but adds a second machine line per entry (the Logseq-noise the redesign reacts against) and diverges from the blessed round-trip fixture shape (`## HH:MM …`, no `time::`). Reconstruction keeps machine noise to one line (the ULID), matches the ticket's "AT= HH:MM" framing, and is deterministic/host-independent by always emitting `Z`. Tradeoff documented: `HH:MM` is UTC wall-clock and sub-minute precision is not stored in `time`; the ULID's own mint timestamp retains the true capture instant for audit.
+- **Package placement: parser in `internal/node`, writer in `internal/cli`.** The parser must sit below `internal/index` (which imports it as the default) to avoid an import cycle; `internal/node` already owns `SplitEntries` and the FORMAT-COUPLING logic, so no new package is needed. The writer stays in `internal/cli` alongside `todo.go`, and both writer and parser share `node.RenderLogEntry` to prevent format drift. A standalone `internal/log` package was considered (cleaner "tool = package" layering) but adds an import edge from the generic index to a named tool for no functional gain in v1.
+- **Day node body semantics.** The day node keeps its whole-file derived `Body` (includes entry text) rather than being trimmed to the preamble, because trimming would make `Body != extractBody(Raw)` and complicate link derivation. Consequence: entry text is FTS-indexed twice (once on the day node, once on the entry node) and entry `[[refs]]` are attributed to the day node. This is harmless for the ACs (a `type='log-entry'` query never returns the day node) and documented as an accepted v1 characteristic; entry-level `references` edges are a possible follow-up.
+
+## Test scenarios (adapted to this design)
+
+- **TS-1 (AC-1/AC-3, fresh-day create path).** Empty vault, no `log/` → `rk add "did the thing"` creates `log/2026-07-05.md` with a `type: log-day`/`aliases: [2026-07-05]` frontmatter block and one `## HH:MM · <author>` + `id:: <ULID>` entry whose body is "did the thing"; exit 0; `node.Parse(raw).Serialize() == raw`. Driver: `appendLogEntry` create branch + `writeFileAtomic`.
+- **TS-2 (AC-2, span-local append).** Second `rk add "second thing"` leaves every byte of the first entry + frontmatter byte-identical (diff shows only appended EOF bytes); file now `LogParser`-splits into 2 entries.
+- **TS-3 (AC-4, N+1 parse).** A day file with 3 entries → `node.LogParser.Parse` yields exactly 4 nodes (1 `log-day` + 3 `log-entry`), each entry ULID non-empty, distinct, and different from the day ULID.
+- **TS-4 (AC-5, capture→index→query end-to-end).** `rk add "buy milk"` → `rk index` (rebuild through the new default `LogParser`) → `rk query "SELECT body, type FROM nodes WHERE type='log-entry'"` returns exactly one row with `type='log-entry'` and body containing "buy milk".
+- **TS-5 (AC-6, provenance on every entry).** `rk add "…" --author agent-x` then a second `rk add "…"` with no `--author`/`$RECKON_AUTHOR`/`$USER` → first entry `author == "agent-x"`, second falls back to `"local"` (`resolveAuthor` precedence); both non-empty.
+- **TS-6 (`--at` backfill + time-vs-mint divergence).** `rk add "stood up" --at 09:15` → entry `time` = `<date>T09:15:00Z`; a node-level assertion decodes the entry ULID's timestamp ≈ capture wall-clock (not 09:15), demonstrating the design's `time`-vs-mint-time split.
+- **TS-7 (EC-3, same-host race — accepted risk).** Two concurrent `rk add` against one checkout → file remains parseable (no corruption); last writer may win (lost update tolerated). Asserts no corruption + a documented-risk note, per Decision 5.
+- **TS-8 (EC-4, cross-device merge).** Two diverged copies each append one distinct entry (two git branches) → `git merge` (`log/*.md merge=union`) → merged file `LogParser`-splits to 1 day + 2 entries, no conflict markers, no duplicated frontmatter. Mirrors `gitattributes_test.go`'s `git check-attr` integration style.
+- **TS-9 (EC-6, CRLF refused).** Append onto an all-CRLF day file → `rk add` errors with the reckon-vj55 CRLF message rather than mis-splitting headers.
+- **TS-10 (EC-7, empty body rejected).** `rk add ""` (or whitespace) → non-zero exit with a clear message, mirroring `todo add`.
+- **TS-11 (EC-9, embedded `## ` guard).** A body that would introduce a `\n## ` line is rejected (defensive guard); the underlying `entryHeaderRe` mis-split limitation is documented in `internal/node/AGENTS.md`.
+- **TS-12 (EC-10, day-boundary routing).** Two `rk add` invocations straddling midnight with no `--date` → the second lands in the new day's file (routing follows wall-clock/`getEffectiveDate`).
+- **TS-13 (EC-11, index lag is intentional).** `rk add "just added"` then `rk query "… type='log-entry'"` with no index pass → entry absent (stale index, `rk query`'s no-reconcile contract); after `rk index`, re-query returns it. Pins the manual index step as intended.
+- **TS-14 (round-trip against a hand-authored day file).** `rk add` appends to a human-typed day file (frontmatter + `## ` blocks, possibly without `id::`) → every prior byte preserved; the file still `LogParser`-splits (human entries surrogate-keyed).
+- **TS-15 (`--date` targets a past day).** `rk add --date 2026-07-01 "backfilled"` appends to `log/2026-07-01.md` (not today's file), `time` defaulting to current `HH:MM` unless `--at` is also given.
+- **Regression:** full `internal/node` (`TestRoundTripIdentity`/`FuzzRoundTripIdentity` with the new `id::` fixture) and `internal/index` suites pass unchanged; `internal/cli/log_test.go`, `root_help_test.go` (`add`/`add --help` still registered), and `query_test.go` remain green.
+
+## Known risks or ambiguities
+
+- **Ticket title says "rk log," plan ships `rk add`.** This is the single biggest interpretive call. It is justified (legacy `rk log` is off-limits until T9, `rk add` is the graduate-ready stub, "rk log/add" covers both), but a reviewer expecting a literal `rk log` verb may push back. Mitigation: `appendLogEntry` is a standalone reusable function, so a future `rk log` alias (or the T9 migration) can point at it with a one-line command wiring.
+- **UTC `HH:MM` in the journal header.** Non-UTC users will see UTC times in their human-readable log. Defensible (TZ is explicitly out of scope; deterministic; matches todo.go's UTC stamping) but a plausible UX complaint; a `time::`-line variant is the escape hatch if rejected.
+- **Day-body FTS/link overlap.** Entry text is indexed on both the day node and the entry node, and entry `[[refs]]` attribute to the day node. Harmless for the ACs but a reviewer may want entry-level ref edges or a trimmed day body; called out as accepted and follow-up-able.
+- **`contains` edges are secondary.** Included but not in the ticket's Done-when; if the entry-identity/edge synthesis proves fiddly it can be dropped without failing sign-off (entries without `id::` get no `contains` edge by design).
+- **`entryHeaderRe` fence/inline-code blindness (EC-9).** `SplitEntries` uses a naive `(?m)^## .*$` with no fence awareness; the `rk add` guard only protects the write path, not arbitrary hand-authored/synced files containing a fenced `## ` line. Documented as a known limitation rather than fixed here (fixing it means teaching `SplitEntries` fence-toggling, a `node.go` change gated by the round-trip fuzz corpus).
+- **Sort-on-reconcile / ULID-dedup (codebase-analysis §3, Open-Q 6) is deferred.** `merge=union` can interleave entries out of chronological order; the design calls post-merge re-sort/dedup "cheap insurance," it is absent from the codebase and from this ticket's Done-when, and no dependency ticket owns it. Left out with this explicit note so its absence isn't mistaken for an oversight.
+
+### Critical files for implementation
+- internal/node/logparser.go (new — `LogParser`, entry parsing, `RenderLogEntry`)
+- internal/cli/add.go (new — graduated `rk add`, create + span-local append)
+- internal/cli/stubs.go (delete `addCmd` stub + `errNotImplemented`)
+- internal/index/index.go (default parser → `node.LogParser{}`)
+- internal/cli/todo.go (reference pattern: `resolveAuthor`, `writeFileAtomic`, create/append recipe, result-struct/output/quiet handling)
