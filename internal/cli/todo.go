@@ -24,6 +24,14 @@ import (
 // force a deterministic ULID collision (see TestTodoAdd_NoClobberExistingFile).
 var mintTodoULID = node.Mint
 
+// todoNow is the seam doneRecurringTodo's date arithmetic reads "today"
+// through (instead of calling time.Now().UTC() directly), mirroring
+// mintTodoULID above, so recurrence integration tests can pin a fixed
+// completion date and assert the acceptance-criteria's absolute expected
+// dates (see todo_recur_test.go's pinTodoNow). Always UTC, matching
+// parseSchedDate/advanceSchedule's (recur.go) shared clock.
+var todoNow = func() time.Time { return time.Now().UTC() }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Flag variables (package-global so cobra can bind them; each subcommand's
 // RunE resets them, and their pflag Changed state, via defer resetTodoFlags).
@@ -34,6 +42,7 @@ var (
 	todoScheduledFlag     string
 	todoDeadlineFlag      string
 	todoDependsFlag       string
+	todoRepeatFlag        string
 	todoAuthorFlag        string
 	todoListAllFlag       bool
 	todoListStateFlag     string
@@ -51,13 +60,14 @@ func resetTodoFlags(cmd *cobra.Command) {
 	todoScheduledFlag = ""
 	todoDeadlineFlag = ""
 	todoDependsFlag = ""
+	todoRepeatFlag = ""
 	todoAuthorFlag = ""
 	todoListAllFlag = false
 	todoListStateFlag = ""
 	todoListDurableFlag = false
 	todoListEphemeralFlag = false
 	todoDoneEphemeralFlag = false
-	for _, name := range []string{"ephemeral", "scheduled", "deadline", "depends", "author", "all", "state", "durable"} {
+	for _, name := range []string{"ephemeral", "scheduled", "deadline", "depends", "repeat", "author", "all", "state", "durable"} {
 		if fl := cmd.Flags().Lookup(name); fl != nil {
 			fl.Changed = false
 		}
@@ -109,6 +119,7 @@ func init() {
 	af.StringVar(&todoScheduledFlag, "scheduled", "", "Scheduled date (durable only)")
 	af.StringVar(&todoDeadlineFlag, "deadline", "", "Deadline date (durable only)")
 	af.StringVar(&todoDependsFlag, "depends", "", "ULID/alias this todo depends on (durable only)")
+	af.StringVar(&todoRepeatFlag, "repeat", "", "Org-style repeater cookie (+Nd, ++Nd, .+Nd; durable only, requires --scheduled)")
 	af.StringVar(&todoAuthorFlag, "author", "", "Author to record (default: $RECKON_AUTHOR, $USER, or \"local\")")
 
 	lf := todoListCmd.Flags()
@@ -119,6 +130,7 @@ func init() {
 
 	df := todoDoneCmd.Flags()
 	df.BoolVar(&todoDoneEphemeralFlag, "ephemeral", false, "Target the ephemeral inbox: <ref> is a 1-based line index")
+	df.StringVar(&todoAuthorFlag, "author", "", "Author to record on a recurring rule's did:: audit entry (default: $RECKON_AUTHOR, $USER, or \"local\")")
 
 	todoCmd.AddCommand(todoAddCmd, todoListCmd, todoDoneCmd)
 }
@@ -156,6 +168,7 @@ type todoListItem struct {
 	Scheduled string `json:"scheduled,omitempty"` // durable only
 	Deadline  string `json:"deadline,omitempty"`  // durable only
 	Depends   string `json:"depends,omitempty"`   // durable only
+	Repeat    string `json:"repeat,omitempty"`    // durable only: repeater cookie, sourced from props["repeat"]
 	Body      string `json:"body"`                // node body (durable) / checkbox text (ephemeral)
 }
 
@@ -186,18 +199,40 @@ func (r todoListResult) Pretty() string {
 }
 
 // todoDoneResult is the structured summary of one `rk todo done` run.
+//
+// The v1-T6 recurrence fields (Recurred through Materialized) are all
+// omitempty and populated only on the recurring-todo branch
+// (doneRecurringTodo); a plain (non-recurring) or ephemeral completion never
+// sets them. State stays "open" (never "done") on the recurrence path — the
+// cursor advance is the completion signal, not a state flip (plan.md
+// "State-transition question", FIRM).
 type todoDoneResult struct {
 	Kind    string `json:"kind"`            // "durable" | "ephemeral"
 	Ref     string `json:"ref"`             // the ref/index the caller passed
 	Path    string `json:"path,omitempty"`  // vault-relative: the file mutated
 	ID      string `json:"id,omitempty"`    // durable only: resolved ULID
-	State   string `json:"state,omitempty"` // durable only: "done"
+	State   string `json:"state,omitempty"` // durable only: "done" (or "open" on the recurrence path)
 	Skipped bool   `json:"skipped"`         // true = idempotent no-op (already done/checked)
+
+	Recurred     bool   `json:"recurred,omitempty"`     // true iff the recurrence branch ran
+	Scheduled    string `json:"scheduled,omitempty"`    // newly-advanced date
+	Repeat       string `json:"repeat,omitempty"`       // the rule's repeater cookie
+	DidEntryID   string `json:"did_entry_id,omitempty"` // the did::-linked audit log entry's ULID
+	DidEntryPath string `json:"did_entry_path,omitempty"`
+	Missed       int    `json:"missed,omitempty"`       // count of fully-elapsed intervals since the old cursor
+	Materialized string `json:"materialized,omitempty"` // "todos/inbox.md#<line>" iff Missed > 0
 }
 
 func (r todoDoneResult) Pretty() string {
 	if r.Skipped {
 		return fmt.Sprintf("todo: %s already done (skipped)", r.Ref)
+	}
+	if r.Recurred {
+		s := fmt.Sprintf("todo: %s advanced to %s (repeat %s)", r.Ref, r.Scheduled, r.Repeat)
+		if r.Missed > 0 {
+			s += fmt.Sprintf("; missed %d occurrence(s), materialized %s", r.Missed, r.Materialized)
+		}
+		return s
 	}
 	return fmt.Sprintf("todo: %s marked done", r.Ref)
 }
@@ -232,14 +267,26 @@ func runTodoAddE(cmd *cobra.Command, args []string) error {
 	scheduled := todoScheduledFlag
 	deadline := todoDeadlineFlag
 	depends := todoDependsFlag
+	repeat := todoRepeatFlag
 	author := resolveAuthor(todoAuthorFlag)
 	body := strings.TrimSpace(strings.Join(args, " "))
 	if body == "" {
 		return fmt.Errorf("todo add: empty body text")
 	}
 
-	if ephemeral && (scheduled != "" || deadline != "" || depends != "") {
-		return fmt.Errorf("todo add: --ephemeral does not support --scheduled/--deadline/--depends (durable-only)")
+	if ephemeral && (scheduled != "" || deadline != "" || depends != "" || repeat != "") {
+		return fmt.Errorf("todo add: --ephemeral does not support --scheduled/--deadline/--depends/--repeat (durable-only)")
+	}
+	if repeat != "" {
+		if scheduled == "" {
+			return fmt.Errorf("todo add: --repeat requires --scheduled (a repeater with no anchor date cannot advance)")
+		}
+		if _, err := parseRepeat(repeat); err != nil {
+			return fmt.Errorf("todo add: %w", err)
+		}
+		if _, err := parseSchedDate(scheduled); err != nil {
+			return fmt.Errorf("todo add: --scheduled: %w", err)
+		}
 	}
 
 	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
@@ -261,7 +308,7 @@ func runTodoAddE(cmd *cobra.Command, args []string) error {
 	if ephemeral {
 		res, err = addEphemeralTodo(todosDir, author, body)
 	} else {
-		res, err = addDurableTodo(todosDir, author, body, scheduled, deadline, depends)
+		res, err = addDurableTodo(todosDir, author, body, scheduled, deadline, depends, repeat)
 	}
 	if err != nil {
 		return err
@@ -277,8 +324,11 @@ func runTodoAddE(cmd *cobra.Command, args []string) error {
 
 // addDurableTodo creates todos/<ULID>.md via the NewNode -> set fields ->
 // Render -> Parse -> writeFileAtomic recipe (plan.md D1/D9). The ULID is
-// minted via the mintTodoULID seam so tests can force a collision.
-func addDurableTodo(todosDir, author, body, scheduled, deadline, depends string) (todoAddResult, error) {
+// minted via the mintTodoULID seam so tests can force a collision. repeat
+// (v1-T6) is the raw repeater cookie; caller (runTodoAddE) has already
+// validated it via parseRepeat and required --scheduled to be set alongside
+// it.
+func addDurableTodo(todosDir, author, body, scheduled, deadline, depends, repeat string) (todoAddResult, error) {
 	id := mintTodoULID()
 	path := filepath.Join(todosDir, id+".md")
 
@@ -297,6 +347,9 @@ func addDurableTodo(todosDir, author, body, scheduled, deadline, depends string)
 	}
 	if deadline != "" {
 		props["deadline"] = deadline
+	}
+	if repeat != "" {
+		props["repeat"] = repeat
 	}
 	n.Props = props
 	if depends != "" {
@@ -478,6 +531,7 @@ func listDurableTodos(db *sql.DB, all bool, stateFilter string) ([]todoListItem,
 			Scheduled: props["scheduled"],
 			Deadline:  props["deadline"],
 			Depends:   depends,
+			Repeat:    props["repeat"],
 			Body:      strings.TrimSpace(r.body),
 		})
 	}
@@ -609,6 +663,19 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 	relPath := relTodoPath(vaultDir, foundPath)
 	id := n.ULID
 
+	// v1-T6: a repeat: prop takes the recurrence branch instead of the
+	// plain state->done path below. A recurring rule's state is never
+	// "done" (it stays "open" so it remains visible in the default list,
+	// AC-3), so the idempotent-skip check just below never trips for it —
+	// that check, and the state flip, are the non-recurring path only.
+	if n.HasField("repeat") {
+		repeat, ok := n.Props["repeat"]
+		if !ok || strings.TrimSpace(repeat) == "" {
+			return todoDoneResult{}, fmt.Errorf("todo done: malformed repeat: prop (must be a plain repeater cookie, not a link) (id %s)", id)
+		}
+		return doneRecurringTodo(vaultDir, n, foundPath, ref, repeat)
+	}
+
 	if n.Props["state"] == "done" {
 		return todoDoneResult{
 			Kind: "durable", Ref: ref, Path: relPath, ID: id, State: "done", Skipped: true,
@@ -625,6 +692,101 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 	return todoDoneResult{
 		Kind: "durable", Ref: ref, Path: relPath, ID: id, State: "done", Skipped: false,
 	}, nil
+}
+
+// doneRecurringTodo is doneDurableTodo's v1-T6 recurrence branch: n carries a
+// non-empty repeat: prop. It validates the repeater cookie and the current
+// scheduled: cursor (pure, pre-write — EC-2/3/4 guarantee the file is
+// untouched on any validation error), computes the next date and any missed
+// interval count (advanceSchedule, recur.go), advances the cursor via a
+// span-local SetField("scheduled", next) — state is deliberately never
+// touched — writes a did::-linked audit log entry, and, iff intervals piled
+// up, materializes exactly one ephemeral catch-up instance into
+// todos/inbox.md (plan.md "Data Flow — doneRecurringTodo").
+//
+// Ordering/partial-failure: the cursor advance is the authoritative write
+// and happens first; the did-entry write and pile-up materialization happen
+// after and are surfaced as errors (wrapped, returned) if they fail, but the
+// already-advanced cursor is not rolled back — writes span multiple files
+// and cannot be atomic as a unit (plan.md "Known Risks", accepted).
+func doneRecurringTodo(vaultDir string, n *node.Node, foundPath, ref, repeatCookie string) (todoDoneResult, error) {
+	relPath := relTodoPath(vaultDir, foundPath)
+	id := n.ULID
+
+	spec, err := parseRepeat(repeatCookie)
+	if err != nil {
+		return todoDoneResult{}, fmt.Errorf("todo done: %w", err)
+	}
+
+	schedStr, ok := n.Props["scheduled"]
+	if !ok || !n.HasField("scheduled") || strings.TrimSpace(schedStr) == "" {
+		return todoDoneResult{}, fmt.Errorf("todo done: cannot advance a recurrence cursor with no scheduled date (id %s)", id)
+	}
+	old, err := parseSchedDate(schedStr)
+	if err != nil {
+		return todoDoneResult{}, fmt.Errorf("todo done: %w", err)
+	}
+
+	now := todoNow()
+	dayStr := now.Format("2006-01-02")
+	today, err := parseSchedDate(dayStr)
+	if err != nil {
+		return todoDoneResult{}, fmt.Errorf("todo done: internal: reparse today %q: %w", dayStr, err)
+	}
+
+	next, missed := advanceSchedule(old, today, spec)
+	nextStr := next.Format("2006-01-02")
+
+	// Validated before the authoritative cursor write below: author feeds
+	// straight into the did-entry header, and EC-13 means a recurring rule
+	// has no idempotency signal, so a failure discovered only after the
+	// cursor already advanced would double-advance on retry.
+	author := resolveAuthor(todoAuthorFlag)
+	if embeddedHeaderRe.MatchString(author) {
+		return todoDoneResult{}, fmt.Errorf("todo done: author must not contain a line starting with \"## \"")
+	}
+
+	if err := n.SetField("scheduled", nextStr); err != nil {
+		return todoDoneResult{}, fmt.Errorf("todo done: set scheduled: %w", err)
+	}
+	if err := writeFileAtomic(foundPath, n.Serialize()); err != nil {
+		return todoDoneResult{}, fmt.Errorf("todo done: write: %w", err)
+	}
+
+	res := todoDoneResult{
+		Kind: "durable", Ref: ref, Path: relPath, ID: id, State: "open", Skipped: false,
+		Recurred: true, Scheduled: nextStr, Repeat: repeatCookie, Missed: missed,
+	}
+
+	hhmm := now.Format("15:04")
+	body := fmt.Sprintf("completed recurring todo %s (repeat %s); advanced scheduled %s → %s", id, repeatCookie, schedStr, nextStr)
+
+	logDir := filepath.Join(vaultDir, "log")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return res, fmt.Errorf("todo done: create log dir: %w", err)
+	}
+	logRes, err := appendDidLogEntry(logDir, dayStr, hhmm, author, body, id)
+	if err != nil {
+		return res, fmt.Errorf("todo done: write did entry: %w", err)
+	}
+	res.DidEntryID = logRes.ID
+	res.DidEntryPath = logRes.Path
+
+	if missed > 0 {
+		todosDir := filepath.Join(vaultDir, "todos")
+		ruleRef := id
+		if len(n.Aliases) > 0 {
+			ruleRef = n.Aliases[0]
+		}
+		text := fmt.Sprintf("[[%s]] missed %d occurrence(s) (was due %s, repeat %s)", ruleRef, missed, schedStr, repeatCookie)
+		addRes, err := addEphemeralTodo(todosDir, author, text)
+		if err != nil {
+			return res, fmt.Errorf("todo done: materialize pile-up: %w", err)
+		}
+		res.Materialized = fmt.Sprintf("%s#%d", addRes.Path, addRes.Line)
+	}
+
+	return res, nil
 }
 
 // loadDurableTodoAt reads and parses the file at path. A nonexistent file is

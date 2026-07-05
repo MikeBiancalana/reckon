@@ -191,6 +191,30 @@ implementation that understands this shape:
 - The writer (`internal/cli/add.go`, `rk add`) and this parser share one
   format definition, `RenderLogEntry(hhmm, author, ulid, body string) string`,
   so they can never drift apart on the entry byte-format.
+- **`did:: <rule-ULID>` marker (v1-T6, recurring-todo audit entries).** A
+  second optional inline marker line, fixed immediately after `id::` (never
+  before it, never standalone in place of it in reckon's own writer output):
+  ```
+  ## HH:MM · author
+  id:: <entry-ULID>
+  did:: <rule-ULID>
+  <body>
+  ```
+  `extractEntryDid` mirrors `extractEntryID`'s peel-one-line mechanics for
+  the `did:: ` prefix, called on `extractEntryID`'s remaining body so the
+  two markers peel in written order. When present, it derives a
+  `Link{Rel: "did", To: <rule-ULID>}` on the *entry* node (not the day node)
+  and the marker line is dropped from `Body`, exactly like `id::`. The
+  writer counterpart is
+  `RenderLogEntryWithDid(hhmm, author, ulid, didTarget, body string) string`
+  (`internal/cli/add.go`'s `appendDidLogEntry`, used by `rk todo done`'s
+  recurrence branch — see `internal/cli/todo.go`'s `doneRecurringTodo`) to
+  record an audit trail each time a recurring todo's `scheduled:` cursor
+  advances. Like `id::`, a `did::` line is provably inert to the *core*
+  parser and survives `TestRoundTripIdentity`/`FuzzRoundTripIdentity`
+  byte-for-byte (`logDayWithDid` in `roundtripCorpus`). The `did` edge lands
+  in the index's `_edges` table via `insertNode`'s existing per-`Link` loop —
+  no index schema change.
 
 **Known limitation (EC-9):** `SplitEntries` uses a naive `(?m)^## .*$`
 header match with **no fence-awareness** — unlike this package's

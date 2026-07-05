@@ -95,6 +95,7 @@ func buildLogEntry(e Entry, raw []byte, dayDate string, loc Loc) *Node {
 	rest = bytes.TrimPrefix(rest, []byte("\n"))
 
 	ulid, body := extractEntryID(rest)
+	didTarget, body := extractEntryDid(body)
 
 	hhmm, kind, author := "", "", ""
 	if m := entryHeaderFieldsRe.FindStringSubmatch(e.Header); m != nil {
@@ -127,6 +128,9 @@ func buildLogEntry(e Entry, raw []byte, dayDate string, loc Loc) *Node {
 	if kind != "" {
 		n.Props = map[string]string{"kind": kind}
 	}
+	if didTarget != "" {
+		n.Links = append(n.Links, Link{Rel: "did", To: didTarget})
+	}
 	return n
 }
 
@@ -149,9 +153,42 @@ func extractEntryID(rest []byte) (ulid string, body []byte) {
 	return string(line), after
 }
 
+// extractEntryDid mirrors extractEntryID for the v1-T6 recurrence audit
+// marker: if rest's first line is an inline `did:: <rule-ULID>` marker, the
+// target ULID/alias is returned and the line is dropped from the returned
+// body; otherwise target is "" and body is rest unchanged. Called after
+// extractEntryID so the fixed line order (id:: then did::) peels in the same
+// order RenderLogEntryWithDid writes them; a hand-authored entry with did::
+// but no id:: still parses (did:: is always checked as rest's current first
+// line, whatever that is).
+func extractEntryDid(rest []byte) (target string, body []byte) {
+	const prefix = "did:: "
+	if !bytes.HasPrefix(rest, []byte(prefix)) {
+		return "", rest
+	}
+	line := rest[len(prefix):]
+	after := []byte(nil)
+	if nl := bytes.IndexByte(line, '\n'); nl >= 0 {
+		after = line[nl+1:]
+		line = line[:nl]
+	}
+	line = bytes.TrimSuffix(line, []byte("\r"))
+	return string(line), after
+}
+
 // RenderLogEntry returns the exact entry block for one log entry, the single
 // shared format definition the writer (internal/cli/add.go) and this parser
 // both use.
 func RenderLogEntry(hhmm, author, ulid, body string) string {
 	return "## " + hhmm + " · " + author + "\n" + "id:: " + ulid + "\n" + body + "\n"
+}
+
+// RenderLogEntryWithDid is RenderLogEntry plus a `did:: <rule-ULID>` marker
+// line immediately after id:: (v1-T6 recurrence audit entry, plan.md "Exact
+// `did::` Marker Syntax"). buildLogEntry's extractEntryDid turns the did::
+// line into a Link{Rel:"did", To:didTarget} on the parsed entry node; the
+// line is otherwise ordinary inert body bytes to the core parser, exactly
+// like id::.
+func RenderLogEntryWithDid(hhmm, author, ulid, didTarget, body string) string {
+	return "## " + hhmm + " · " + author + "\n" + "id:: " + ulid + "\n" + "did:: " + didTarget + "\n" + body + "\n"
 }

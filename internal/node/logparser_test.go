@@ -462,3 +462,129 @@ func TestLogParser_IDBearingFixtureRoundTrips(t *testing.T) {
 			logDayWithIDs, out)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// v1-T6 (reckon-ar9m) TDD-red additions: the `did::` marker.
+//
+// internal/node/logparser.go does not define RenderLogEntryWithDid or
+// extractEntryDid yet, and buildLogEntry does not peel a did:: line into a
+// Link{Rel:"did"} edge yet -- these tests reference that not-yet-existing
+// contract, so this package fails to COMPILE until the implementation phase
+// adds it (mirroring this file's own top-of-file TDD-red convention for
+// LogParser/RenderLogEntry itself).
+//
+// ─────────────────────────────────────────────────────────────────────────
+// Pinned contract (plan.md "Exact `did::` Marker Syntax and Round-trip" /
+// "Modify: internal/node/logparser.go"):
+// ─────────────────────────────────────────────────────────────────────────
+//
+//	func RenderLogEntryWithDid(hhmm, author, ulid, didTarget, body string) string
+//	// emits exactly:
+//	//   "## " + hhmm + " · " + author + "\n" +
+//	//   "id:: " + ulid + "\n" +
+//	//   "did:: " + didTarget + "\n" +
+//	//   body + "\n"
+//
+//	func extractEntryDid(rest []byte) (target string, body []byte)
+//	// mirrors extractEntryID: peels a leading "did:: <ULID>" line off rest,
+//	// returning the target and the remaining body with that line dropped.
+//
+// buildLogEntry wiring: after `ulid, body := extractEntryID(rest)`, add
+// `didTarget, body := extractEntryDid(body)`; if didTarget != "", append
+// Link{Rel: "did", To: didTarget} to the entry node's Links. Fixed line
+// order is id:: then did:: (matching RenderLogEntryWithDid), mirroring
+// id::'s own placement immediately after the header.
+//
+// Fixture reuse: `logDayWithDid` (node_test.go's roundtripCorpus, added
+// alongside `logDayWithIDs` this same phase) carries one entry with both an
+// id:: line and a did:: line right after it.
+// ─────────────────────────────────────────────────────────────────────────
+
+// TestRenderLogEntryWithDid_Format: the exact 4-line block (header, id::,
+// did::, body), byte-for-byte -- the writer half of the writer/reader pair
+// RenderLogEntry/LogParser already establish for the plain (no-did) case.
+func TestRenderLogEntryWithDid_Format(t *testing.T) {
+	got := RenderLogEntryWithDid(
+		"09:15", "mike",
+		"01J9Z3K7Q2W8XR4M6N0V5BYHFH", "01J9Z3K7Q2W8XR4M6N0V5BYHFI",
+		"completed recurring todo 01J9Z3K7Q2W8XR4M6N0V5BYHFI (repeat +7d); advanced scheduled 2026-07-05 → 2026-07-12",
+	)
+	want := "## 09:15 · mike\n" +
+		"id:: 01J9Z3K7Q2W8XR4M6N0V5BYHFH\n" +
+		"did:: 01J9Z3K7Q2W8XR4M6N0V5BYHFI\n" +
+		"completed recurring todo 01J9Z3K7Q2W8XR4M6N0V5BYHFI (repeat +7d); advanced scheduled 2026-07-05 → 2026-07-12\n"
+	if got != want {
+		t.Fatalf("RenderLogEntryWithDid mismatch\n--- want ---\n%q\n--- got ---\n%q", want, got)
+	}
+}
+
+// TestLogParser_ParsesDidMarkerIntoLink: a did:: line immediately after
+// id:: becomes Link{Rel:"did", To:<rule-ULID>} on the entry node, and is
+// dropped from Body -- while id:: still parses to the entry's own ULID
+// exactly as it does with no did:: line present at all.
+func TestLogParser_ParsesDidMarkerIntoLink(t *testing.T) {
+	nodes, err := LogParser{}.Parse([]byte(logDayWithDid), Loc{File: "log/2026-07-05.md"})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("want 2 nodes (1 log-day + 1 log-entry), got %d", len(nodes))
+	}
+	e := nodes[1]
+	if e.Type != "log-entry" {
+		t.Errorf("Type = %q, want log-entry", e.Type)
+	}
+	const wantEntryULID = "01J9Z3K7Q2W8XR4M6N0V5BYHFH"
+	const wantRuleULID = "01J9Z3K7Q2W8XR4M6N0V5BYHFI"
+	if e.ULID != wantEntryULID {
+		t.Errorf("ULID = %q, want %q (id:: must still parse with a did:: line present)", e.ULID, wantEntryULID)
+	}
+
+	var did *Link
+	for i := range e.Links {
+		if e.Links[i].Rel == "did" {
+			did = &e.Links[i]
+		}
+	}
+	if did == nil {
+		t.Fatalf("no Link{Rel:did,...} found on the entry: %+v", e.Links)
+	}
+	if did.To != wantRuleULID {
+		t.Errorf("did link To = %q, want %q", did.To, wantRuleULID)
+	}
+
+	if strings.Contains(e.Body, "did::") {
+		t.Errorf("did:: line leaked into Body: %q", e.Body)
+	}
+	if strings.Contains(e.Body, "id::") {
+		t.Errorf("id:: line leaked into Body: %q", e.Body)
+	}
+	if !strings.Contains(e.Body, "completed recurring todo") {
+		t.Errorf("Body missing expected audit text: %q", e.Body)
+	}
+}
+
+// TestLogParser_DidRoundTripIdentity: logDayWithDid (added to node_test.go's
+// roundtripCorpus alongside logDayWithIDs) is asserted under
+// TestRoundTripIdentity/FuzzRoundTripIdentity already (it iterates the whole
+// corpus map); this test additionally proves LogParser itself agrees
+// byte-for-byte with the day node's own Serialize on that same fixture,
+// mirroring TestLogParser_IDBearingFixtureRoundTrips immediately above.
+func TestLogParser_DidRoundTripIdentity(t *testing.T) {
+	if _, ok := roundtripCorpus["logDayWithDid"]; !ok {
+		t.Fatal("logDayWithDid missing from roundtripCorpus (node_test.go) -- add it alongside logDayWithIDs")
+	}
+	nodes, err := LogParser{}.Parse([]byte(logDayWithDid), Loc{File: "log/2026-07-05.md"})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	day := nodes[0]
+	out, err := LogParser{}.Serialize(day)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if string(out) != logDayWithDid {
+		t.Fatalf("LogParser.Serialize(day) not byte-identical to source\n--- want ---\n%q\n--- got ---\n%q",
+			logDayWithDid, out)
+	}
+}
