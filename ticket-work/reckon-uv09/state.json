@@ -1,0 +1,42 @@
+{
+  "ticket_id": "reckon-uv09",
+  "phase": "test_writer",
+  "worktree": ".worktrees/reckon-uv09",
+  "subsystem": "cli",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 1,
+    "implementer": 0,
+    "preflight": 0,
+    "reviewer": 0
+  },
+  "new_test_names": [
+    "TestLogParser_SplitsThreeEntriesIntoFourNodes",
+    "TestLogParser_DistinctNonEmptyEntryULIDs",
+    "TestLogParser_TimeReconstruction",
+    "TestLogParser_KindWordTolerance",
+    "TestLogParser_HandAuthoredEntriesWithoutIDStillSplit",
+    "TestLogParser_DayNodeGetsContainsLinksForIDBearingEntries",
+    "TestLogParser_NonLogDayReturnsSingleNodeUnchanged",
+    "TestRenderLogEntry_ExactBlockFormat",
+    "TestRenderLogEntry_RoundTripsThroughLogParser",
+    "TestLogParser_IDBearingFixtureRoundTrips",
+    "TestAddCmd_FreshVaultCreatesDayWithOneEntry",
+    "TestAddCmd_FreshVaultRootCreatesDirs",
+    "TestAddCmd_SecondAppendIsSpanLocal",
+    "TestAddCmd_AppendToHandAuthoredDayFilePreservesBytes",
+    "TestAddCmd_CaptureIndexQueryEndToEnd",
+    "TestAddCmd_ProvenanceOnEveryEntry",
+    "TestAddCmd_AtFlagBackfillsTimeIndependentOfULIDMintTime",
+    "TestAddCmd_AtFlagInvalidFormatRejected",
+    "TestAddCmd_CRLFDayFileRejected",
+    "TestAddCmd_EmptyOrWhitespaceBodyRejected",
+    "TestAddCmd_EmbeddedHeaderLineGuard",
+    "TestAddCmd_DayBoundaryRouting",
+    "TestAddCmd_IndexLagIsIntentional",
+    "TestAddCmd_DateFlagTargetsPastDay"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": null,
+  "status": "in_progress"
+}

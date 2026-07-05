@@ -89,11 +89,20 @@ func writeTestNode(t *testing.T, vault, filename, id, typ, body string, extraFM 
 // resetCLIFlags resets all CLI package-global flag variables to defaults and
 // clears the RootCmd IO writers/args. Call between Execute invocations AND in
 // t.Cleanup.
+//
+// dateFlag reset added for v1-T4 (reckon-uv09): `rk add --date` is the first
+// caller to exercise the shared global --date persistent flag in tests: like
+// any other pflag-bound package var, cobra only assigns it when --date is
+// actually present in argv, so a value set by one Execute call would
+// otherwise silently leak into the next test's Execute call within the same
+// test binary run (no test used --date before rk add existed, so this was
+// latent, not previously reachable).
 func resetCLIFlags() {
 	vaultFlag = ""
 	jsonFlag = false
 	ndjsonFlag = false
 	quietFlag = false
+	dateFlag = ""
 	RootCmd.SetArgs(nil)
 	RootCmd.SetOut(nil)
 	RootCmd.SetErr(nil)

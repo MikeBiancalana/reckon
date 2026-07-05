@@ -126,10 +126,35 @@ depends: [[A]], [[B]]
 Body text.
 `
 
+// logDayWithIDs (T4, internal/node/logparser.go): a log-day group file whose
+// entries each carry an inline `id:: <ULID>` line -- the per-entry-identity
+// marker the log tool's group parser (LogParser, logparser_test.go) reads.
+// Included in roundtripCorpus to prove an id:: line is inert to the CORE
+// parser (parseFrontmatter/extractBody have no `::` handling at all -- see
+// node.go's FORMAT COUPLING doc comment) and survives byte-for-byte, exactly
+// like any other body content, through TestRoundTripIdentity and
+// FuzzRoundTripIdentity below.
+const logDayWithIDs = `---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHEQ
+type: log-day
+aliases: 2026-07-05
+---
+# 2026-07-05
+
+## 08:38 progress · mike
+id:: 01J9Z3K7Q2W8XR4M6N0V5BYHER
+Built the round-trip spike. Linked [[reckon-redesign]].
+
+## 10:17 win · mike
+id:: 01J9Z3K7Q2W8XR4M6N0V5BYHES
+Hardened the parser.
+`
+
 var roundtripCorpus = map[string]string{
 	"noteObsidian":       noteObsidian,
 	"todoItem":           todoItem,
 	"logDay":             logDay,
+	"logDayWithIDs":      logDayWithIDs,
 	"weirdEdges":         weirdEdges,
 	"blockAliases":       blockAliases,
 	"crlfNote":           crlfNote,
