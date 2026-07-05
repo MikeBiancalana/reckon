@@ -284,6 +284,9 @@ func runTodoAddE(cmd *cobra.Command, args []string) error {
 		if _, err := parseRepeat(repeat); err != nil {
 			return fmt.Errorf("todo add: %w", err)
 		}
+		if _, err := parseSchedDate(scheduled); err != nil {
+			return fmt.Errorf("todo add: --scheduled: %w", err)
+		}
 	}
 
 	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
@@ -665,7 +668,11 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 	// "done" (it stays "open" so it remains visible in the default list,
 	// AC-3), so the idempotent-skip check just below never trips for it —
 	// that check, and the state flip, are the non-recurring path only.
-	if repeat, ok := n.Props["repeat"]; ok && strings.TrimSpace(repeat) != "" {
+	if n.HasField("repeat") {
+		repeat, ok := n.Props["repeat"]
+		if !ok || strings.TrimSpace(repeat) == "" {
+			return todoDoneResult{}, fmt.Errorf("todo done: malformed repeat: prop (must be a plain repeater cookie, not a link) (id %s)", id)
+		}
 		return doneRecurringTodo(vaultDir, n, foundPath, ref, repeat)
 	}
 
@@ -730,6 +737,15 @@ func doneRecurringTodo(vaultDir string, n *node.Node, foundPath, ref, repeatCook
 	next, missed := advanceSchedule(old, today, spec)
 	nextStr := next.Format("2006-01-02")
 
+	// Validated before the authoritative cursor write below: author feeds
+	// straight into the did-entry header, and EC-13 means a recurring rule
+	// has no idempotency signal, so a failure discovered only after the
+	// cursor already advanced would double-advance on retry.
+	author := resolveAuthor(todoAuthorFlag)
+	if embeddedHeaderRe.MatchString(author) {
+		return todoDoneResult{}, fmt.Errorf("todo done: author must not contain a line starting with \"## \"")
+	}
+
 	if err := n.SetField("scheduled", nextStr); err != nil {
 		return todoDoneResult{}, fmt.Errorf("todo done: set scheduled: %w", err)
 	}
@@ -742,7 +758,6 @@ func doneRecurringTodo(vaultDir string, n *node.Node, foundPath, ref, repeatCook
 		Recurred: true, Scheduled: nextStr, Repeat: repeatCookie, Missed: missed,
 	}
 
-	author := resolveAuthor(todoAuthorFlag)
 	hhmm := now.Format("15:04")
 	body := fmt.Sprintf("completed recurring todo %s (repeat %s); advanced scheduled %s → %s", id, repeatCookie, schedStr, nextStr)
 
