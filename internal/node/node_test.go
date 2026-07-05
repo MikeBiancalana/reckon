@@ -150,11 +150,35 @@ id:: 01J9Z3K7Q2W8XR4M6N0V5BYHES
 Hardened the parser.
 `
 
+// logDayWithDid (v1-T6, internal/node/logparser.go): a log-day group file
+// whose single entry carries BOTH an `id:: <ULID>` line and a `did::
+// <ULID>` line immediately after it -- the recurrence audit marker
+// (logparser_test.go's TestLogParser_ParsesDidMarkerIntoLink /
+// TestLogParser_DidRoundTripIdentity) that LogParser turns into a
+// Link{Rel:"did"} edge on the entry node. Included in roundtripCorpus,
+// mirroring logDayWithIDs immediately above, to prove a did:: line is
+// exactly as inert to the CORE parser as an id:: line (parseFrontmatter/
+// extractBody have no `::` handling at all) and survives byte-for-byte
+// through TestRoundTripIdentity and FuzzRoundTripIdentity below.
+const logDayWithDid = `---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHFG
+type: log-day
+aliases: 2026-07-05
+---
+# 2026-07-05
+
+## 09:15 · mike
+id:: 01J9Z3K7Q2W8XR4M6N0V5BYHFH
+did:: 01J9Z3K7Q2W8XR4M6N0V5BYHFI
+completed recurring todo 01J9Z3K7Q2W8XR4M6N0V5BYHFI (repeat +7d); advanced scheduled 2026-07-05 → 2026-07-12
+`
+
 var roundtripCorpus = map[string]string{
 	"noteObsidian":       noteObsidian,
 	"todoItem":           todoItem,
 	"logDay":             logDay,
 	"logDayWithIDs":      logDayWithIDs,
+	"logDayWithDid":      logDayWithDid,
 	"weirdEdges":         weirdEdges,
 	"blockAliases":       blockAliases,
 	"crlfNote":           crlfNote,
