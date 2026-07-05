@@ -15,6 +15,9 @@ serves only the older `internal/cli/notes.go` / `internal/service` path.
   `extractBody`, `SetField`, group-file `SplitEntries`/`ReplaceEntryBody`.
 - `render.go` — `Render`/`NewNode`, the create-path inverse of `deriveView`.
 - `parser.go` — `Parser` interface + `MarkdownParser` (per-tool adapter).
+- `logparser.go` — `LogParser` (v1-T4), the group-file parser for the log
+  tool (`rk add`, `internal/cli/add.go`); see "Group files: LogParser and
+  the `id::` marker" below.
 
 ## The byte-preservation invariant
 
@@ -143,6 +146,73 @@ not interpret it as a list. This only matters on the create/import path
 constructs multi-target links before rendering, so it's latent. Worth
 verifying against a live Obsidian vault before a caller starts doing so.
 
+## Group files: LogParser and the `id::` marker (v1-T4)
+
+A "log-day" file (frontmatter `type: log-day`) is a *group file*: one day's
+preamble/frontmatter followed by N `## HH:MM [kind] · author` entry blocks,
+each optionally carrying an inline `id:: <ULID>` line as its first body line
+(the log tool's, `rk add`'s, per-entry-identity marker — composable-
+redesign.md's locked choice, distinct from the day node's own frontmatter
+`id:` — note the double colon). `LogParser` (`logparser.go`) is the `Parser`
+implementation that understands this shape:
+
+- `LogParser.Parse` runs `ParseAt` once; if the resulting node's `Type` is
+  not `"log-day"`, it returns `[]*Node{day}` unchanged — byte-identical to
+  `MarkdownParser`'s behavior for every other node type (notes, todos,
+  anything). Dispatch is on parsed frontmatter `type`, not on path, so it is
+  location-independent.
+- For a `log-day` node it additionally calls `(*Node).SplitEntries()` and
+  builds one `log-entry` *Node* per block (`buildLogEntry`): `ULID` from the
+  entry's `id:: <ULID>` line (dropped from `Body`; entries with no `id::`
+  line get `ULID == ""`, surrogate-keyed at the index level); `Time`
+  reconstructed as `<dayDate>T<HH:MM>:00Z` (dayDate from the day node's
+  first alias, else derived from the `log/<date>.md` `Loc.File`) — left
+  `""` when the header doesn't carry a parseable `HH:MM` (see EC-9 below);
+  `Author` from the header's `· author` suffix; `Body` trimmed of
+  surrounding whitespace; `Props["kind"]` set only when the header carries
+  an optional kind word (`## HH:MM kind · author`).
+- The day node also gets one synthetic `Link{Rel: "contains", To: <ULID>}`
+  per ID-bearing entry, appended in-memory only — never written into `Raw`,
+  consistent with this package's "forward facts only; aggregates are
+  index-derived" doctrine. `LogParser.Serialize` always returns
+  `n.Serialize()` (i.e. `Raw` verbatim); entry sub-nodes are never
+  serialized back to their own files.
+- `id:: <ULID>` is provably inert to the *core* parser: `parseFrontmatter`
+  only scans the `---…---` block, `extractBody` only reacts to
+  `[[wikilinks]]` and trailing `^anchors`, so an `id::` line is preserved
+  verbatim in `Raw` and survives `TestRoundTripIdentity`/
+  `FuzzRoundTripIdentity` (`logDayWithIDs` in `roundtripCorpus`) exactly
+  like any other body text.
+- `index.Open`'s default parser is `LogParser`, not `MarkdownParser` — see
+  `internal/index/AGENTS.md`. Because `LogParser` is byte-identical to
+  `MarkdownParser` for every non-`log-day` file, this is safe for every
+  existing reader; the whole vault index is log-aware regardless of which
+  command last built it.
+- The writer (`internal/cli/add.go`, `rk add`) and this parser share one
+  format definition, `RenderLogEntry(hhmm, author, ulid, body string) string`,
+  so they can never drift apart on the entry byte-format.
+
+**Known limitation (EC-9):** `SplitEntries` uses a naive `(?m)^## .*$`
+header match with **no fence-awareness** — unlike this package's
+wikilink/inline-code masking (see above), it does not toggle off inside a
+fenced code block. A hand-authored or synced day file containing a fenced
+`## `-prefixed line, e.g.:
+
+    ```
+    ## foo
+    ```
+
+inside its body would be mis-split: the fenced `## foo` line is
+indistinguishable from a real entry header and starts a spurious extra
+`log-entry` node. `rk add`'s own write path defensively rejects any
+*outgoing* body/author that would introduce a `^## ` line (`add.go`'s
+`embeddedHeaderRe` guard), but that only protects text `rk add` itself
+writes — it does not fix `SplitEntries` for arbitrary pre-existing content.
+Fixing this properly means teaching `SplitEntries` fence-toggling (a
+`node.go` change, gated by the round-trip fuzz corpus) and is not done here;
+avoid `## `-prefixed lines inside fenced code blocks in hand-authored
+log-day files until it is.
+
 ## Conventions / pitfalls
 
 - Every parse fix in this package changes how the typed view is *derived* from
@@ -165,3 +235,12 @@ inline-code, and multi-target-ref fixtures) driving both
 `TestBlockScalarAliases`, `TestCRLFFrontmatter`, `TestInlineCodeInert`,
 `TestMultiTargetRefProp` (node_test.go) and `TestMultiTargetRenderRoundTrip`
 (render_test.go).
+
+`logparser_test.go` covers `LogParser`/`RenderLogEntry`: N+1 split count,
+distinct non-empty entry ULIDs from `id::` lines, time reconstruction (from
+day alias and from `Loc.File`), kind-word tolerance, a non-timestamp `## `
+heading yielding an empty `Time` rather than a malformed one, hand-authored
+entries with no `id::` line still splitting, `contains` link synthesis,
+`MarkdownParser`-parity for non-`log-day` files, and `logDayWithIDs`
+(`roundtripCorpus`) round-tripping byte-for-byte through `LogParser.Serialize`.
+`../cli/add_test.go` covers the `rk add` writer end-to-end.
