@@ -101,12 +101,22 @@ func buildLogEntry(e Entry, raw []byte, dayDate string, loc Loc) *Node {
 		hhmm, kind, author = m[1], m[2], m[3]
 	}
 
+	// entryTime is left empty (rather than the malformed "<dayDate>T:00Z")
+	// when the header doesn't match entryHeaderFieldsRe -- e.g. a
+	// hand-authored/synced day file with a non-timestamp "## Section"
+	// heading (SplitEntries treats any "^## " line as an entry boundary;
+	// C2, reckon-uv09 review).
+	entryTime := ""
+	if hhmm != "" {
+		entryTime = dayDate + "T" + hhmm + ":00Z"
+	}
+
 	n := &Node{
 		Raw:    block,
 		Loc:    loc,
 		Type:   "log-entry",
 		ULID:   ulid,
-		Time:   dayDate + "T" + hhmm + ":00Z",
+		Time:   entryTime,
 		Author: author,
 		Body:   string(body),
 	}

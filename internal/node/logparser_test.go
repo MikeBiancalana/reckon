@@ -222,6 +222,44 @@ func TestLogParser_KindWordTolerance(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// C2 (reckon-uv09 review): a "## " heading that does NOT match
+// entryHeaderFieldsRe (no HH:MM timestamp at all -- e.g. a hand-authored
+// "## Section" heading; SplitEntries treats any "^## " line as an entry
+// boundary regardless of shape) must yield an empty Time, never the
+// malformed "<dayDate>T:00Z" that a bare string-concatenation would
+// otherwise produce from an empty hhmm capture.
+// ─────────────────────────────────────────────────────────────────────────
+
+func TestLogParser_NonTimestampHeaderYieldsEmptyTime(t *testing.T) {
+	src := "---\n" +
+		"id: 01J9Z3K7Q2W8XR4M6N0V5BYHFF\n" +
+		"type: log-day\n" +
+		"aliases: 2026-07-05\n" +
+		"---\n" +
+		"# 2026-07-05\n\n" +
+		"## Section Notes\n" +
+		"Hand-authored heading with no HH:MM timestamp at all.\n"
+	nodes, err := LogParser{}.Parse([]byte(src), Loc{File: "log/2026-07-05.md"})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("want 2 nodes (1 log-day + 1 log-entry), got %d", len(nodes))
+	}
+	e := nodes[1]
+	if e.Type != "log-entry" {
+		t.Errorf("Type = %q, want log-entry", e.Type)
+	}
+	if e.Time != "" {
+		t.Errorf("Time = %q, want empty (no HH:MM in a non-timestamp heading, must not emit the malformed %q form)",
+			e.Time, "2026-07-05T:00Z")
+	}
+	if !strings.Contains(e.Body, "Hand-authored heading") {
+		t.Errorf("Body = %q, missing expected entry text", e.Body)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Hand-authored entries with no id:: line still split out as log-entry
 // nodes (surrogate-keyed by file:path#N at the INDEX level, not here) --
 // no crash, no fabricated ULID.
