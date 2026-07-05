@@ -81,11 +81,60 @@ theirs
 >>>>>>> branch
 `
 
+// blockAliases (AC b): Obsidian Properties-panel-shaped block-style `aliases`
+// list with a flow-style `tags` sibling in the same frontmatter block, LF
+// line endings.
+const blockAliases = `---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHEI
+type: note
+aliases:
+  - project-x
+  - proj-x
+tags: [x, y]
+---
+# Project X
+`
+
+// crlfNote (AC c): an entire file using \r\n line endings throughout —
+// frontmatter delimiters, field lines, and body.
+const crlfNote = "---\r\n" +
+	"id: 01J9Z3K7Q2W8XR4M6N0V5BYHEJ\r\n" +
+	"type: note\r\n" +
+	"aliases: [x]\r\n" +
+	"---\r\n" +
+	"# Title\r\n" +
+	"\r\n" +
+	"Body text with a [[link]].\r\n"
+
+// inlineCodeNote (AC d): a single-backtick inline code span containing a
+// wikilink-shaped string, plus a real wikilink elsewhere in the body.
+const inlineCodeNote = "---\n" +
+	"id: 01J9Z3K7Q2W8XR4M6N0V5BYHEK\n" +
+	"type: note\n" +
+	"---\n" +
+	"Use the `[[not-a-link]]` syntax to link notes.\n" +
+	"\n" +
+	"See [[real-target]] for the real thing.\n"
+
+// multiTargetDepends (AC e): a ref-valued frontmatter prop with two
+// comma-separated wikilink targets on one scalar line.
+const multiTargetDepends = `---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHEL
+type: todo
+depends: [[A]], [[B]]
+---
+Body text.
+`
+
 var roundtripCorpus = map[string]string{
-	"noteObsidian": noteObsidian,
-	"todoItem":     todoItem,
-	"logDay":       logDay,
-	"weirdEdges":   weirdEdges,
+	"noteObsidian":       noteObsidian,
+	"todoItem":           todoItem,
+	"logDay":             logDay,
+	"weirdEdges":         weirdEdges,
+	"blockAliases":       blockAliases,
+	"crlfNote":           crlfNote,
+	"inlineCodeNote":     inlineCodeNote,
+	"multiTargetDepends": multiTargetDepends,
 }
 
 // AC1 — THE GATE: serialize(parse(f)) == f, byte-for-byte, across the corpus.
@@ -304,6 +353,8 @@ func FuzzRoundTripIdentity(f *testing.F) {
 	f.Add([]byte(""))
 	f.Add([]byte("---\nid: x\n"))
 	f.Add([]byte("no frontmatter at all\njust body\n"))
+	f.Add([]byte(crlfNote))     // CRLF-throughout seed
+	f.Add([]byte(blockAliases)) // block-scalar YAML list seed
 
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		n, err := Parse(raw)
@@ -324,6 +375,347 @@ func FuzzRoundTripIdentity(f *testing.F) {
 				t.Fatalf("edit of %q did not take and did not change bytes", k)
 			}
 			break
+		}
+	})
+}
+
+// TestBlockScalarAliases (AC b): Obsidian-shaped block-style `aliases:` list
+// must parse to the same typed result as the flow form, without disturbing a
+// sibling flow-style key in the same frontmatter block.
+//
+// Today's bug: the bare `aliases:` line matches fmScalarRe as an empty-value
+// scalar, and the following `  - item` continuation lines don't match
+// fmScalarRe at all (no leading key char) — so they're silently skipped and
+// deriveView calls parseAliases("") -> nil. n.Aliases comes back empty, no
+// error, indistinguishable from "no aliases specified."
+func TestBlockScalarAliases(t *testing.T) {
+	t.Run("multi_item_block_list_with_sibling_flow_key", func(t *testing.T) {
+		n, err := Parse([]byte(blockAliases))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if len(n.Aliases) != 2 || n.Aliases[0] != "project-x" || n.Aliases[1] != "proj-x" {
+			t.Errorf("block aliases = %v, want [project-x proj-x]", n.Aliases)
+		}
+		if n.Props["tags"] != "[x, y]" {
+			t.Errorf("sibling flow key disturbed: Props[tags] = %q", n.Props["tags"])
+		}
+	})
+
+	t.Run("single_item_block_list", func(t *testing.T) {
+		src := "---\n" +
+			"id: 01J9Z3K7Q2W8XR4M6N0V5BYHEM\n" +
+			"type: note\n" +
+			"aliases:\n" +
+			"  - solo-alias\n" +
+			"---\n" +
+			"Body.\n"
+		n, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if len(n.Aliases) != 1 || n.Aliases[0] != "solo-alias" {
+			t.Errorf("single-item block alias = %v, want [solo-alias]", n.Aliases)
+		}
+	})
+
+	// Regression: aliases: immediately followed by another key with no `- `
+	// continuation line must NOT start erroring or fabricating entries — this
+	// case already yields nil today and must keep doing so.
+	t.Run("empty_block_list_stays_nil", func(t *testing.T) {
+		src := "---\n" +
+			"id: 01J9Z3K7Q2W8XR4M6N0V5BYHEN\n" +
+			"type: note\n" +
+			"aliases:\n" +
+			"tags: zettel\n" +
+			"---\n" +
+			"Body.\n"
+		n, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if len(n.Aliases) != 0 {
+			t.Errorf("empty `aliases:` = %v, want nil/empty (regression)", n.Aliases)
+		}
+		if n.Props["tags"] != "zettel" {
+			t.Errorf("sibling key after empty aliases: disturbed: %q", n.Props["tags"])
+		}
+	})
+}
+
+// TestCRLFFrontmatter (AC c): a whole-file CRLF note must populate typed
+// fields exactly like the LF equivalent, not silently degrade to "entire file
+// becomes body."
+//
+// Today's bug: parseFrontmatter requires bytes.HasPrefix(raw, "---\n"); a CRLF
+// file's first four bytes are '-','-','-','\r', so the prefix check fails
+// outright, bodyStart stays 0, and every typed field (ULID/Type/Author/
+// Aliases/Props) comes back zero with no error.
+func TestCRLFFrontmatter(t *testing.T) {
+	t.Run("whole_file_crlf_populates_typed_fields", func(t *testing.T) {
+		n, err := Parse([]byte(crlfNote))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if n.ULID != "01J9Z3K7Q2W8XR4M6N0V5BYHEJ" {
+			t.Errorf("ULID = %q, want populated", n.ULID)
+		}
+		if n.Type != "note" {
+			t.Errorf("Type = %q, want %q", n.Type, "note")
+		}
+		if len(n.Aliases) != 1 || n.Aliases[0] != "x" {
+			t.Errorf("Aliases = %v, want [x]", n.Aliases)
+		}
+		for _, v := range []string{n.ULID, n.Type, n.Author, n.Time} {
+			if strings.HasSuffix(v, "\r") {
+				t.Errorf("captured field value has a stray trailing \\r: %q", v)
+			}
+		}
+		var found bool
+		for _, l := range n.Links {
+			if l.To == "link" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("body [[link]] did not produce a link: %v", n.Links)
+		}
+	})
+
+	// Regression: CRLF *inside the body only* (clean-LF frontmatter) already
+	// works today — must not break.
+	t.Run("crlf_only_in_body_regression", func(t *testing.T) {
+		src := "---\n" +
+			"id: 01J9Z3K7Q2W8XR4M6N0V5BYHEO\n" +
+			"type: note\n" +
+			"---\n" +
+			"Line one.\r\n" +
+			"Line two with a [[crlf-link]].\r\n"
+		n, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if n.ULID != "01J9Z3K7Q2W8XR4M6N0V5BYHEO" || n.Type != "note" {
+			t.Errorf("LF frontmatter with CRLF body failed to parse: ULID=%q Type=%q", n.ULID, n.Type)
+		}
+		wantBody := "Line one.\r\nLine two with a [[crlf-link]].\r\n"
+		if n.Body != wantBody {
+			t.Errorf("CRLF body bytes not preserved verbatim:\n got %q\n want %q", n.Body, wantBody)
+		}
+	})
+
+	// After parsing a CRLF note, SetField on an existing scalar field must
+	// still splice a valid Raw offset (spans computed during CRLF-aware
+	// scanning must remain correct byte offsets into Raw).
+	t.Run("setfield_after_crlf_parse_stays_surgical", func(t *testing.T) {
+		n, err := Parse([]byte(crlfNote))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if err := n.SetField("type", "task"); err != nil {
+			t.Fatalf("SetField on a CRLF-parsed node: %v", err)
+		}
+		want := strings.Replace(crlfNote, "type: note\r\n", "type: task\r\n", 1)
+		if got := string(n.Serialize()); got != want {
+			t.Fatalf("CRLF SetField not surgical\n--- want ---\n%q\n--- got ---\n%q", want, got)
+		}
+		if n.Type != "task" {
+			t.Errorf("view not updated after CRLF SetField: %q", n.Type)
+		}
+	})
+}
+
+// TestInlineCodeInert (AC d): a wikilink-shaped string inside inline code
+// (single- or double-backtick span) must not produce a link — no escape
+// hatch for this one, per the ticket.
+//
+// Today's bug: extractBody only tracks fenced (``` / ~~~) blocks via inFence;
+// it has no notion of an inline backtick span and runs wikilinkRe against the
+// raw line text unconditionally.
+func TestInlineCodeInert(t *testing.T) {
+	t.Run("single_backtick_span_is_inert", func(t *testing.T) {
+		body := "Use the `[[target]]` syntax to link notes.\n"
+		n, err := Parse([]byte(body))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		for _, l := range n.Links {
+			if l.To == "target" {
+				t.Errorf("inline code `[[target]]` leaked into links: %+v", n.Links)
+			}
+		}
+	})
+
+	t.Run("double_backtick_span_with_nested_backtick_is_inert", func(t *testing.T) {
+		body := "See ``a [[nested-target]] with ` backtick`` here.\n"
+		n, err := Parse([]byte(body))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		for _, l := range n.Links {
+			if l.To == "nested-target" {
+				t.Errorf("double-backtick span (with a nested single backtick) leaked into links: %+v", n.Links)
+			}
+		}
+	})
+
+	t.Run("real_link_adjacent_to_code_span_still_linkified", func(t *testing.T) {
+		body := "See `[[masked]]` and [[real-link]] right after.\n"
+		n, err := Parse([]byte(body))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		var foundReal bool
+		for _, l := range n.Links {
+			if l.To == "masked" {
+				t.Errorf("code span leaked into links: %+v", n.Links)
+			}
+			if l.To == "real-link" {
+				foundReal = true
+			}
+		}
+		if !foundReal {
+			t.Errorf("adjacent real link not linkified: %v", n.Links)
+		}
+	})
+
+	t.Run("unterminated_backtick_does_not_blind_rest_of_line", func(t *testing.T) {
+		body := "A stray ` backtick with no close and a [[stray-real-link]] here.\n"
+		n, err := Parse([]byte(body))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		var found bool
+		for _, l := range n.Links {
+			if l.To == "stray-real-link" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("real link after an unterminated backtick not linkified: %v", n.Links)
+		}
+	})
+
+	// Regression: fenced code blocks must stay inert (already passing today).
+	t.Run("fenced_code_block_regression", func(t *testing.T) {
+		n, err := Parse([]byte(noteObsidian))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		for _, inert := range []string{"notalink", "alsonotalink"} {
+			for _, l := range n.Links {
+				if l.To == inert {
+					t.Errorf("fenced %q leaked into links", inert)
+				}
+			}
+		}
+	})
+}
+
+// TestMultiTargetRefProp (AC e): a ref-valued frontmatter prop with several
+// comma-separated wikilink targets on one scalar line must parse into one
+// Link per target (same Rel), and a mixed valid/invalid value must never
+// fabricate a garbage Link.
+//
+// Today's bug: refValRe = ^\[\[(.+?)\]\]$ is anchored to the whole trimmed
+// value. For "[[A]], [[B]]" the only way \]\]$ can match is against the
+// string's final "]]", forcing the lazy capture group to swallow everything
+// in between — producing one corrupted Link{To: "A]], [[B"} instead of two
+// clean links (or a clean drop).
+func TestMultiTargetRefProp(t *testing.T) {
+	depends := func(t *testing.T, val string) *Node {
+		t.Helper()
+		src := "---\n" +
+			"id: 01J9Z3K7Q2W8XR4M6N0V5BYHEP\n" +
+			"type: todo\n" +
+			"depends: " + val + "\n" +
+			"---\n" +
+			"Body.\n"
+		n, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		return n
+	}
+	dependsLinks := func(n *Node) []Link {
+		var out []Link
+		for _, l := range n.Links {
+			if l.Rel == "depends" {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+
+	t.Run("two_targets", func(t *testing.T) {
+		links := dependsLinks(depends(t, "[[A]], [[B]]"))
+		if len(links) != 2 {
+			t.Fatalf("want 2 depends links, got %d: %v", len(links), links)
+		}
+		if links[0].To != "A" || links[1].To != "B" {
+			t.Errorf("targets wrong: %+v", links)
+		}
+	})
+
+	t.Run("three_targets", func(t *testing.T) {
+		links := dependsLinks(depends(t, "[[A]], [[B]], [[C]]"))
+		if len(links) != 3 {
+			t.Fatalf("want 3 depends links, got %d: %v", len(links), links)
+		}
+		for i, want := range []string{"A", "B", "C"} {
+			if links[i].To != want {
+				t.Errorf("target[%d] = %q, want %q (links=%v)", i, links[i].To, want, links)
+			}
+		}
+	})
+
+	t.Run("comma_spacing_variants_agree", func(t *testing.T) {
+		variants := []string{"[[A]],[[B]]", "[[A]], [[B]]", "[[A]] ,  [[B]]"}
+		for _, v := range variants {
+			links := dependsLinks(depends(t, v))
+			if len(links) != 2 || links[0].To != "A" || links[1].To != "B" {
+				t.Errorf("variant %q produced wrong links: %v", v, links)
+			}
+		}
+	})
+
+	t.Run("per_token_modifiers", func(t *testing.T) {
+		links := dependsLinks(depends(t, "[[A#heading]], [[B|label]]"))
+		if len(links) != 2 {
+			t.Fatalf("want 2 depends links, got %d: %v", len(links), links)
+		}
+		if links[0].To != "A" || links[0].ToFrag != "heading" {
+			t.Errorf("first target wrong: %+v", links[0])
+		}
+		if links[1].To != "B" || links[1].ToFrag != "" {
+			t.Errorf("second target wrong: %+v", links[1])
+		}
+	})
+
+	// Regression: single-target ref props must keep producing exactly one
+	// link, unchanged.
+	t.Run("single_target_regression", func(t *testing.T) {
+		links := dependsLinks(depends(t, "[[X]]"))
+		if len(links) != 1 || links[0].To != "X" {
+			t.Fatalf("single-target regression broke: %v", links)
+		}
+	})
+
+	// The mandatory floor regardless of parse strategy: a mixed valid/invalid
+	// value must never fabricate a garbage Link.
+	t.Run("mixed_valid_invalid_no_garbage_link", func(t *testing.T) {
+		n := depends(t, "[[A]], not-a-link")
+		links := dependsLinks(n)
+		if len(links) != 0 {
+			t.Errorf("expected no depends links for a mixed valid/invalid value, got %v", links)
+		}
+		for _, l := range n.Links {
+			if strings.Contains(l.To, "]]") || strings.Contains(l.To, ",") {
+				t.Errorf("garbage link fabricated: %+v", l)
+			}
+		}
+		if _, ok := n.Props["depends"]; !ok {
+			t.Errorf("mixed value should fall through to Props, got Props=%v", n.Props)
 		}
 	})
 }
