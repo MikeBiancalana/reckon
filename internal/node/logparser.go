@@ -118,7 +118,11 @@ func buildLogEntry(e Entry, raw []byte, dayDate string, loc Loc) *Node {
 		ULID:   ulid,
 		Time:   entryTime,
 		Author: author,
-		Body:   string(body),
+		// Body is trimmed (plan.md: "Body = entry lines minus header and
+		// id::, trimmed"; M2, reckon-uv09 review) -- the untrimmed
+		// remainder otherwise retains the inter-entry blank line/trailing
+		// newline from the source block.
+		Body: strings.TrimSpace(string(body)),
 	}
 	if kind != "" {
 		n.Props = map[string]string{"kind": kind}

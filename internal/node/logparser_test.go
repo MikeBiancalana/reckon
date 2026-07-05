@@ -260,6 +260,31 @@ func TestLogParser_NonTimestampHeaderYieldsEmptyTime(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// M2 (reckon-uv09 review): entry Body must be trimmed (plan.md: "Body =
+// entry lines minus header and id::, trimmed"). logDay's first two entries
+// each have a trailing blank line before the next "## " header, so an
+// untrimmed Body would retain it.
+// ─────────────────────────────────────────────────────────────────────────
+
+func TestLogParser_BodyIsTrimmed(t *testing.T) {
+	nodes, err := LogParser{}.Parse([]byte(logDay), Loc{File: "log/2026-06-22.md"})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(nodes) != 4 {
+		t.Fatalf("want 4 nodes, got %d", len(nodes))
+	}
+	for i, e := range nodes[1:] {
+		if e.Body != strings.TrimSpace(e.Body) {
+			t.Errorf("entry %d: Body = %q, want no leading/trailing whitespace", i, e.Body)
+		}
+		if e.Body == "" {
+			t.Errorf("entry %d: Body unexpectedly empty after trim", i)
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Hand-authored entries with no id:: line still split out as log-entry
 // nodes (surrogate-keyed by file:path#N at the INDEX level, not here) --
 // no crash, no fabricated ULID.
