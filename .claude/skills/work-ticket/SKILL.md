@@ -493,17 +493,51 @@ EOF
   To push and create PR:
     cd .worktrees/<ticket-id>
     git push -u origin HEAD
-    gh pr create --base main --fill
+    gh pr create --base main --title "..." --body "..."   # see below, NOT --fill
 
   Or to push now, type: yes
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 **If user confirms push:**
+
+`gh pr create --fill` derives the title/body from git commit metadata. On any
+branch with more than one commit (every ticket branch, since Phase 2/3/4/6/7
+each commit separately), `--fill` does NOT synthesize a summary -- it sets the
+title to the branch name (dashes turned to spaces, e.g. "reckon qiua") and the
+body to a bare bullet list of every commit subject line. That is a real,
+recurring defect observed in practice (reckon-qiua/PR #148 shipped exactly this
+useless title+body), not a hypothetical -- never use `--fill` here. Build the
+title/body explicitly from ticket + pipeline artifacts instead:
+
 ```bash
 cd .worktrees/<ticket-id>
+
+TICKET_TITLE=$(bd show <ticket-id> --json 2>/dev/null | jq -r '.title // empty')
+[ -z "$TICKET_TITLE" ] && TICKET_TITLE="<ticket-id>"
+
 git push -u origin HEAD
-gh pr create --base main --fill
+gh pr create --base main \
+  --title "$TICKET_TITLE (<ticket-id>)" \
+  --body "$(cat <<EOF
+## Summary
+
+$(sed -n '/^## Summary/,/^## Files to modify/p' ticket-work/<ticket-id>/plan.md | sed '$d')
+
+## Process
+
+Plan → TDD-red tests → implementation → preflight → code review pipeline.
+Review verdict: $(grep -m1 '^\*\*Verdict:' ticket-work/<ticket-id>/review.md || grep -m1 '^Verdict:' ticket-work/<ticket-id>/review.md)
+Artifacts: ticket-work/<ticket-id>/ (plan.md, acceptance-criteria.md, review.md)
+
+## Test plan
+
+- [x] $(go test ./... 2>&1 | tail -1)
+- [x] Preflight: $(grep -m1 -i 'status:' ticket-work/<ticket-id>/preflight-report.md)
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+EOF
+)"
 
 PR_NUM=$(gh pr view --json number -q .number)
 bd update <ticket-id> --notes="PR #$PR_NUM: $(gh pr view --json url -q .url)"
