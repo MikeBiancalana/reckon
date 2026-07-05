@@ -238,8 +238,8 @@ func runTodoAddE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("todo add: empty body text")
 	}
 
-	if ephemeral && (scheduled != "" || deadline != "") {
-		return fmt.Errorf("todo add: --ephemeral does not support --scheduled/--deadline (durable-only)")
+	if ephemeral && (scheduled != "" || deadline != "" || depends != "") {
+		return fmt.Errorf("todo add: --ephemeral does not support --scheduled/--deadline/--depends (durable-only)")
 	}
 
 	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
@@ -428,6 +428,9 @@ func runTodoListE(cmd *cobra.Command, args []string) error {
 	return output.New(cmd.OutOrStdout(), mode).Print(res)
 }
 
+// listDurableTodos closes rows manually (not deferred) before issuing the
+// per-row loadTodoProps queries below -- a defer would hold this cursor open
+// across those nested queries on the same *sql.DB.
 func listDurableTodos(db *sql.DB, all bool, stateFilter string) ([]todoListItem, error) {
 	rows, err := db.Query("SELECT id, body FROM nodes WHERE type = 'todo'")
 	if err != nil {
@@ -587,6 +590,11 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 	n, foundPath, err := loadDurableTodoAt(fastPath)
 	if err != nil {
 		return todoDoneResult{}, err
+	}
+	if n != nil && n.Type != "todo" {
+		// e.g. ref == "inbox" resolving to the ephemeral container: not a
+		// durable todo match, fall through to the type-filtered walk below.
+		n, foundPath = nil, ""
 	}
 	if n == nil {
 		n, foundPath, err = findDurableTodoByRefOrAlias(todosDir, ref)

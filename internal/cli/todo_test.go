@@ -462,6 +462,7 @@ func TestTodoAdd_EphemeralRejectsDateFlags(t *testing.T) {
 	}{
 		{"scheduled", []string{"add", "x", "--ephemeral", "--scheduled", "2026-07-10"}},
 		{"deadline", []string{"add", "x", "--ephemeral", "--deadline", "2026-07-15"}},
+		{"depends", []string{"add", "x", "--ephemeral", "--depends", "someref"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
