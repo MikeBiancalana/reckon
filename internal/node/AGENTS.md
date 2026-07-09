@@ -36,6 +36,48 @@ single contiguous byte span in `Raw` — a synthesized block-list value (see
 below) — has no entry in `fieldSpans`, so `SetField` on that key correctly
 returns an error rather than attempting an edit with nowhere to splice.
 
+**`blockSpans` (v1-T8, reckon-ih5g)** is the companion map to `fieldSpans` for
+block-style values: `parseFrontmatter`'s block-list branch (see "Block-style
+lists" below) records `blockSpans[key] = Span{Start, End}` covering the WHOLE
+block — the bare `key:` line through its last `- item` continuation line,
+inclusive of that line's ending — alongside the synthesized flow string it
+already writes into `frontmatter[key]`. Nothing but `SetAliases` (below)
+reads `blockSpans` today; it exists so a caller that knows how to rewrite an
+entire block list at once (not just a scalar's value) has a byte span to
+splice over, without re-deriving that span itself from `Raw`.
+
+## `SetAliases` — a shape-agnostic upsert for `aliases:` (v1-T8, reckon-ih5g)
+
+`(*Node).SetAliases(aliases []string) error` upserts the `aliases`
+frontmatter field regardless of which of the three real-world shapes it was
+originally authored in, always collapsing the result to one canonical flow
+line, `aliases: [a, b, ...]`:
+
+- **Scalar span present** (flow `aliases: [a, b]` or bare `aliases: a`) —
+  delegates to `SetField("aliases", ...)`, splicing just the value the same
+  as any other scalar edit.
+- **No scalar span, but a `blockSpans["aliases"]` entry exists** (Obsidian
+  Properties-panel block-style `aliases:` + indented `- item` lines) — the
+  WHOLE block span is spliced over with a single `aliases: [...]\n` line;
+  every other byte, including sibling frontmatter keys, is untouched. This is
+  the one shape `SetField`/`InsertField` alone cannot handle safely:
+  `InsertField` keys its "does this field exist" check on `fieldSpans` alone,
+  so on a block-list `aliases:` it would insert a *second*, duplicate
+  `aliases:` line rather than editing the existing one — silently corrupting
+  the file on reparse (the value the parser derives is "last line wins",
+  dropping the intended edit). `SetAliases` is what closes that gap.
+- **Neither** (no `aliases:` key at all) — delegates to `InsertField`.
+
+This is the rename path's mechanism for retaining an old slug as a redirect
+alongside a newly-minted canonical one (`internal/cli/note_v1.go`'s `rk note
+rename`): call `SetAliases` with the union of the note's existing aliases
+plus the old and new slugs, regardless of which shape the file was
+originally authored in. Gated by `TestRoundTripIdentity`/
+`FuzzRoundTripIdentity` (no regression to any existing corpus fixture) plus
+the targeted `TestSetAliases_BlockListCollapsesToFlow` (node_test.go), which
+exercises all three shapes and reparses the result to confirm the post-edit
+round-trip is itself byte-stable.
+
 ## Supported frontmatter/markdown subset (shipped, this ticket: reckon-vj55)
 
 **Frontmatter delimiters:** a leading `---` line and a matching `---` line,
@@ -66,10 +108,13 @@ lines) is detected (`scanBlockList`) and synthesized into the equivalent flow
 string (`"[a, b]"`) *before* it reaches any downstream logic — so it takes the
 identical code path as a hand-written flow list (`parseAliases` for `aliases`,
 `parseRefValues` for ref-valued props, plain `Props` for everything else). A
-block key gets **no** `fieldSpan` (see invariant above). An empty block list
-(`key:` immediately followed by another key or the closing `---`, no `- `
-lines) is a no-op — same as an absent key, not an error. A sibling flat/flow
-key elsewhere in the same frontmatter block is never disturbed.
+block key gets **no** `fieldSpan` (see invariant above) — but it DOES get a
+`blockSpans[key]` entry covering the whole block (v1-T8, see `SetAliases`
+below), since a whole-block rewrite is a distinct, safe operation from a
+single-scalar-value splice. An empty block list (`key:` immediately followed
+by another key or the closing `---`, no `- ` lines) is a no-op — same as an
+absent key, not an error, and gets no `blockSpans` entry either. A sibling
+flat/flow key elsewhere in the same frontmatter block is never disturbed.
 
 A block-list item containing a literal comma or bracket (e.g. `  - a, b`) is
 a known, documented limitation of the flow-string synthesis: it re-joins as
@@ -258,7 +303,10 @@ inline-code, and multi-target-ref fixtures) driving both
 `TestRoundTripIdentity` and `FuzzRoundTripIdentity`. Targeted tests:
 `TestBlockScalarAliases`, `TestCRLFFrontmatter`, `TestInlineCodeInert`,
 `TestMultiTargetRefProp` (node_test.go) and `TestMultiTargetRenderRoundTrip`
-(render_test.go).
+(render_test.go). `TestSetAliases_BlockListCollapsesToFlow` (node_test.go,
+v1-T8) covers `SetAliases` across all three authored shapes plus absent, and
+re-checks the full `roundtripCorpus` inline so a `SetAliases` regression in
+`parseFrontmatter`'s scanning loop can't slip past this one test.
 
 `logparser_test.go` covers `LogParser`/`RenderLogEntry`: N+1 split count,
 distinct non-empty entry ULIDs from `id::` lines, time reconstruction (from
