@@ -87,6 +87,7 @@ type Node struct {
 	frontmatter map[string]string
 	fmOrder     []string
 	fieldSpans  map[string]Span
+	blockSpans  map[string]Span
 	bodySpan    Span
 }
 
@@ -126,6 +127,7 @@ func ParseAt(raw []byte, loc Loc) (*Node, error) {
 		Loc:         loc,
 		frontmatter: map[string]string{},
 		fieldSpans:  map[string]Span{},
+		blockSpans:  map[string]Span{},
 	}
 
 	bodyStart := parseFrontmatter(n, raw)
@@ -181,14 +183,42 @@ func (n *Node) HasField(key string) bool {
 // a note's aliases may be authored in: an inline flow list (`aliases: [a,
 // b]`), a bare scalar (`aliases: a`), an Obsidian block-style indented list
 // (`aliases:` + `  - a` continuation lines, which today has no safe edit
-// primitive — see internal/node/AGENTS.md and ticket-work/reckon-ih5g), and
-// absent entirely. It is the rename path's mechanism for retaining an old
-// slug as a redirect alongside a newly-minted one (plan.md "Block-list
-// `aliases:` handling").
+// primitive via SetField/InsertField alone — see internal/node/AGENTS.md and
+// ticket-work/reckon-ih5g), and absent entirely. In every shape the result
+// collapses to one canonical flow line, `aliases: [a, b, ...]`. It is the
+// rename path's mechanism for retaining an old slug as a redirect alongside a
+// newly-minted one (plan.md "Block-list `aliases:` handling").
 //
-// STUB (reckon-ih5g, TDD red phase): not yet implemented.
+//   - scalar span present (flow or bare) -> SetField splices just the value,
+//     same as any other scalar edit.
+//   - no scalar span, but a blockSpans entry exists -> the WHOLE block (the
+//     bare `key:` line through its last `- item` continuation line) is
+//     spliced over with a single canonical `aliases: [...]\n` line; every
+//     other byte (including sibling frontmatter keys) is untouched.
+//   - neither -> delegate to InsertField, which adds the key fresh.
 func (n *Node) SetAliases(aliases []string) error {
-	return fmt.Errorf("SetAliases: not implemented")
+	flowValue := "[" + strings.Join(aliases, ", ") + "]"
+
+	if n.HasField("aliases") {
+		return n.SetField("aliases", flowValue)
+	}
+
+	if span, ok := n.blockSpans["aliases"]; ok {
+		line := "aliases: " + flowValue + "\n"
+		out := make([]byte, 0, len(n.Raw)-(span.End-span.Start)+len(line))
+		out = append(out, n.Raw[:span.Start]...)
+		out = append(out, line...)
+		out = append(out, n.Raw[span.End:]...)
+
+		reparsed, err := ParseAt(out, n.Loc)
+		if err != nil {
+			return fmt.Errorf("SetAliases: re-parse after block-list splice failed: %w", err)
+		}
+		*n = *reparsed
+		return nil
+	}
+
+	return n.InsertField("aliases", flowValue)
 }
 
 // parseFrontmatter locates a leading `---\n ... \n---\n` (or CRLF-delimited)
@@ -265,7 +295,14 @@ func parseFrontmatter(n *Node, raw []byte) (bodyStart int) {
 					n.frontmatter[key] = "[" + strings.Join(items, ", ") + "]"
 					// No fieldSpan: this value has no single contiguous byte
 					// span in Raw (it spans multiple lines), so SetField
-					// correctly refuses to edit it.
+					// correctly refuses to edit it. blockSpans instead
+					// records the WHOLE block's span (the bare `key:` line
+					// through the last `- item` continuation line,
+					// inclusive of its line ending) so a caller that DOES
+					// know how to rewrite a block list wholesale (SetAliases)
+					// has a span to splice over. pos is still the start of
+					// the `key:` line here (not yet reassigned).
+					n.blockSpans[key] = Span{Start: pos, End: nextPos}
 					pos = nextPos
 					continue
 				}
