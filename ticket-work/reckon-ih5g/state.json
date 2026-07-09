@@ -1,6 +1,6 @@
 {
   "ticket_id": "reckon-ih5g",
-  "phase": "reviewer",
+  "phase": "dry_run_gate",
   "worktree": ".worktrees/reckon-ih5g",
   "subsystem": "cli",
   "attempts": {
@@ -8,7 +8,7 @@
     "test_writer": 1,
     "implementer": 1,
     "preflight": 1,
-    "reviewer": 0
+    "reviewer": 1
   },
   "new_test_names": [
     "TestNoteCreate_SlugFilenameAndRoundTrip",
@@ -35,5 +35,5 @@
   ],
   "stall_count": 0,
   "last_test_output_hash": "",
-  "status": "in_progress"
+  "status": "ready_for_push"
 }
