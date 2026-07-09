@@ -1,6 +1,12 @@
 # Reckon: Unified Redesign
 
-_Date: 2026-06-15 · Author: Godfrey (with Gilbert as logseq-overseer source) · Status: PROPOSED — pending Mike's review of open decisions_
+> **SUPERSEDED (2026-06-19).** Halted at the NO BUILD decision point (see bottom of this doc) —
+> too work-coupled for a general personal tool. The live design is
+> **[`design/composable-redesign.md`](design/composable-redesign.md)**; see
+> [`design/INDEX.md`](design/INDEX.md) for the full doc map. Kept for rationale — its "portable
+> core" analysis fed the composable design directly.
+
+_Date: 2026-06-15 · Author: Godfrey (with Gilbert as logseq-overseer source) · Status: SUPERSEDED (was PROPOSED)_
 
 ## Thesis
 

@@ -1,5 +1,10 @@
 # Reckon
 
+> **⚠️ In transition.** This README describes the gen-1 surface (intentions/wins/schedule,
+> journal-centric). Reckon is being rebuilt as UNIX-composable tools over a plain-text node
+> substrate — see [docs/design/composable-redesign.md](docs/design/composable-redesign.md) and the
+> doc map at [docs/design/INDEX.md](docs/design/INDEX.md). README rewrite lands with the v1 surface.
+
 A terminal-based productivity system combining daily journaling, task management, and time tracking. Reckon uses plain markdown files as your source of truth, making your daily workflow portable, searchable, and version-controllable.
 
 ## Features

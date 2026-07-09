@@ -2,70 +2,38 @@
 
 ## What is Reckon?
 
-Reckon is a **terminal-based productivity system** combining daily journaling, multi-day task management, time tracking, and zettelkasten-style knowledge capture. Built in Go with a Bubble Tea TUI and Cobra CLI.
+Reckon is being rebuilt as a set of **UNIX-composable personal-knowledge tools** (log, todo, note,
+checklist) over a shared plain-text + git substrate, with a derived SQLite property-graph index.
+Go, multi-call `rk` binary (Cobra), Bubble Tea for TUI porcelains.
 
-**Core principle:** Plain-text markdown files are the source of truth. SQLite provides fast querying but is always rebuildable from markdown files.
+**Authoritative design: [`docs/design/composable-redesign.md`](docs/design/composable-redesign.md)**
+(read its "Status & resuming — start here" section). Doc map with live/superseded/historical status:
+[`docs/design/INDEX.md`](docs/design/INDEX.md). Architecture research + roadmap additions:
+[`docs/design/km-architecture-proposal.md`](docs/design/km-architecture-proposal.md).
 
-**Key features:**
-- Daily journal with intentions, logs, wins, and schedule
-- Multi-day tasks with notes, deadlines, and time tracking
-- Zettelkasten notes with wiki-style linking
-- TUI for interactive management
-- CLI for quick logging and scripting
+**Core principles:**
+- Plain-text markdown files are truth; the SQLite index is derived, disposable, per-device, never synced.
+- Everything is a **node**: inline ULID identity, `type` as a property, frontmatter props,
+  Obsidian-flavored wikilinks. A file holds 1..N nodes; per-tool `parse`/`serialize` pairs are the
+  keystone (byte-preserving round-trip is a **gated invariant** — see `internal/node`).
+- Hard separation of types: log entries ≠ tasks ≠ notes. Tasks have a real lifecycle (open→done in
+  place, org-style recurrence via stored `scheduled` cursor, ephemeral/durable split).
+- Agent-first verbs (the `bd` standard): structured `--json`/NDJSON output, token-economy scoping,
+  read-only `rk query` (SQL over stable views); writes only through validating verbs.
+- Model-free core; AI behaviors are porcelains.
 
-## Domain Concepts (Read This Once)
+## Current State (2026-07, composable v1)
 
-**Intention** - A daily goal (1-3 per day max)
-- Lives in daily journal only
-- Statuses: `open`, `done`, `carried` (rolled to next day)
-- Lightweight, for daily focus items
+✅ **Shipped:** `rk` dispatcher + vault/config (T0) · canonical node package (T1) · property-graph
+index + reconcile (T2) · `rk query` (T3) · `rk todo` durable+ephemeral · `rk log` (T4) ·
+recurrence (T6) · `rk adopt` · checklist-run TUI.
 
-**Task** - Multi-day work item with its own history
-- Has schedule date, deadline, tags, notes
-- Statuses: `open`, `done`
-- Tracked globally, can be scheduled/referenced in daily journals
+⬜ **Open v1:** `rk today` agenda (T7, reckon-liml) · **note tool (T8, reckon-ih5g)** ·
+DB-primary→text-truth migration (T9, reckon-s6oh) · MCP porcelain (T10) · `rk-brief` seam (T11).
 
-**Log Entry** - Timestamped activity record
-- Types: `log` (default), `meeting`, `break`
-- Can link to tasks via `[task:id]`
-- Supports duration tracking
-- Lives in daily journal
-
-**Zettelkasten Note** - Knowledge card with wiki-style links
-- Slug-based IDs (human-readable, URL-safe)
-- Supports tags, backlinks
-- Stored in date-based hierarchy
-- Searchable and interlinked
-
-**Win** - Daily accomplishment to celebrate
-- Simple text entries in daily journal
-
-**Schedule Item** - Time-boxed event for the day
-- Has start time and optional duration
-- Lives in daily journal
-
-## Current State (February 2026)
-
-✅ **Implemented:**
-- Daily journal (intentions, logs, wins, schedule)
-- Multi-day task management with notes
-- TUI with 40-40-18 layout (Log | Tasks | Schedule/Intentions/Wins)
-- CLI commands for journaling, tasks, notes
-- Zettelkasten notes (CLI: create, edit, show)
-- Time tracking and summaries
-- SQLite database with migrations
-
-🚧 **In Progress:**
-- Zettelkasten notes TUI (reckon-v89d)
-- Notes search CLI (reckon-pfpb)
-- CLI verb standardization (reckon-89hp)
-
-⏸️  **Planned:**
-- Periodic review system
-- Enhanced logging/instrumentation
-- Additional TUI editing capabilities
-
-**See:** `bd stats` for current issue breakdown, `bd list --status=open` for active work
+⚠️ **Transition caveat:** parts of `internal/` (journal sections, per-type tables, gen-1 TUI) are
+pre-redesign code awaiting the T9 truth-inversion. When old code contradicts the design doc, the
+design doc wins. Check `bd ready` / `bd show <id>` for live task state — not the lists in any doc.
 
 ## Quick Start
 
@@ -422,13 +390,13 @@ bd update reckon-new --claim          # Switch to new issue
 
 ## Additional Resources
 
-- **README.md** - User-facing product documentation
+- **docs/design/INDEX.md** - Doc map (live / superseded / historical) — start here for design questions
+- **docs/design/composable-redesign.md** - THE current design
+- **README.md** - User-facing product documentation (describes gen-1 surface; rewrite pending v1)
 - **QUICKSTART.md** - Quick reference guide
 - **docs/bd-usage.md** - Full beads workflow
 - **docs/ASYNC_PATTERNS.md** - TUI async patterns (critical!)
-- **docs/reckon-plan_2025-12-22.md** - Original architectural vision
-- **docs/2026-01-17-review-and-assessment.md** - Technical review and architecture analysis
-- **Subsystem guides** - See links above for TUI, Journal, CLI, Storage details
+- **Subsystem guides** - See links above for TUI, Journal, CLI, Storage details (gen-1 subsystems; design doc wins on conflict)
 
 ## Need Help?
 

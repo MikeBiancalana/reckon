@@ -1,5 +1,8 @@
 # TUI Redesign Migration Guide
 
+> **HISTORICAL (gen-1 TUI).** Describes the pre-composable-redesign TUI layout. Doc map:
+> [`design/INDEX.md`](design/INDEX.md).
+
 ## What's New
 
 - New 40-40-18 layout (Logs | Tasks | Sidebar)

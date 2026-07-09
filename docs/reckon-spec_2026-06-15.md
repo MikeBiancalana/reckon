@@ -1,6 +1,10 @@
 # Reckon: Technical Spec
 
-_Date: 2026-06-15 · Author: Godfrey · Status: PROPOSED · Companion to `reckon-redesign_2026-06-15.md`_
+> **SUPERSEDED (2026-06-19)** with its companion redesign doc — halted at NO BUILD. Live design:
+> **[`design/composable-redesign.md`](design/composable-redesign.md)** · doc map:
+> [`design/INDEX.md`](design/INDEX.md). Kept for rationale.
+
+_Date: 2026-06-15 · Author: Godfrey · Status: SUPERSEDED (was PROPOSED) · Companion to `reckon-redesign_2026-06-15.md`_
 
 Concrete substance for the locked design: DB-first, build-not-buy, projection stays an honest grep-able mirror. This spec covers the schema, capture API, projection format, reconciliation, ref-extraction, and a buildable Phase 0.
 

@@ -4,7 +4,11 @@ Read this first. Full workflow details in [AGENTS.md](AGENTS.md).
 
 ## What is Reckon?
 
-A terminal-based productivity system for developers. Plain-text journal files sync to SQLite for fast querying. TUI built with Bubble Tea.
+UNIX-composable personal-knowledge tools (log / todo / note / checklist) over plain-text markdown +
+git, with a derived SQLite property-graph index. One multi-call `rk` binary. **Current design:
+[docs/design/composable-redesign.md](docs/design/composable-redesign.md); doc map:
+[docs/design/INDEX.md](docs/design/INDEX.md).** Parts of the tree are gen-1 code awaiting the T9
+truth-inversion — the design doc wins on conflict.
 
 ## Codebase Structure
 
@@ -82,4 +86,4 @@ Work is NOT complete until `git push` succeeds.
 
 - **Full workflow**: [AGENTS.md](AGENTS.md)
 - **Beads reference**: [docs/bd-usage.md](docs/bd-usage.md)
-- **Architecture**: [docs/reckon-plan_2025-12-22.md](docs/reckon-plan_2025-12-22.md)
+- **Architecture**: [docs/design/composable-redesign.md](docs/design/composable-redesign.md) (doc map: [docs/design/INDEX.md](docs/design/INDEX.md))

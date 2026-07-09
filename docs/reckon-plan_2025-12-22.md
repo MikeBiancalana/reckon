@@ -1,5 +1,9 @@
 # Reckon: CLI Productivity System
 
+> **HISTORICAL (gen-1 plan, 2025-12-22).** Describes the original monolithic reckon, twice
+> superseded. Current direction: **[`design/composable-redesign.md`](design/composable-redesign.md)**
+> · doc map: [`design/INDEX.md`](design/INDEX.md).
+
 ## Project Overview
 
 A terminal-based productivity tool combining daily journaling, task management, and a zettelkasten-style knowledge base. Built in Go with a TUI interface.

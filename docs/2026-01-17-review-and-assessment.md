@@ -1,5 +1,9 @@
 # Reckon Personal Productivity System - Comprehensive Assessment Report
 
+> **HISTORICAL (assesses gen-1 reckon).** The code it reviews largely predates the composable
+> redesign; findings informed it. Current direction:
+> **[`design/composable-redesign.md`](design/composable-redesign.md)** · doc map: [`design/INDEX.md`](design/INDEX.md).
+
 **Date:** 2026-01-17
 **Scope:** Architecture, code quality, async patterns, instrumentation, UX design, and future notes system
 
