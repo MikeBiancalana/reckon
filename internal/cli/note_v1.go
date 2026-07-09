@@ -124,9 +124,6 @@ func init() {
 	cf.StringVar(&noteTypeFlag, "type", "", "Node type (default: note)")
 	cf.StringVar(&noteAuthorFlag, "author", "", "Author to record (default: $RECKON_AUTHOR, $USER, or \"local\")")
 
-	rf := noteRenameCmd.Flags()
-	rf.StringVar(&noteAuthorFlag, "author", "", "Author to record (default: $RECKON_AUTHOR, $USER, or \"local\")")
-
 	noteCmd.AddCommand(noteCreateCmd, noteShowCmd, noteRenameCmd, noteIndexCmd)
 }
 
@@ -255,7 +252,14 @@ func runNoteCreateE(cmd *cobra.Command, args []string) error {
 	targetDir := notesDir
 	relDir := "notes"
 	if dir != "" {
+		if filepath.IsAbs(dir) {
+			return fmt.Errorf("note create: --dir must be a relative subdirectory under notes/, got %q", dir)
+		}
 		targetDir = filepath.Join(notesDir, dir)
+		rel, relErr := filepath.Rel(notesDir, targetDir)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("note create: --dir must stay under notes/, got %q", dir)
+		}
 		relDir = filepath.ToSlash(filepath.Join("notes", dir))
 	}
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
@@ -360,7 +364,8 @@ func runNoteShowE(cmd *cobra.Command, args []string) error {
 	var id, typ, loc string
 	row := db.QueryRow(
 		`SELECT id, type, loc FROM nodes
-		 WHERE ulid = ? OR EXISTS (SELECT 1 FROM aliases a WHERE a.alias = ? AND a.id = nodes.id)
+		 WHERE (ulid = ? OR EXISTS (SELECT 1 FROM aliases a WHERE a.alias = ? AND a.id = nodes.id))
+		   AND loc LIKE 'notes/%'
 		 LIMIT 1`, ref, ref)
 	if err := row.Scan(&id, &typ, &loc); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
