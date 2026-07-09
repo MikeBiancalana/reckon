@@ -341,6 +341,18 @@ time** from git last-commit (mtime fallback) — correct semantics, zero stored 
 deliberate authored `reviewed:` field ("verified still true on X" — the honest staleness assertion,
 bumped only by the lint pass) was considered and **deferred**: add later if lint proves the need.
 
+**Note filenames (settled 2026-07-09) — filename = slug, not ULID.** The composable design leaves
+note filenames formally undecided but leans ULID by implication (A#5: "filename=ULID → Obsidian
+resolves it too" — an assumption, not a decision). Settled the other way for notes: **filename =
+title-derived slug** (the canonical alias), because notes are the one browse-heavy type — a
+readable `notes/` tree and native Obsidian `[[slug]]` resolution beat Obsidian-resolution of raw
+`[[01J…]]` links, which are the rare machine-durable fallback and resolve through reckon's resolver
+regardless. Identity stays inline (`id:` wins — invariant 2), so rename is free and slug churn is
+handled by the existing alias-redirect machinery; per-note escape hatch: list the ULID in
+`aliases:` if a raw-ULID link must resolve in Obsidian. **Todos keep ULID filenames** — nobody
+browses `todos/`; titles churn; `rk today` + aliases (Obsidian quick-switcher indexes frontmatter
+`aliases:`) are the finding surface. Both reversible at zero cost since filename is never identity.
+
 #### 4.2.1 Maturity stages + the schema file
 
 Two adoptions from the adjacent-idea survey (§1.4), both cheap, both aimed at the same problem —
