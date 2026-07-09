@@ -789,3 +789,124 @@ func linkTargets(ls []Link) []string {
 	}
 	return out
 }
+
+// --- TestSetAliases_* (reckon-ih5g, v1-T8) -----------------------------------
+//
+// SetAliases is the one new node-package primitive this ticket adds: it must
+// upsert `aliases` across all three real-world shapes (flow scalar, bare
+// scalar, absent) plus the one shape today's InsertField/SetField pair
+// silently corrupts -- Obsidian's block-style indented list (verified
+// separately, ticket-work/reckon-ih5g/acceptance-criteria.md §2.4). Today
+// SetAliases is a stub (node.go) that always returns an error, so every case
+// below fails via the `if err != nil { t.Fatalf }` guard -- the expected TDD
+// red state for a not-yet-implemented primitive.
+
+const aliasFlowScalar = `---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHFM
+type: note
+aliases: [old-title]
+---
+Body text.
+`
+
+const aliasBareScalar = `---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHFN
+type: note
+aliases: old-title
+---
+Body text.
+`
+
+const aliasAbsent = `---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHFP
+type: note
+---
+Body text.
+`
+
+func TestSetAliases_BlockListCollapsesToFlow(t *testing.T) {
+	cases := []struct {
+		name    string
+		src     string
+		newList []string
+	}{
+		{"flow_scalar", aliasFlowScalar, []string{"old-title", "new-title"}},
+		{"bare_scalar", aliasBareScalar, []string{"old-title", "new-title"}},
+		{"absent", aliasAbsent, []string{"new-title"}},
+		// blockAliases (declared above, in the roundtripCorpus section):
+		// Obsidian Properties-panel block-style `aliases:` list with a
+		// sibling flow-style `tags` key in the same frontmatter block -- the
+		// verified corruption repro (acceptance-criteria.md §2.4).
+		{"block_list", blockAliases, []string{"project-x", "proj-x", "new-title"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			n, err := Parse([]byte(tc.src))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if err := n.SetAliases(tc.newList); err != nil {
+				t.Fatalf("SetAliases: %v", err)
+			}
+
+			got := n.Serialize()
+			if !strings.Contains(string(got), "aliases: [") {
+				t.Errorf("expected a canonical flow aliases line (aliases: [...]), got:\n%q", got)
+			}
+			if strings.Count(string(got), "aliases:") > 1 {
+				t.Errorf("duplicate aliases: key present, got:\n%q", got)
+			}
+			if !sameStringSlice(n.Aliases, tc.newList) {
+				t.Errorf("Aliases = %v, want %v", n.Aliases, tc.newList)
+			}
+
+			// A sibling flow key in the same frontmatter block (block_list
+			// case) must survive untouched.
+			if tc.name == "block_list" && !strings.Contains(string(got), "tags: [x, y]") {
+				t.Errorf("sibling `tags: [x, y]` disturbed by SetAliases, got:\n%q", got)
+			}
+
+			// The edit must stay round-trip-stable: re-parsing the edited
+			// bytes must reproduce them exactly (the byte-preservation
+			// invariant extended past this mutation).
+			reparsed, err := Parse(got)
+			if err != nil {
+				t.Fatalf("re-parse after SetAliases: %v", err)
+			}
+			if !bytes.Equal(reparsed.Serialize(), got) {
+				t.Errorf("post-SetAliases round trip not stable:\n--- got ---\n%q\n--- reparsed.Serialize() ---\n%q", got, reparsed.Serialize())
+			}
+		})
+	}
+
+	// Confirm no roundtripCorpus regression: SetAliases must not be
+	// implemented by mutating shared parser state that the corpus depends
+	// on. TestRoundTripIdentity (above) already gates this on every `go
+	// test`; re-checking it inline here (not as a separate t.Run, so it
+	// contributes to this same test's pass/fail rather than reporting its
+	// own independent PASS line) ties the two gates together explicitly for
+	// this ticket's reviewers.
+	for name, src := range roundtripCorpus {
+		n, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("roundtripCorpus[%s]: Parse: %v", name, err)
+		}
+		if got := n.Serialize(); !bytes.Equal(got, []byte(src)) {
+			t.Fatalf("roundtripCorpus[%s]: round-trip not byte-identical after SetAliases lands\n--- want ---\n%q\n--- got ---\n%q", name, src, got)
+		}
+	}
+}
+
+// sameStringSlice reports whether a and b contain the same elements in the
+// same order (a small local helper so this file needn't import "reflect").
+func sameStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

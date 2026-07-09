@@ -177,6 +177,20 @@ func (n *Node) HasField(key string) bool {
 	return ok
 }
 
+// SetAliases upserts the `aliases` frontmatter field across all three shapes
+// a note's aliases may be authored in: an inline flow list (`aliases: [a,
+// b]`), a bare scalar (`aliases: a`), an Obsidian block-style indented list
+// (`aliases:` + `  - a` continuation lines, which today has no safe edit
+// primitive — see internal/node/AGENTS.md and ticket-work/reckon-ih5g), and
+// absent entirely. It is the rename path's mechanism for retaining an old
+// slug as a redirect alongside a newly-minted one (plan.md "Block-list
+// `aliases:` handling").
+//
+// STUB (reckon-ih5g, TDD red phase): not yet implemented.
+func (n *Node) SetAliases(aliases []string) error {
+	return fmt.Errorf("SetAliases: not implemented")
+}
+
 // parseFrontmatter locates a leading `---\n ... \n---\n` (or CRLF-delimited)
 // block, records the byte span of each scalar value (in source order), and
 // returns the body's byte offset. No frontmatter -> body starts at 0.
