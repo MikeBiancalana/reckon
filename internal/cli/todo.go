@@ -663,8 +663,8 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 	return completeDurableTodoNode(vaultDir, n, foundPath, ref, false, true)
 }
 
-// completeDurableTodoNode is doneDurableTodo's shared completion body
-// (plan.md Q6), also called by `rk today act x` (today.go's actDone).
+// completeDurableTodoNode is doneDurableTodo's shared completion body, also
+// called by `rk today act x` (today.go's actDone).
 //
 // logDid governs the plain (non-recurring) state->done branch's did-entry
 // write below. rk todo done always calls with logDid=false, preserving its
@@ -673,17 +673,15 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 //
 // recurLogDid separately governs whether the recurrence branch
 // (doneRecurringTodo) writes a did-entry. rk todo done always passes true
-// here (the recurrence branch has always logged unconditionally, plan.md
-// Q6: "the recurrence branch already logs; leave it" — unchanged from
-// origin/main). Only `rk today act x --no-log` on a recurring row passes
-// false, so --no-log's promised "suppress the did-entry log write when
-// completing" now holds on the recurring path too (review issue 3,
-// reckon-liml); the T6 cursor-advance mechanics themselves (state stays
+// here (its recurrence branch has always logged unconditionally). Only
+// `rk today act x --no-log` on a recurring row passes false, so --no-log's
+// promised "suppress the did-entry log write when completing" holds on the
+// recurring path too; the cursor-advance mechanics themselves (state stays
 // open, scheduled advances) are untouched either way.
 //
-// v1-T6: a repeat: prop takes the recurrence branch instead of the plain
+// A repeat: prop takes the recurrence branch instead of the plain
 // state->done path below. A recurring rule's state is never "done" (it
-// stays "open" so it remains visible in the default list, AC-3), so the
+// stays "open" so it remains visible in the default list), so the
 // idempotent-skip check just below never trips for it — that check, and the
 // state flip, are the non-recurring path only.
 func completeDurableTodoNode(vaultDir string, n *node.Node, foundPath, ref string, logDid, recurLogDid bool) (todoDoneResult, error) {
@@ -761,11 +759,10 @@ func completeDurableTodoNode(vaultDir string, n *node.Node, foundPath, ref strin
 //
 // logDid gates only the did-entry write (log dir creation +
 // appendDidLogEntry) below; the cursor advance and any pile-up
-// materialization always run regardless (review issue 3, reckon-liml:
-// `rk today act x --no-log` on a recurring row must still advance the
-// cursor exactly per T6, it just suppresses the audit log-entry write).
-// doneDurableTodo (`rk todo done`) always passes true here, preserving its
-// existing unconditional-log recurrence behavior byte-for-byte.
+// materialization always run regardless (`rk today act x --no-log` on a
+// recurring row must still advance the cursor, it just suppresses the
+// audit log-entry write). doneDurableTodo (`rk todo done`) always passes
+// true here, preserving its existing unconditional-log recurrence behavior.
 func doneRecurringTodo(vaultDir string, n *node.Node, foundPath, ref, repeatCookie string, logDid bool) (todoDoneResult, error) {
 	relPath := relTodoPath(vaultDir, foundPath)
 	id := n.ULID
