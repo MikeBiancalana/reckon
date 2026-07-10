@@ -1,14 +1,14 @@
-// Package cli — `rk today` split-actuator agenda (v1-T7, reckon-liml).
+// `rk today` — split-actuator agenda.
 //
-// `rk today` is a live org-agenda over the node/index substrate (see
-// ticket-work/reckon-liml/plan.md): it surfaces the union of overdue +
-// scheduled-today + today-pinned native todos (state open/in-progress) plus
-// stubbed external `work-ticket` rows, and exposes deterministic, scriptable
-// actuation verbs (`rk today act <ref> <key> [arg]`, `rk today open <ref>`)
-// that write straight through to the task files and reindex.
+// A live org-agenda over the node/index substrate: it surfaces the union of
+// overdue + scheduled-today + today-pinned native todos (state
+// open/in-progress) plus stubbed external `work-ticket` rows, and exposes
+// deterministic, scriptable actuation verbs (`rk today act <ref> <key>
+// [arg]`, `rk today open <ref>`) that write straight through to the task
+// files and reindex.
 //
-// This REPLACES the legacy DB-journal-backed `rk today` (plan.md decision
-// A): the `internal/journal` package itself is untouched (still used by
+// This replaces the legacy DB-journal-backed `rk today`: the
+// `internal/journal` package itself is untouched (still used by
 // week/schedule/task/tui), only this verb's use of it is retired.
 package cli
 
@@ -132,7 +132,7 @@ func (r agendaResult) Pretty() string {
 
 // todayActResult is the structured summary of one `rk today act` run; the
 // recurrence fields mirror todoDoneResult verbatim (completeDurableTodoNode
-// is doneDurableTodo/doneRecurringTodo's shared body, plan.md Q6).
+// is doneDurableTodo/doneRecurringTodo's shared body).
 type todayActResult struct {
 	Ref          string `json:"ref"`
 	Key          string `json:"key"`
@@ -217,11 +217,11 @@ func runTodayE(cmd *cobra.Command, args []string) error {
 }
 
 // buildAgenda loads every candidate native/external row (type IN
-// ('todo','work-ticket')) and applies the agenda predicate (plan.md B5):
+// ('todo','work-ticket')) and applies the agenda predicate:
 // (scheduled <= today) OR (deadline <= today) OR (pinned == today), ANDed
 // with state IN (open, in-progress). A malformed date on any one field is
-// skipped (with a returned warning) rather than aborting the row or the load
-// (EC-7): the row still surfaces if a sibling field matches.
+// skipped (with a returned warning) rather than aborting the row or the
+// load: the row still surfaces if a sibling field matches.
 func buildAgenda(db *sql.DB, todayStr string) ([]agendaItem, []string, error) {
 	todayDate, err := parseSchedDate(todayStr)
 	if err != nil {
@@ -256,10 +256,10 @@ func buildAgenda(db *sql.DB, todayStr string) ([]agendaItem, []string, error) {
 			return nil, nil, err
 		}
 		state := props["state"]
-		// plan.md B5: the state ∈ {open,in-progress} filter is ANDed in for
-		// NATIVE rows only; external (work-ticket) rows surface purely on the
-		// date predicate below, regardless of whatever foreign state
-		// vocabulary a future feeder emits (review issue 2, reckon-liml).
+		// The state ∈ {open,in-progress} filter is ANDed in for NATIVE rows
+		// only; external (work-ticket) rows surface purely on the date
+		// predicate below, regardless of whatever foreign state vocabulary a
+		// future feeder emits.
 		if c.typ == "todo" && state != "open" && state != "in-progress" {
 			continue
 		}
@@ -365,15 +365,15 @@ func runTodayActE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Eager write-through reconcile (plan.md Q11): a subsequent read-only
-	// `rk query` (which never reconciles itself) should see the mutation.
-	// EC-9 ("file write authoritative, index update non-fatal/self-healing")
-	// means this step must never roll back or fail the already-successful
-	// action above: the authoritative file write has already happened and
-	// `res` has already been printed. A hard failure here would also create a
-	// double-advance-on-retry hazard for a recurring completion (the cursor
-	// advance is not idempotent, unlike the plain state flip), so a failure
-	// is surfaced as a warning only (review issue 1, reckon-liml).
+	// Eager write-through reconcile: a subsequent read-only `rk query`
+	// (which never reconciles itself) should see the mutation. The file
+	// write is authoritative and the index is non-fatal/self-healing, so
+	// this step must never roll back or fail the already-successful action
+	// above: the file write has already happened and `res` has already been
+	// printed. A hard failure here would also create a double-advance-on-
+	// retry hazard for a recurring completion (the cursor advance is not
+	// idempotent, unlike the plain state flip), so a failure is surfaced as
+	// a warning only.
 	if _, err := ix.Reconcile(); err != nil && !quietFlag {
 		fmt.Fprintf(cmd.ErrOrStderr(), "today act: warning: reconcile index after write: %v\n", err)
 	}
@@ -472,7 +472,7 @@ func setOrInsertField(n *node.Node, key, value string) error {
 	return n.InsertField(key, value)
 }
 
-// actPin implements the "t"/"pin" key (plan.md B1): pinned <- today's date.
+// actPin implements the "t"/"pin" key: pinned <- today's date.
 func actPin(vaultDir string, n *node.Node, foundPath, ref string) (todayActResult, error) {
 	today := todoNow().Format("2006-01-02")
 	if err := setOrInsertField(n, "pinned", today); err != nil {
@@ -488,7 +488,7 @@ func actPin(vaultDir string, n *node.Node, foundPath, ref string) (todayActResul
 }
 
 // resolveDeferDate resolves a "d"/"defer" argument: the "tomorrow"/
-// "next-week" shorthands, or a literal YYYY-MM-DD date (plan.md Q8).
+// "next-week" shorthands, or a literal YYYY-MM-DD date.
 func resolveDeferDate(arg string, now time.Time) (string, error) {
 	switch arg {
 	case "tomorrow":
@@ -547,9 +547,9 @@ func actDeadline(vaultDir string, n *node.Node, foundPath, ref, arg string) (tod
 	}, nil
 }
 
-// actPriority implements the "p"/"priority" key (plan.md B2): a validated
-// A/B/C letter. Validation happens BEFORE any field mutation or write, so a
-// rejected value leaves the file byte-identical.
+// actPriority implements the "p"/"priority" key: a validated A/B/C letter.
+// Validation happens BEFORE any field mutation or write, so a rejected
+// value leaves the file byte-identical.
 func actPriority(vaultDir string, n *node.Node, foundPath, ref, arg string) (todayActResult, error) {
 	if arg != "A" && arg != "B" && arg != "C" {
 		return todayActResult{}, fmt.Errorf("today act: priority: invalid value %q (want A, B, or C)", arg)
@@ -567,13 +567,12 @@ func actPriority(vaultDir string, n *node.Node, foundPath, ref, arg string) (tod
 }
 
 // actDone implements the "x"/"done" key: delegates to
-// completeDurableTodoNode (todo.go), the body shared with `rk todo done`
-// (plan.md Q6), with logDid = !--no-log (default on). The same logDid value
-// is passed for both completeDurableTodoNode's plain-completion branch AND
-// its recurrence branch (recurLogDid), so `--no-log` suppresses the did
-// entry on `rk today act x` uniformly whether the target row is a plain
-// todo or a recurring one (review issue 3, reckon-liml) — unlike `rk todo
-// done`, whose recurrence branch always logs (plan.md Q6).
+// completeDurableTodoNode (todo.go), the body shared with `rk todo done`,
+// with logDid = !--no-log (default on). The same logDid value is passed for
+// both the plain-completion branch AND the recurrence branch (recurLogDid),
+// so `--no-log` suppresses the did entry uniformly whether the target row
+// is a plain todo or a recurring one — unlike `rk todo done`, whose
+// recurrence branch always logs.
 func actDone(vaultDir string, n *node.Node, foundPath, ref string, logDid bool) (todayActResult, error) {
 	res, err := completeDurableTodoNode(vaultDir, n, foundPath, ref, logDid, logDid)
 	if err != nil {
@@ -586,7 +585,7 @@ func actDone(vaultDir string, n *node.Node, foundPath, ref string, logDid bool) 
 	}, nil
 }
 
-// actStart implements the "i"/"start" key (plan.md B3, Q7: no did-log).
+// actStart implements the "i"/"start" key (no did-entry: only x logs).
 func actStart(vaultDir string, n *node.Node, foundPath, ref string) (todayActResult, error) {
 	if err := setOrInsertField(n, "state", "in-progress"); err != nil {
 		return todayActResult{}, fmt.Errorf("today act: set state: %w", err)
@@ -600,7 +599,7 @@ func actStart(vaultDir string, n *node.Node, foundPath, ref string) (todayActRes
 	}, nil
 }
 
-// actCancel implements the "c"/"cancel" key (plan.md B3, Q7: no did-log).
+// actCancel implements the "c"/"cancel" key (no did-entry: only x logs).
 func actCancel(vaultDir string, n *node.Node, foundPath, ref string) (todayActResult, error) {
 	if err := setOrInsertField(n, "state", "cancelled"); err != nil {
 		return todayActResult{}, fmt.Errorf("today act: set state: %w", err)
