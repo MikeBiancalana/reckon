@@ -163,14 +163,6 @@ func formatJournalsJSON(journals []*journal.Journal) error {
 	return json.NewEncoder(os.Stdout).Encode(journals)
 }
 
-func formatJournalTSV(j *journal.Journal) error {
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.TabIndent)
-	if _, err := fmt.Fprintf(tw, "DATE\t%s\n", j.Date); err != nil {
-		return err
-	}
-	return tw.Flush()
-}
-
 func formatJournalsTSV(journals []*journal.Journal) error {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.TabIndent)
 	if _, err := fmt.Fprintln(tw, "DATE"); err != nil {
