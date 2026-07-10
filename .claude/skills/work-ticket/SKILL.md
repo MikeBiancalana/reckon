@@ -55,6 +55,43 @@ Phase 8: Dry-run gate — summary + PR creation (user approves push)
 | Preflight | Haiku 4.5 | Mechanical checks, 10-20x cheaper |
 | Code review | Opus 4.6 | Subtle bug detection |
 
+### Sub-agent Output Style
+
+Sub-agents inherit none of the parent session's style hooks (caveman etc.) —
+the prompt the orchestrator composes is the only style channel. Include this
+block in EVERY sub-agent prompt (analysis, AC, planner, test-writer,
+implementer, preflight, reviewer):
+
+> **Output style.**
+> - State decisions and facts, not your exploration journey ("I looked at X,
+>   then Y" is noise; the conclusion plus a `file:line` pointer is signal).
+> - Say each fact once, in the section where it's load-bearing; reference it
+>   elsewhere instead of restating.
+> - Point (`file:line`) instead of pasting code; quote only when the exact
+>   wording is the finding (error strings, spec sentences under
+>   interpretation).
+> - Tables/lists for enumerable facts (fields, signatures, test names);
+>   prose only for reasoning. One-line given/when/then.
+> - Include only what the ticket/repo/upstream artifact doesn't already say.
+> - Cut any paragraph whose removal wouldn't change what the next agent
+>   does.
+> - Mark uncertainty with `[INFERRED]`/`[OPEN]` tags, not hedging prose.
+> - These docs usually fit in ~150-250 lines; justified overruns are fine,
+>   but if you're far over you're probably narrating or duplicating.
+
+For the implementer (and any agent writing Go), additionally:
+
+> **Comment style.** Match the surrounding file's comment density. Comments
+> state constraints and invariants the code can't show — never provenance:
+> no plan.md decision labels, review-issue numbers, ticket IDs, phase names,
+> or model names in code comments. That context lives in the pipeline
+> artifacts and the PR, not the source.
+
+(`ticket-work/**` is marked `linguist-generated` in `.gitattributes`, so
+GitHub collapses pipeline artifacts in PR diffs — length there costs less
+than it looks, but the rules above still apply: downstream agents read
+these docs in full.)
+
 ---
 
 ## Phase 0: Claim Ticket + Worktree Setup
