@@ -7,6 +7,8 @@
 > (§4.2); maturity stages + schema file adopted (§4.2.1); `rk lint` + OKF-lint CI (§4.3); agent-session
 > capture via harness hooks (§4.5); `rk prime` discoverability verb (§4.8); cross-pollination survey (§1.4);
 > sharing seam — circles-as-repos (§4.9, v2).
+> **Amended 2026-07-10**: T8 note-filename policy (§4.2); status board as derived view (§4.10);
+> external feeds — read-only projection, "map never the hand" founding constraint (§4.11).
 
 ## Executive summary
 
@@ -574,6 +576,79 @@ the path, is the organization — links/tags/query are path-blind); multi-circle
 Status: **v2 seam.** First feature pulling reckon from single-user to multi-party — defer until a
 lived consumer (an actual bundle exchange with Jim). v1 needs zero changes to keep the door open:
 `circles/` is just a directory the indexer walks.
+
+### 4.10 Standing status board — a derived view, never a page (added 2026-07-10, via Gilbert)
+
+Gilbert stood up a "standing status board" for Mike (four buckets: needs-Mike's-hand /
+watches-running / parked / fleet-state, + pipeline health) as a hand-edited Logseq page with an
+`updated::` stamp. The reckon-native shape: **the board is the composable design's founding
+example** — the "view no single tool can produce" — so it is four saved queries, never a
+maintained page. (A hand-edited board + stamp = state-in-prose + a timestamp that lies: the exact
+pathology the system exists to kill.)
+
+- **Buckets = saved views** (`rk query --view`, shipped T3): needs-hand → durable todos with
+  `waiting-on: mike`; parked → `parked` state/prop + optional `hold-until:`; watches → below;
+  fleet/pipeline → feed nodes (§4.11).
+- **A "watch" = durable todo + structured hold props** (`hold-until:` date, `watches: [[target]]`
+  typed edge) + an attachable reminder (`remind:`, A#3 — delivery delegated, cron-tick
+  `rk remind due`). Condition-based holds on external state are §4.11 feed territory, or interim:
+  an agent flips the prop through validating verbs when journaling the change. **`rk remind due`
+  found its first lived consumer here** — per the design's build-when-lived rule, it is now
+  buildable.
+- **Refresh is a non-problem**: the index lazy-reconciles on read, so a query-time board is never
+  stale. A standing artifact (page/canvas) is a thin `rk-board` render porcelain (PATH extension):
+  run the views, render markdown into a **marker-owned generated file** (#151's `index.md`
+  ownership pattern) or push to Slack, on demand + cron tick. Hooks stay YAGNI. It is the
+  deterministic little sibling of the T11 `rk-brief` seam — gather + render, no LLM condense — so
+  it waits on nothing.
+- **Interim discipline (adopted by Gilbert 2026-07-10)**: the Logseq page is demoted to render
+  target — one line per entry with a stable ref (ticket/PR/todo key), never prose-only — so the
+  migration to saved views stays mechanical.
+
+Missing pieces, all small: watch/hold prop convention (props are an open bag; needs only
+convention + maybe CLI flags), `rk remind due`, feed nodes (§4.11), the thin render script.
+
+### 4.11 External feeds — read-only projection; reckon is the map, never the hand (added 2026-07-10)
+
+Concrete case: surfacing Jira tickets on the board without minting duplicate records. Design
+settled with Mike (via Gilbert), building on the rebuttal's line: what June's NO-BUILD rejected
+was reckon as a *reconcile engine*; what it reserved was work systems as *external read-only
+view-feeds*. This is the reserved thing.
+
+**Founding constraint (Mike's ruling, 2026-07-10, verbatim intent):** reckon **NEVER writes back
+to external systems** — Jira or otherwise. The action path is deliberately outside: an agent uses
+the `jira` CLI / MCP directly, based on what it sees *from* reckon. Read-only projection in
+(feeds → nodes → views), human/agent judgment in the middle, direct tool actuation out.
+**Reckon is the map, never the hand.** This constraint heads every feed-extension contract; the
+day an adapter writes back or maps states, it has become the engine that was refused.
+
+Blessed shape: `jira ... --json | rk-jira-feed | rk import --into feeds/jira`
+
+- **Thin persisted feed nodes, not stream-only** — edges cannot target a stream; board queries,
+  backlinks ("what mentions SNP-123"), and saved views need index-addressable identity.
+- **`type: ticket`, never `todo`** — the type distinction *is* the no-duplicate-record guarantee:
+  reckon owns a cached projection of someone else's record, not a second copy of the task. No
+  reckon state machine; `state:` is the verbatim remote snapshot, display-only.
+- **Identity**: canonical alias = ticket key; ULID minted once on first import and preserved by
+  alias-keyed upsert (never re-minted — edges must not churn). Late-binding edge re-resolution
+  means entries written before a feed run hold unresolved edges that snap in when it lands.
+- **Tool-owned dir** (`feeds/jira/`, marker-owned like generated `index.md`): refresh overwrites,
+  hand edits excluded by contract. Provenance props: `source:`, `url:`, `fetched:` — `fetched:` is
+  the one *honest* stored timestamp (authored fact about the fetch, in a file no hand edits).
+  Remote closes/vanishes → **tombstone, never delete** (inbound edges survive).
+- **The NDJSON seam already exists on paper**: the canonical node envelope was designed as
+  parser-output = promotion-stream = import-format; the generic consumer was deferred in lean v1.
+  **Build order inversion: generic `rk import` first** (envelope NDJSON in, alias-keyed upsert,
+  mint-if-absent, render to tool-owned files) — it also serves promotion, circles (§4.9), and
+  every future feed; the jira adapter then collapses to a jq-grade transform on the `rk-<name>`
+  PATH-extension seam.
+- **Freshness boundary = the file boundary**: the adapter (cron/on-demand, daemonless) is the only
+  thing touching the remote; it lands files; lazy reconcile picks them up as ordinary local
+  changes — core freshness stays local-file-only, per the rebuttal. Staleness is displayed
+  ("as of `fetched`"), never hidden.
+- **Known gap**: v1 has no bare-text ticket-key ref extraction (the 6-15 spec's `SNP-\d+` grammar
+  didn't carry over) — bodies must write `[[SNP-123]]` for the edge to exist. Convention now;
+  parser extractor later if the convention chafes.
 
 ---
 
