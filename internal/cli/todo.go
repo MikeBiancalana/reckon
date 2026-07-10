@@ -516,7 +516,7 @@ func listDurableTodos(db *sql.DB, all bool, stateFilter string) ([]todoListItem,
 			if state != stateFilter {
 				continue
 			}
-		} else if !all && state != "open" {
+		} else if !all && state != "open" && state != "in-progress" {
 			continue
 		}
 		depends, err := loadDependsOn(db, r.id)
@@ -660,20 +660,42 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 		return todoDoneResult{}, fmt.Errorf("todo done: no todo found matching %q (not found)", ref)
 	}
 
+	return completeDurableTodoNode(vaultDir, n, foundPath, ref, false, true)
+}
+
+// completeDurableTodoNode is doneDurableTodo's shared completion body
+// (plan.md Q6), also called by `rk today act x` (today.go's actDone).
+//
+// logDid governs the plain (non-recurring) state->done branch's did-entry
+// write below. rk todo done always calls with logDid=false, preserving its
+// existing (no did-entry) output byte-for-byte; `rk today act x` passes
+// logDid = !--no-log (default true).
+//
+// recurLogDid separately governs whether the recurrence branch
+// (doneRecurringTodo) writes a did-entry. rk todo done always passes true
+// here (the recurrence branch has always logged unconditionally, plan.md
+// Q6: "the recurrence branch already logs; leave it" — unchanged from
+// origin/main). Only `rk today act x --no-log` on a recurring row passes
+// false, so --no-log's promised "suppress the did-entry log write when
+// completing" now holds on the recurring path too (review issue 3,
+// reckon-liml); the T6 cursor-advance mechanics themselves (state stays
+// open, scheduled advances) are untouched either way.
+//
+// v1-T6: a repeat: prop takes the recurrence branch instead of the plain
+// state->done path below. A recurring rule's state is never "done" (it
+// stays "open" so it remains visible in the default list, AC-3), so the
+// idempotent-skip check just below never trips for it — that check, and the
+// state flip, are the non-recurring path only.
+func completeDurableTodoNode(vaultDir string, n *node.Node, foundPath, ref string, logDid, recurLogDid bool) (todoDoneResult, error) {
 	relPath := relTodoPath(vaultDir, foundPath)
 	id := n.ULID
 
-	// v1-T6: a repeat: prop takes the recurrence branch instead of the
-	// plain state->done path below. A recurring rule's state is never
-	// "done" (it stays "open" so it remains visible in the default list,
-	// AC-3), so the idempotent-skip check just below never trips for it —
-	// that check, and the state flip, are the non-recurring path only.
 	if n.HasField("repeat") {
 		repeat, ok := n.Props["repeat"]
 		if !ok || strings.TrimSpace(repeat) == "" {
 			return todoDoneResult{}, fmt.Errorf("todo done: malformed repeat: prop (must be a plain repeater cookie, not a link) (id %s)", id)
 		}
-		return doneRecurringTodo(vaultDir, n, foundPath, ref, repeat)
+		return doneRecurringTodo(vaultDir, n, foundPath, ref, repeat, recurLogDid)
 	}
 
 	if n.Props["state"] == "done" {
@@ -689,9 +711,36 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 		return todoDoneResult{}, fmt.Errorf("todo done: write: %w", err)
 	}
 
-	return todoDoneResult{
+	res := todoDoneResult{
 		Kind: "durable", Ref: ref, Path: relPath, ID: id, State: "done", Skipped: false,
-	}, nil
+	}
+
+	if !logDid {
+		return res, nil
+	}
+
+	author := resolveAuthor(todoAuthorFlag)
+	if embeddedHeaderRe.MatchString(author) {
+		return res, fmt.Errorf("todo done: author must not contain a line starting with \"## \"")
+	}
+
+	now := todoNow()
+	dayStr := now.Format("2006-01-02")
+	hhmm := now.Format("15:04")
+	body := fmt.Sprintf("completed todo %s", id)
+
+	logDir := filepath.Join(vaultDir, "log")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return res, fmt.Errorf("todo done: create log dir: %w", err)
+	}
+	logRes, err := appendDidLogEntry(logDir, dayStr, hhmm, author, body, id)
+	if err != nil {
+		return res, fmt.Errorf("todo done: write did entry: %w", err)
+	}
+	res.DidEntryID = logRes.ID
+	res.DidEntryPath = logRes.Path
+
+	return res, nil
 }
 
 // doneRecurringTodo is doneDurableTodo's v1-T6 recurrence branch: n carries a
@@ -709,7 +758,15 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 // after and are surfaced as errors (wrapped, returned) if they fail, but the
 // already-advanced cursor is not rolled back — writes span multiple files
 // and cannot be atomic as a unit (plan.md "Known Risks", accepted).
-func doneRecurringTodo(vaultDir string, n *node.Node, foundPath, ref, repeatCookie string) (todoDoneResult, error) {
+//
+// logDid gates only the did-entry write (log dir creation +
+// appendDidLogEntry) below; the cursor advance and any pile-up
+// materialization always run regardless (review issue 3, reckon-liml:
+// `rk today act x --no-log` on a recurring row must still advance the
+// cursor exactly per T6, it just suppresses the audit log-entry write).
+// doneDurableTodo (`rk todo done`) always passes true here, preserving its
+// existing unconditional-log recurrence behavior byte-for-byte.
+func doneRecurringTodo(vaultDir string, n *node.Node, foundPath, ref, repeatCookie string, logDid bool) (todoDoneResult, error) {
 	relPath := relTodoPath(vaultDir, foundPath)
 	id := n.ULID
 
@@ -758,19 +815,21 @@ func doneRecurringTodo(vaultDir string, n *node.Node, foundPath, ref, repeatCook
 		Recurred: true, Scheduled: nextStr, Repeat: repeatCookie, Missed: missed,
 	}
 
-	hhmm := now.Format("15:04")
-	body := fmt.Sprintf("completed recurring todo %s (repeat %s); advanced scheduled %s → %s", id, repeatCookie, schedStr, nextStr)
+	if logDid {
+		hhmm := now.Format("15:04")
+		body := fmt.Sprintf("completed recurring todo %s (repeat %s); advanced scheduled %s → %s", id, repeatCookie, schedStr, nextStr)
 
-	logDir := filepath.Join(vaultDir, "log")
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return res, fmt.Errorf("todo done: create log dir: %w", err)
+		logDir := filepath.Join(vaultDir, "log")
+		if err := os.MkdirAll(logDir, 0o755); err != nil {
+			return res, fmt.Errorf("todo done: create log dir: %w", err)
+		}
+		logRes, err := appendDidLogEntry(logDir, dayStr, hhmm, author, body, id)
+		if err != nil {
+			return res, fmt.Errorf("todo done: write did entry: %w", err)
+		}
+		res.DidEntryID = logRes.ID
+		res.DidEntryPath = logRes.Path
 	}
-	logRes, err := appendDidLogEntry(logDir, dayStr, hhmm, author, body, id)
-	if err != nil {
-		return res, fmt.Errorf("todo done: write did entry: %w", err)
-	}
-	res.DidEntryID = logRes.ID
-	res.DidEntryPath = logRes.Path
 
 	if missed > 0 {
 		todosDir := filepath.Join(vaultDir, "todos")

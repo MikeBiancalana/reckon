@@ -1322,3 +1322,38 @@ func TestTodoDone_NeverTouchesIndex(t *testing.T) {
 		t.Fatalf("stat cache dir: %v", err)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1-T7 (reckon-liml) plan.md decision B4 — `state: in-progress` visibility.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoList_InProgressVisibleByDefault (plan.md decision B4): once T7
+// lands, an `state: in-progress` durable todo (a new state this ticket
+// introduces via `rk today act <ref> i`) must remain visible in `rk todo
+// list`'s default (no --all) filter, alongside `open` -- otherwise an item
+// started from the agenda would vanish from `rk todo list`'s default view
+// even though it is not done/cancelled (the only two terminal states).
+//
+// RED today (pre-T7): listDurableTodos's default hide-filter is literally
+// `!all && state != "open"` (todo.go:519), which hides `in-progress` by
+// default just like it hides `done` -- this test fails until that filter is
+// loosened to keep both `open` and `in-progress` visible by default (only
+// `done`/`cancelled` stay hidden).
+func TestTodoList_InProgressVisibleByDefault(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	id := node.Mint()
+	writeTestNode(t, vault, "todos/"+id+".md", id, "todo", "In progress task", "state: in-progress")
+
+	out, stderr, err := runTodo(t, vault, "list", "--json")
+	if err != nil {
+		t.Fatalf("rk todo list: %v\nstderr: %s", err, stderr)
+	}
+	var res todoListResult
+	mustDecodeJSON(t, out, &res)
+
+	if !containsID(res.Items, id) {
+		t.Errorf("in-progress item %q missing from default (no --all) list: %+v", id, res.Items)
+	}
+}

@@ -1,0 +1,18 @@
+{
+  "ticket_id": "reckon-liml",
+  "phase": "gate",
+  "worktree": ".worktrees/reckon-liml",
+  "subsystem": "cli",
+  "decisions_signed_off": "C=cli-only A=replace-legacy B=all-vocab-accepted Q6=only-today-act-logs",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 1,
+    "implementer": 1,
+    "preflight": 2,
+    "reviewer": 2
+  },
+  "new_test_names": ["TestToday_SurfacesOverdue", "TestToday_SurfacesScheduledToday", "TestToday_SurfacesPinned", "TestToday_ExcludesFutureScheduled", "TestToday_ExcludesDone", "TestToday_DedupesOverdueAndPinned", "TestToday_EmptyAgenda", "TestToday_SkipsMalformedDateRow", "TestTodayAct_DeferWritesScheduledSpanLocal", "TestTodayAct_DeadlineInsertsDeadline", "TestTodayAct_PinSetsPinnedAndSurfaces", "TestTodayAct_PrioritySetsLetter", "TestTodayAct_WriteThroughVisibleToQuery", "TestTodayAct_DoneFlipsStateSpanLocal", "TestTodayAct_StartSetsInProgress", "TestTodayAct_CancelSetsCancelled", "TestTodayAct_DoneEmitsDidEntry", "TestTodayAct_DoneOnRecurringReusesT6Path", "TestTodayAct_DoneNoLogSuppressesEntry", "TestTodayAct_StartAndCancelDoNotLog", "TestTodayAct_ExternalRowRejected", "TestTodayOpen_ExternalRowExposesURL", "TestTodayAct_NativeRowUnaffectedBySplit", "TestToday_ListMarksExternalReadOnly", "TestToday_LegacyJournalDumpReplaced", "TestTodoList_InProgressVisibleByDefault"],
+  "stall_count": 0,
+  "last_test_output_hash": null,
+  "status": "in_progress"
+}
