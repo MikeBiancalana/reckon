@@ -797,10 +797,6 @@ func linkTargets(ls []Link) []string {
 // scalar, absent) plus the one shape today's InsertField/SetField pair
 // silently corrupts -- Obsidian's block-style indented list (verified
 // separately, ticket-work/reckon-ih5g/acceptance-criteria.md §2.4). Today
-// SetAliases is a stub (node.go) that always returns an error, so every case
-// below fails via the `if err != nil { t.Fatalf }` guard -- the expected TDD
-// red state for a not-yet-implemented primitive.
-
 const aliasFlowScalar = `---
 id: 01J9Z3K7Q2W8XR4M6N0V5BYHFM
 type: note
@@ -824,6 +820,31 @@ type: note
 Body text.
 `
 
+// blockAliasesAtEOF: the block list is the LAST frontmatter key, so the
+// block's span ends exactly at the closing delimiter (End == closeAbs) --
+// locks in the EOF span math for SetAliases' whole-block splice.
+const blockAliasesAtEOF = `---
+id: 01J9Z3K7Q2W8XR4M6N0V5BYHFQ
+type: note
+tags: [x, y]
+aliases:
+  - project-x
+  - proj-x
+---
+# Project X
+`
+
+// blockAliasesCRLF: an entire file using \r\n line endings with a block-style
+// aliases: list -- exercises SetAliases' splice against CRLF-recorded spans.
+const blockAliasesCRLF = "---\r\n" +
+	"id: 01J9Z3K7Q2W8XR4M6N0V5BYHFR\r\n" +
+	"type: note\r\n" +
+	"aliases:\r\n" +
+	"  - project-x\r\n" +
+	"tags: [x, y]\r\n" +
+	"---\r\n" +
+	"# Project X\r\n"
+
 func TestSetAliases_BlockListCollapsesToFlow(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -838,6 +859,8 @@ func TestSetAliases_BlockListCollapsesToFlow(t *testing.T) {
 		// sibling flow-style `tags` key in the same frontmatter block -- the
 		// verified corruption repro (acceptance-criteria.md §2.4).
 		{"block_list", blockAliases, []string{"project-x", "proj-x", "new-title"}},
+		{"block_list_at_eof", blockAliasesAtEOF, []string{"project-x", "proj-x", "new-title"}},
+		{"block_list_crlf", blockAliasesCRLF, []string{"project-x", "new-title"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -860,10 +883,14 @@ func TestSetAliases_BlockListCollapsesToFlow(t *testing.T) {
 				t.Errorf("Aliases = %v, want %v", n.Aliases, tc.newList)
 			}
 
-			// A sibling flow key in the same frontmatter block (block_list
-			// case) must survive untouched.
-			if tc.name == "block_list" && !strings.Contains(string(got), "tags: [x, y]") {
+			// A sibling flow key in the same frontmatter block must survive
+			// untouched (after the block in block_list, before it in
+			// block_list_at_eof).
+			if (tc.name == "block_list" || tc.name == "block_list_at_eof") && !strings.Contains(string(got), "tags: [x, y]") {
 				t.Errorf("sibling `tags: [x, y]` disturbed by SetAliases, got:\n%q", got)
+			}
+			if tc.name == "block_list_crlf" && !strings.Contains(string(got), "tags: [x, y]\r\n") {
+				t.Errorf("CRLF sibling `tags: [x, y]` disturbed by SetAliases, got:\n%q", got)
 			}
 
 			// The edit must stay round-trip-stable: re-parsing the edited

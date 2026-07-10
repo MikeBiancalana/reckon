@@ -2,7 +2,7 @@
 
 ## Status: READY FOR PUSH
 
-## Review Verdict: APPROVE WITH CHANGES (8 minor findings; 1, 3, 4 fixed post-review; 2, 5, 6, 7, 8 accepted as post-merge nits)
+## Review Verdict: APPROVE WITH CHANGES (8 minor findings; all addressed on-branch: 1/3/4 fixed post-review, 5/6/7/8 fixed in nit pass, 2 documented in rename help — parser-semantics fix out of scope)
 
 ## Changed Files:
 internal/cli/note_v1.go

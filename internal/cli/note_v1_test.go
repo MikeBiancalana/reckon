@@ -962,3 +962,92 @@ func TestNote_CreateIndexQuery_EndToEnd(t *testing.T) {
 	var showRes map[string]any
 	mustDecodeJSON(t, showOut, &showRes)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Review nit 7 (ownership contract): rk note index never touches a
+// hand-authored index.md, and prunes its own stale generated catalogs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestNoteIndex_SkipsHandAuthored(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, stderr, err := runNote(t, vault, "create", "Some Note", "--json"); err != nil {
+		t.Fatalf("rk note create: %v\nstderr: %s", err, stderr)
+	}
+	resetCLIFlags()
+
+	handAuthored := "# My own curated index\n\nDo not touch.\n"
+	indexPath := filepath.Join(vault, "notes", "index.md")
+	if err := os.WriteFile(indexPath, []byte(handAuthored), 0o644); err != nil {
+		t.Fatalf("write hand-authored index.md: %v", err)
+	}
+
+	out, stderr, err := runNote(t, vault, "index", "--json")
+	if err != nil {
+		t.Fatalf("rk note index: %v\nstderr: %s", err, stderr)
+	}
+	var res struct {
+		Files   []string `json:"files"`
+		Skipped []string `json:"skipped"`
+	}
+	mustDecodeJSON(t, out, &res)
+
+	if got := mustReadFile(t, indexPath); got != handAuthored {
+		t.Errorf("hand-authored index.md was modified:\n--- want ---\n%s\n--- got ---\n%s", handAuthored, got)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0] != "notes/index.md" {
+		t.Errorf("skipped = %v, want [notes/index.md]", res.Skipped)
+	}
+	if !strings.Contains(stderr, "hand-authored") {
+		t.Errorf("expected a skip warning on stderr, got: %q", stderr)
+	}
+	for _, f := range res.Files {
+		if f == "notes/index.md" {
+			t.Errorf("notes/index.md reported as written despite being hand-authored")
+		}
+	}
+}
+
+func TestNoteIndex_PrunesStaleGenerated(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runNote(t, vault, "create", "Sub Note", "--dir", "sub", "--json")
+	if err != nil {
+		t.Fatalf("rk note create: %v\nstderr: %s", err, stderr)
+	}
+	var created map[string]any
+	mustDecodeJSON(t, out, &created)
+	resetCLIFlags()
+
+	if _, stderr, err := runNote(t, vault, "index", "--json"); err != nil {
+		t.Fatalf("rk note index (first run): %v\nstderr: %s", err, stderr)
+	}
+	resetCLIFlags()
+
+	subIndex := filepath.Join(vault, "notes", "sub", "index.md")
+	if _, err := os.Stat(subIndex); err != nil {
+		t.Fatalf("expected generated notes/sub/index.md after first run: %v", err)
+	}
+
+	if err := os.Remove(filepath.Join(vault, "notes", "sub", "sub-note.md")); err != nil {
+		t.Fatalf("remove sub note: %v", err)
+	}
+
+	out2, stderr2, err2 := runNote(t, vault, "index", "--json")
+	if err2 != nil {
+		t.Fatalf("rk note index (second run): %v\nstderr: %s", err2, stderr2)
+	}
+	var res struct {
+		Removed []string `json:"removed"`
+	}
+	mustDecodeJSON(t, out2, &res)
+
+	if _, err := os.Stat(subIndex); !os.IsNotExist(err) {
+		t.Errorf("stale generated notes/sub/index.md not pruned (stat err: %v)", err)
+	}
+	if len(res.Removed) != 1 || res.Removed[0] != "notes/sub/index.md" {
+		t.Errorf("removed = %v, want [notes/sub/index.md]", res.Removed)
+	}
+}
