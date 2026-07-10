@@ -646,9 +646,12 @@ Blessed shape: `jira ... --json | rk-jira-feed | rk import --into feeds/jira`
   thing touching the remote; it lands files; lazy reconcile picks them up as ordinary local
   changes — core freshness stays local-file-only, per the rebuttal. Staleness is displayed
   ("as of `fetched`"), never hidden.
-- **Known gap**: v1 has no bare-text ticket-key ref extraction (the 6-15 spec's `SNP-\d+` grammar
-  didn't carry over) — bodies must write `[[SNP-123]]` for the edge to exist. Convention now;
-  parser extractor later if the convention chafes.
+- **Bare ticket-key extraction: REJECTED permanently (Mike's ruling, 2026-07-10)** — not deferred.
+  No company-particular ticketing grammar (`SNP-\d+` or any other) will ever be special-cased in
+  reckon's parser; the 6-15 spec's ref-grammar table died with that design. Ticket nodes link like
+  everything else: by ULID or by alias (ticket key = canonical alias). The `[[SNP-123]]` wikilink
+  convention is therefore the *permanent* answer, not an interim — it rides the generic alias
+  namespace instead of a bespoke rule, and the core stays company-agnostic.
 
 ---
 
