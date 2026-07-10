@@ -1,5 +1,9 @@
 # Preflight Check Report: reckon-liml
 
+## Context
+
+**Re-run after review-fix commit**: b32347e (fix: address review feedback for reckon-liml)
+
 ## Automated Checks
 
 ### go fmt
@@ -15,29 +19,29 @@
 ### go test ./... -count=1
 - **Status: ✅ PASS**
 - Command: `go test ./... -count=1`
-- Result: All tests pass
+- Result: All tests pass (26 test functions in today_test.go, including 4 new review-fix pins)
 ```
 ?   	github.com/MikeBiancalana/reckon/cmd/rk	[no test files]
-ok  	github.com/MikeBiancalana/reckon/internal/checklist	0.333s
-ok  	github.com/MikeBiancalana/reckon/internal/cli	2.130s
+ok  	github.com/MikeBiancalana/reckon/internal/checklist	0.355s
+ok  	github.com/MikeBiancalana/reckon/internal/cli	2.177s
 ok  	github.com/MikeBiancalana/reckon/internal/config	0.005s
 ?   	github.com/MikeBiancalana/reckon/internal/db	[no test files]
-ok  	github.com/MikeBiancalana/reckon/internal/index	0.312s
-ok  	github.com/MikeBiancalana/reckon/internal/journal	0.917s
-ok  	github.com/MikeBiancalana/reckon/internal/logger	0.106s
-ok  	github.com/MikeBiancalana/reckon/internal/migrate	0.006s
-ok  	github.com/MikeBiancalana/reckon/internal/models	0.006s
-ok  	github.com/MikeBiancalana/reckon/internal/node	0.026s
-ok  	github.com/MikeBiancalana/reckon/internal/output	0.003s
-ok  	github.com/MikeBiancalana/reckon/internal/parser	0.024s
+ok  	github.com/MikeBiancalana/reckon/internal/index	0.315s
+ok  	github.com/MikeBiancalana/reckon/internal/journal	0.962s
+ok  	github.com/MikeBiancalana/reckon/internal/logger	0.102s
+ok  	github.com/MikeBiancalana/reckon/internal/migrate	0.005s
+ok  	github.com/MikeBiancalana/reckon/internal/models	0.007s
+ok  	github.com/MikeBiancalana/reckon/internal/node	0.022s
+ok  	github.com/MikeBiancalana/reckon/internal/output	0.009s
+ok  	github.com/MikeBiancalana/reckon/internal/parser	0.019s
 ?   	github.com/MikeBiancalana/reckon/internal/perf	[no test files]
-ok  	github.com/MikeBiancalana/reckon/internal/service	0.517s
+ok  	github.com/MikeBiancalana/reckon/internal/service	0.527s
 ok  	github.com/MikeBiancalana/reckon/internal/spike/roundtrip	0.005s
-ok  	github.com/MikeBiancalana/reckon/internal/storage	0.183s
-ok  	github.com/MikeBiancalana/reckon/internal/sync	0.061s
+ok  	github.com/MikeBiancalana/reckon/internal/storage	0.169s
+ok  	github.com/MikeBiancalana/reckon/internal/sync	0.046s
 ?   	github.com/MikeBiancalana/reckon/internal/time	[no test files]
-ok  	github.com/MikeBiancalana/reckon/internal/tui	0.016s
-ok  	github.com/MikeBiancalana/reckon/internal/tui/components	0.019s
+ok  	github.com/MikeBiancalana/reckon/internal/tui	0.014s
+ok  	github.com/MikeBiancalana/reckon/internal/tui/components	0.016s
 ```
 
 ### go test -cover ./internal/cli/ -count=1
@@ -45,140 +49,87 @@ ok  	github.com/MikeBiancalana/reckon/internal/tui/components	0.019s
 - Command: `go test -cover ./internal/cli/ -count=1`
 - Result: 43.4% coverage of statements
 
-## Manual Checks
+## Manual Checks (Fix Delta: b32347e)
+
+Manual pattern check on the review-fix delta for `internal/cli/today.go` and `internal/cli/todo.go`:
 
 ### Error Handling
 - **Status: ✅ PASS**
-- All errors properly wrapped with context using `fmt.Errorf` with `%w`
+- All new/modified error paths properly wrapped with context using `fmt.Errorf` with `%w`
 
 **Evidence:**
-- `internal/cli/today.go:181`: `return fmt.Errorf("today: load config: %w", err)`
-- `internal/cli/today.go:186`: `return fmt.Errorf("today: open index: %w", err)`
-- `internal/cli/today.go:191`: `return fmt.Errorf("today: reconcile index: %w", err)`
-- `internal/cli/today.go:325`: `return fmt.Errorf("today act: load config: %w", err)`
-- `internal/cli/today.go:330`: `return fmt.Errorf("today act: open index: %w", err)`
-- `internal/cli/today.go:335`: `return fmt.Errorf("today act: reconcile index: %w", err)`
-- `internal/cli/today.go:612`: `return fmt.Errorf("today open: load config: %w", err)`
-- `internal/cli/today.go:617`: `return fmt.Errorf("today open: open index: %w", err)`
-- `internal/cli/today.go:622`: `return fmt.Errorf("today open: reconcile index: %w", err)`
-- `internal/cli/todo.go:299`: `return fmt.Errorf("todo add: load config: %w", err)`
-- `internal/cli/todo.go:304`: `return fmt.Errorf("todo add: create todos dir: %w", err)`
-- `internal/cli/todo.go:695`: `return todoDoneResult{}, fmt.Errorf("todo done: set state: %w", err)`
-- `internal/cli/todo.go:698`: `return todoDoneResult{}, fmt.Errorf("todo done: write: %w", err)`
-- `internal/cli/todo.go:722`: `return res, fmt.Errorf("todo done: create log dir: %w", err)`
-- `internal/cli/todo.go:726`: `return res, fmt.Errorf("todo done: write did entry: %w", err)`
+- `internal/cli/today.go:376-378`: Reconcile failure after successful write — **NOT** an error return, but a stderr warning (downgraded per EC-9 "file write authoritative, index update non-fatal/self-healing")
+- `internal/cli/todo.go:811`: `fmt.Errorf("todo done: create log dir: %w", err)` — error wrapped (inside `if logDid` block)
+- `internal/cli/todo.go:815`: `fmt.Errorf("todo done: write did entry: %w", err)` — error wrapped (inside `if logDid` block)
 
-### Resource Cleanup
+### Resource Cleanup (defer)
 - **Status: ✅ PASS**
-- Database rows properly closed with defer statements
+- No new defer statements in the delta; existing patterns unchanged
 
-**Evidence:**
-- `internal/cli/today.go:227-245`: buildAgenda() properly closes rows
-  - Line 227: `rows, err := db.Query(...)`
-  - Line 236: `rows.Close()` on error path
-  - Line 242: `rows.Close()` on iteration error path
-  - Line 245: `rows.Close()` after loop completes
-- All QueryRow calls are properly handled (no defer needed for single-row queries)
-
-### CLI-Specific Patterns (--quiet flag)
+### CLI-Specific Patterns: --quiet flag gating on stderr warning
 - **Status: ✅ PASS**
-- `--quiet` flag properly respected in all output paths
+- New stderr warning path properly gated by `!quietFlag`
 
 **Evidence:**
-- `internal/cli/today.go:200-204`: Warnings conditionally printed
+- `internal/cli/today.go:376-378` (reconcile failure after successful write):
   ```go
-  if !quietFlag {
-      for _, w := range warnings {
-          fmt.Fprintln(cmd.ErrOrStderr(), w)
-      }
+  if _, err := ix.Reconcile(); err != nil && !quietFlag {
+      fmt.Fprintf(cmd.ErrOrStderr(), "today act: warning: reconcile index after write: %v\n", err)
   }
   ```
-- `internal/cli/today.go:207-210`: Result output respects quiet mode
-  ```go
-  if !(mode == output.Pretty && quietFlag) {
-      if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
-          return err
-      }
-  }
-  ```
-- `internal/cli/today.go:360-363`: Act command respects quiet mode
-- `internal/cli/today.go:645-648`: Open command respects quiet mode
-
-### CRLF Rejection
-- **Status: ✅ PASS**
-- CRLF line endings properly rejected on raw file reads
-
-**Evidence:**
-- `internal/cli/todo.go:409-411`: CRLF rejection in addEphemeralTodo()
-  ```go
-  if bytes.Contains(raw, []byte("\r\n")) {
-      return todoAddResult{}, fmt.Errorf("todo add: CRLF line endings are not supported (reckon-vj55)")
-  }
-  ```
-- `internal/cli/todo.go:840-841`: CRLF rejection in loadDurableTodoAt()
-  ```go
-  if bytes.Contains(raw, []byte("\r\n")) {
-      return nil, "", fmt.Errorf("todo done: CRLF line endings are not supported (reckon-vj55): %s", path)
-  }
-  ```
-
-### File Operations and Atomic Writes
-- **Status: ✅ PASS**
-- Render() + SetField/InsertField pattern correctly used for span-local mutations
-- All file writes use `writeFileAtomic()`
-
-**Evidence:**
-- `internal/cli/today.go:453-457`: setOrInsertField() helper ensures safe field mutation
-  ```go
-  func setOrInsertField(n *node.Node, key, value string) error {
-      if n.HasField(key) {
-          return n.SetField(key, value)
-      }
-      return n.InsertField(key, value)
-  }
-  ```
-- `internal/cli/today.go:463-466`: actPin uses atomic write after mutation
-  ```go
-  if err := writeFileAtomic(foundPath, n.Serialize()); err != nil {
-      return todayActResult{}, fmt.Errorf("today act: write: %w", err)
-  }
-  ```
-- `internal/cli/today.go:501-505`: actDefer uses atomic write
-- `internal/cli/today.go:523-527`: actDeadline uses atomic write
-- `internal/cli/today.go:542-546`: actPriority uses atomic write
-- `internal/cli/today.go:571-575`: actStart uses atomic write
-- `internal/cli/today.go:585-589`: actCancel uses atomic write
+  The warning is only printed when `quietFlag` is false (when the user does NOT specify `--quiet`). ✅
 
 ### Variable Capture and Closures
 - **Status: ✅ PASS**
-- No problematic variable capture bugs detected
-- The code does not use closures with captured loop/method variables in unsafe ways
+- No new closures in the delta; no variable capture bugs introduced
 
-### Test Coverage
+### Span-Local Writes Preserved (T6 Cursor Advance)
 - **Status: ✅ PASS**
-- Comprehensive test coverage in internal/cli/today_test.go
-- 25 test functions covering acceptance criteria AC-1 through AC-4
-- Tests cover: overdue surfacing, scheduled-today surfacing, pinned surfacing, deadline surfacing, external/work-ticket rows, actuation keys (pin, defer, deadline, priority, done, start, cancel), open command, read-only rejection
+- The recurrence branch's cursor advance (state stays "open", scheduled date advances by repeater) remains unconditional, outside the `logDid` guard
 
-### Code Quality
+**Evidence in `internal/cli/todo.go` doneRecurringTodo():**
+- Lines ~799-814 (before the `if logDid` block): State mutation, scheduled date advance via repeater, pileup materialization
+- Lines ~817-834 (`if logDid` block only): Did-entry write (log dir creation + appendDidLogEntry)
+
+The state-flip and scheduled-advance (T6 mechanics) are NOT wrapped in the `if logDid` guard, so `rk today act x --no-log` still advances the cursor correctly on a recurring row — it only suppresses the did-entry audit log write. ✅
+
+### Skipped Signal Propagation
 - **Status: ✅ PASS**
-- No hardcoded paths (using filepath.Join, VaultDir)
-- No print statements in library code
-- No commented-out code
-- No TODO without issue numbers (not required for this subsystem)
+- todayActResult.Skipped field added and properly populated from completeDurableTodoNode's result
 
-## Summary
+**Evidence:**
+- `internal/cli/today.go:146`: Skipped field added to todayActResult struct
+- `internal/cli/today.go:152-154`: Pretty() method checks Skipped first and renders idempotent-skip message
+- `internal/cli/today.go:569`: actDone propagates `Skipped: res.Skipped` into the returned todayActResult
+
+## Test Coverage (Review Fixes)
 
 **Status: ✅ PASS**
 
-All automated checks pass (go fmt, go vet, go test, coverage).
+Four new pinning tests added in today_test.go (review issues 2/3/4):
 
-All manual pattern checks pass:
-- Error handling: All errors wrapped with context
-- Resource cleanup: Database rows properly closed
-- CLI patterns: --quiet flag properly respected
-- CRLF rejection: Present on all file reads
-- File operations: Atomic writes with safe mutation patterns
-- Test coverage: Comprehensive with 25 test functions
+1. **TestToday_ExternalRowWithForeignStateSurfaces** (review issue 2): Confirms that external work-ticket rows with foreign/terminal state strings surface via the date predicate alone (plan.md B5 scope), not silently dropped by the state filter.
 
-The code is ready for code review.
+2. **TestTodayAct_DoneNoLogSuppressesEntryOnRecurring** (review issue 3): Confirms that `rk today act x --no-log` on a recurring (repeat:) row suppresses the did-entry log write while preserving the T6 cursor advance.
+
+3. **TestTodayAct_DoneOnRecurringStillLogsWithoutNoLog** (review issue 3 regression guard): Confirms that without `--no-log`, `rk today act x` on a recurring row still logs unconditionally, and that `rk todo done`'s always-logs recurrence behavior is unchanged.
+
+4. **TestTodayAct_DoneSkippedSignalInJSON** (review issue 4): Confirms that todayActResult's Skipped field is present and set correctly in both JSON and Pretty output for an idempotent no-op (act x on an already-done todo).
+
+All 26 test functions (22 prior + 4 new) pass.
+
+## Summary
+
+**Preflight re-run after review fixes (b32347e)**
+
+All automated checks pass (go fmt, go vet, go test ./..., coverage).
+
+All manual pattern checks on the fix delta pass:
+- Error handling: New errors properly wrapped; reconcile warning (non-fatal) not returned as error
+- Resource cleanup: No new defer patterns; existing patterns unchanged
+- CLI patterns: --quiet flag properly gates the new stderr warning path
+- Closure safety: No new closures; no variable capture bugs
+- Span-local writes: T6 cursor advance preserved; only did-entry write is logDid-gated
+- Skipped signal: todayActResult.Skipped field added and properly propagated
+
+**Status: PASS**
