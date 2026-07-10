@@ -1,0 +1,17 @@
+{
+  "ticket_id": "reckon-liml",
+  "phase": "planning",
+  "worktree": ".worktrees/reckon-liml",
+  "subsystem": "cli",
+  "attempts": {
+    "planner": 0,
+    "test_writer": 0,
+    "implementer": 0,
+    "preflight": 0,
+    "reviewer": 0
+  },
+  "new_test_names": [],
+  "stall_count": 0,
+  "last_test_output_hash": null,
+  "status": "in_progress"
+}
