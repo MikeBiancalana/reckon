@@ -1,6 +1,6 @@
 {
   "ticket_id": "reckon-ih5g",
-  "phase": "dry_run_gate",
+  "phase": "awaiting_merge",
   "worktree": ".worktrees/reckon-ih5g",
   "subsystem": "cli",
   "attempts": {
@@ -35,5 +35,6 @@
   ],
   "stall_count": 0,
   "last_test_output_hash": "",
-  "status": "ready_for_push"
+  "status": "pr_open",
+  "pr": 151
 }
