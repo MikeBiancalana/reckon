@@ -1,13 +1,13 @@
 {
   "ticket_id": "reckon-liml",
-  "phase": "implementation",
+  "phase": "preflight",
   "worktree": ".worktrees/reckon-liml",
   "subsystem": "cli",
   "decisions_signed_off": "C=cli-only A=replace-legacy B=all-vocab-accepted Q6=only-today-act-logs",
   "attempts": {
     "planner": 1,
     "test_writer": 1,
-    "implementer": 0,
+    "implementer": 1,
     "preflight": 0,
     "reviewer": 0
   },
