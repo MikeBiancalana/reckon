@@ -1100,3 +1100,139 @@ func TestToday_LegacyJournalDumpReplaced(t *testing.T) {
 		t.Errorf("expected an empty agenda for a vault with no todos, got %d items: %v", len(items), items)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Review-fix pins (reckon-liml review iteration): B5 external-state scope,
+// --no-log on a recurring completion, and the Skipped signal on
+// todayActResult. See ticket-work/reckon-liml/review.md issues 2/3/4.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestToday_ExternalRowWithForeignStateSurfaces (review issue 2): plan.md B5
+// scopes the state ∈ {open,in-progress} filter to NATIVE rows only. An
+// external work-ticket row carrying a foreign/terminal state string (here
+// "done", standing in for any non-native vocabulary a real feeder might
+// emit) must still surface on the date predicate alone -- it must NOT be
+// silently dropped the way a native todo with state=done would be.
+func TestToday_ExternalRowWithForeignStateSurfaces(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-10")
+	today := "2026-07-10"
+
+	extID := node.Mint()
+	writeTestNode(t, vault, "work/"+extID+".md", extID, "work-ticket", "External ticket with a foreign state.",
+		"state: done", "scheduled: "+today, "source: jira", "source-url: https://example.com/T-2")
+
+	stdout, stderr, err := runToday(t, vault, "--json")
+	if err != nil {
+		t.Fatalf("rk today --json: %v\nstderr: %s", err, stderr)
+	}
+	items := decodeAgendaItems(t, stdout)
+	var found bool
+	for _, it := range items {
+		if it["id"] == extID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("external row %q with foreign state %q must surface via the date predicate alone (plan.md B5): %v", extID, "done", items)
+	}
+}
+
+// TestTodayAct_DoneNoLogSuppressesEntryOnRecurring (review issue 3): `act x
+// --no-log` on a recurring (repeat:) row must suppress the did-entry log
+// write, exactly like it already does for a plain (non-recurring) row
+// (TestTodayAct_DoneNoLogSuppressesEntry) -- the flag's help text promises
+// unconditional suppression. The T6 recurrence mechanics themselves (state
+// stays open, scheduled advances by the repeater) must be unaffected.
+func TestTodayAct_DoneNoLogSuppressesEntryOnRecurring(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-05")
+
+	id := node.Mint()
+	path, src := writeRecurringTodo(t, vault, id, "2026-07-05", "+7d", "Water plants")
+
+	_, stderr, err := runToday(t, vault, "act", id, "x", "--no-log")
+	if err != nil {
+		t.Fatalf("rk today act x --no-log (recurring): %v\nstderr: %s", err, stderr)
+	}
+
+	want := strings.Replace(src, "scheduled: 2026-07-05", "scheduled: 2026-07-12", 1)
+	got := mustReadFile(t, path)
+	if got != want {
+		t.Fatalf("recurring cursor advance under --no-log must still be span-local per T6\n--- want ---\n%q\n--- got ---\n%q", want, got)
+	}
+	if !strings.Contains(got, "state: open") {
+		t.Error("recurring rule's state must stay open under --no-log, not flip to done")
+	}
+
+	if _, statErr := os.Stat(filepath.Join(vault, "log")); !os.IsNotExist(statErr) {
+		t.Errorf("log/ dir must not be created by a recurring completion under --no-log, stat err = %v", statErr)
+	}
+}
+
+// TestTodayAct_DoneOnRecurringStillLogsWithoutNoLog (review issue 3
+// regression guard): without --no-log, `rk today act x` on a recurring row
+// must still log unconditionally -- confirming the fix did not flip the
+// default and did not touch `rk todo done`'s own always-logs recurrence
+// contract (plan.md Q6). Duplicates the intent of
+// TestTodayAct_DoneOnRecurringReusesT6Path but named to sit next to the new
+// --no-log-on-recurring pin above for reviewer clarity.
+func TestTodayAct_DoneOnRecurringStillLogsWithoutNoLog(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-05")
+
+	id := node.Mint()
+	writeRecurringTodo(t, vault, id, "2026-07-05", "+7d", "Water plants")
+
+	_, stderr, err := runToday(t, vault, "act", id, "x")
+	if err != nil {
+		t.Fatalf("rk today act x (recurring, default logging): %v\nstderr: %s", err, stderr)
+	}
+	if _, statErr := os.Stat(dayLogPath(vault, "2026-07-05")); statErr != nil {
+		t.Fatalf("did-linked log day file not created by default (no --no-log): %v", statErr)
+	}
+}
+
+// TestTodayAct_DoneSkippedSignalInJSON (review issue 4): `act x` on an
+// already-done todo is an idempotent no-op (completeDurableTodoNode's
+// Skipped:true branch); todayActResult must propagate that signal (JSON
+// "skipped" field + Pretty text), mirroring todoDoneResult's existing
+// shape, instead of reporting State:"done" indistinguishably from a real
+// completion.
+func TestTodayAct_DoneSkippedSignalInJSON(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-10")
+	today := "2026-07-10"
+
+	id := node.Mint()
+	writeTodoFixture(t, vault, id, "done", today, "Already done.")
+
+	stdout, stderr, err := runToday(t, vault, "act", id, "x", "--json")
+	if err != nil {
+		t.Fatalf("rk today act x on an already-done todo: %v\nstderr: %s", err, stderr)
+	}
+	var res struct {
+		Skipped bool   `json:"skipped"`
+		State   string `json:"state"`
+	}
+	mustDecodeJSON(t, stdout, &res)
+	if !res.Skipped {
+		t.Errorf("todayActResult JSON missing skipped=true for an already-done todo: %q", stdout)
+	}
+	if res.State != "done" {
+		t.Errorf("state = %q, want \"done\"", res.State)
+	}
+
+	resetCLIFlags()
+	prettyOut, prettyErr, err2 := runToday(t, vault, "act", id, "x")
+	if err2 != nil {
+		t.Fatalf("rk today act x (pretty) on an already-done todo: %v\nstderr: %s", err2, prettyErr)
+	}
+	if !strings.Contains(strings.ToLower(prettyOut), "skip") {
+		t.Errorf("pretty output should indicate the idempotent skip, got: %q", prettyOut)
+	}
+}

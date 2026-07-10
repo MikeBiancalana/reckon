@@ -143,6 +143,7 @@ type todayActResult struct {
 	Deadline     string `json:"deadline,omitempty"`
 	Pinned       string `json:"pinned,omitempty"`
 	Priority     string `json:"priority,omitempty"`
+	Skipped      bool   `json:"skipped"` // true = idempotent no-op (x on an already-done todo); mirrors todoDoneResult's shape
 	Recurred     bool   `json:"recurred,omitempty"`
 	Repeat       string `json:"repeat,omitempty"`
 	DidEntryID   string `json:"did_entry_id,omitempty"`
@@ -150,6 +151,9 @@ type todayActResult struct {
 }
 
 func (r todayActResult) Pretty() string {
+	if r.Skipped {
+		return fmt.Sprintf("today: %s already done (skipped)", r.Ref)
+	}
 	if r.Recurred {
 		return fmt.Sprintf("today: %s advanced to %s (repeat %s)", r.Ref, r.Scheduled, r.Repeat)
 	}
@@ -252,7 +256,11 @@ func buildAgenda(db *sql.DB, todayStr string) ([]agendaItem, []string, error) {
 			return nil, nil, err
 		}
 		state := props["state"]
-		if state != "open" && state != "in-progress" {
+		// plan.md B5: the state ∈ {open,in-progress} filter is ANDed in for
+		// NATIVE rows only; external (work-ticket) rows surface purely on the
+		// date predicate below, regardless of whatever foreign state
+		// vocabulary a future feeder emits (review issue 2, reckon-liml).
+		if c.typ == "todo" && state != "open" && state != "in-progress" {
 			continue
 		}
 
@@ -351,16 +359,23 @@ func runTodayActE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Eager write-through reconcile (plan.md Q11): a subsequent read-only
-	// `rk query` (which never reconciles itself) must see the mutation.
-	if _, err := ix.Reconcile(); err != nil {
-		return fmt.Errorf("today act: reconcile index after write: %w", err)
-	}
-
 	if !(mode == output.Pretty && quietFlag) {
 		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
 			return err
 		}
+	}
+
+	// Eager write-through reconcile (plan.md Q11): a subsequent read-only
+	// `rk query` (which never reconciles itself) should see the mutation.
+	// EC-9 ("file write authoritative, index update non-fatal/self-healing")
+	// means this step must never roll back or fail the already-successful
+	// action above: the authoritative file write has already happened and
+	// `res` has already been printed. A hard failure here would also create a
+	// double-advance-on-retry hazard for a recurring completion (the cursor
+	// advance is not idempotent, unlike the plain state flip), so a failure
+	// is surfaced as a warning only (review issue 1, reckon-liml).
+	if _, err := ix.Reconcile(); err != nil && !quietFlag {
+		fmt.Fprintf(cmd.ErrOrStderr(), "today act: warning: reconcile index after write: %v\n", err)
 	}
 	return nil
 }
@@ -553,15 +568,20 @@ func actPriority(vaultDir string, n *node.Node, foundPath, ref, arg string) (tod
 
 // actDone implements the "x"/"done" key: delegates to
 // completeDurableTodoNode (todo.go), the body shared with `rk todo done`
-// (plan.md Q6), with logDid = !--no-log (default on).
+// (plan.md Q6), with logDid = !--no-log (default on). The same logDid value
+// is passed for both completeDurableTodoNode's plain-completion branch AND
+// its recurrence branch (recurLogDid), so `--no-log` suppresses the did
+// entry on `rk today act x` uniformly whether the target row is a plain
+// todo or a recurring one (review issue 3, reckon-liml) — unlike `rk todo
+// done`, whose recurrence branch always logs (plan.md Q6).
 func actDone(vaultDir string, n *node.Node, foundPath, ref string, logDid bool) (todayActResult, error) {
-	res, err := completeDurableTodoNode(vaultDir, n, foundPath, ref, logDid)
+	res, err := completeDurableTodoNode(vaultDir, n, foundPath, ref, logDid, logDid)
 	if err != nil {
 		return todayActResult{}, err
 	}
 	return todayActResult{
 		Ref: ref, Key: "x", ID: res.ID, Path: res.Path, State: res.State,
-		Scheduled: res.Scheduled, Recurred: res.Recurred, Repeat: res.Repeat,
+		Scheduled: res.Scheduled, Skipped: res.Skipped, Recurred: res.Recurred, Repeat: res.Repeat,
 		DidEntryID: res.DidEntryID, DidEntryPath: res.DidEntryPath,
 	}, nil
 }
