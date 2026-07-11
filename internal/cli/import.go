@@ -2,8 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
+	"github.com/MikeBiancalana/reckon/internal/output"
 	"github.com/MikeBiancalana/reckon/internal/textmigrate"
 	"github.com/spf13/cobra"
 )
@@ -73,6 +76,45 @@ type importTypeResult struct {
 	Errored []importErroredEntry `json:"errored"`
 }
 
+// Pretty renders a human-readable summary line for one run, followed by one
+// indented line per created/skipped/errored record across every type.
+func (r importResult) Pretty() string {
+	var b strings.Builder
+	created := len(r.Tasks.Created) + len(r.Notes.Created) + len(r.ChecklistTemplates.Created) +
+		len(r.ChecklistRuns.Created) + len(r.JournalDays.Created)
+	skipped := len(r.Tasks.Skipped) + len(r.Notes.Skipped) + len(r.ChecklistTemplates.Skipped) +
+		len(r.ChecklistRuns.Skipped) + len(r.JournalDays.Skipped)
+	errored := len(r.Tasks.Errored) + len(r.Notes.Errored) + len(r.ChecklistTemplates.Errored) +
+		len(r.ChecklistRuns.Errored) + len(r.JournalDays.Errored)
+	fmt.Fprintf(&b, "import: %d created, %d skipped, %d errored", created, skipped, errored)
+	if r.FoldedTaskNotes > 0 {
+		fmt.Fprintf(&b, "\n  folded %d task note(s) into todo bodies", r.FoldedTaskNotes)
+	}
+	if r.RewrittenTaskRefs > 0 {
+		fmt.Fprintf(&b, "\n  rewrote %d [task:xid] reference(s) to [[xid]]", r.RewrittenTaskRefs)
+	}
+	byType := []struct {
+		name string
+		tr   importTypeResult
+	}{
+		{"task", r.Tasks}, {"note", r.Notes}, {"checklist template", r.ChecklistTemplates},
+		{"checklist run", r.ChecklistRuns}, {"journal day", r.JournalDays},
+	}
+	for _, grp := range byType {
+		name, tr := grp.name, grp.tr
+		for _, c := range tr.Created {
+			fmt.Fprintf(&b, "\n  created %s %s -> %s (id %s)", name, c.SourceID, c.Path, c.ULID)
+		}
+		for _, s := range tr.Skipped {
+			fmt.Fprintf(&b, "\n  skipped %s %s (%s)", name, s.SourceID, s.Reason)
+		}
+		for _, e := range tr.Errored {
+			fmt.Fprintf(&b, "\n  error %s %s: %s", name, e.SourceID, e.Error)
+		}
+	}
+	return b.String()
+}
+
 type importRecordEntry struct {
 	SourceID string `json:"source_id"`
 	Path     string `json:"path"`
@@ -98,8 +140,44 @@ type importVerifyResult struct {
 	OK                 bool           `json:"ok"`
 }
 
+// Pretty renders a human-readable verify summary: overall OK/FAILED, the
+// per-type counts, and one indented line per unexpected warning or
+// unresolved alias.
+func (r importVerifyResult) Pretty() string {
+	var b strings.Builder
+	status := "OK"
+	if !r.OK {
+		status = "FAILED"
+	}
+	fmt.Fprintf(&b, "import verify: %s", status)
+	types := make([]string, 0, len(r.Counts))
+	for typ := range r.Counts {
+		types = append(types, typ)
+	}
+	sort.Strings(types)
+	for _, typ := range types {
+		fmt.Fprintf(&b, "\n  %s: %d", typ, r.Counts[typ])
+	}
+	for _, w := range r.UnexpectedWarnings {
+		fmt.Fprintf(&b, "\n  unexpected warning: %s", w)
+	}
+	for _, a := range r.UnresolvedAliases {
+		fmt.Fprintf(&b, "\n  unresolved alias: %s", a)
+	}
+	return b.String()
+}
+
 func runImportE(cmd *cobra.Command, args []string) error {
 	defer resetImportFlags(cmd)
+
+	if importVerifyFlag && importDryRunFlag {
+		return fmt.Errorf("import: --dry-run and --verify are mutually exclusive")
+	}
+
+	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
+	if err != nil {
+		return err
+	}
 
 	cfg, err := config.LoadWithOverrides(vaultFlag, "")
 	if err != nil {
@@ -117,14 +195,91 @@ func runImportE(cmd *cobra.Command, args []string) error {
 	imp := &textmigrate.Importer{Source: source, Dest: cfg.VaultDir, DryRun: importDryRunFlag}
 
 	if importVerifyFlag {
-		if _, err := imp.Verify(); err != nil {
+		vr, err := imp.Verify()
+		if err != nil {
 			return fmt.Errorf("import: verify: %w", err)
+		}
+		res := toImportVerifyResult(vr)
+		if !(mode == output.Pretty && quietFlag) {
+			if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
+				return err
+			}
+		}
+		if !res.OK {
+			return fmt.Errorf("import: verify found %d unexpected warning(s) and %d unresolved alias(es)",
+				len(res.UnexpectedWarnings), len(res.UnresolvedAliases))
 		}
 		return nil
 	}
 
-	if _, err := imp.Run(); err != nil {
+	report, err := imp.Run()
+	if err != nil {
 		return fmt.Errorf("import: %w", err)
 	}
+	res := toImportResult(report)
+
+	if !(mode == output.Pretty && quietFlag) {
+		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
+			return err
+		}
+	}
+
+	errored := len(res.Tasks.Errored) + len(res.Notes.Errored) + len(res.ChecklistTemplates.Errored) +
+		len(res.ChecklistRuns.Errored) + len(res.JournalDays.Errored)
+	if errored > 0 {
+		return fmt.Errorf("import: %d record(s) failed to migrate", errored)
+	}
 	return nil
+}
+
+// toImportResult maps a textmigrate.Report onto the CLI's JSON-tagged result
+// shape.
+func toImportResult(r *textmigrate.Report) importResult {
+	return importResult{
+		Tasks:              toImportTypeResult(r.Tasks),
+		Notes:              toImportTypeResult(r.Notes),
+		ChecklistTemplates: toImportTypeResult(r.ChecklistTemplates),
+		ChecklistRuns:      toImportTypeResult(r.ChecklistRuns),
+		JournalDays:        toImportTypeResult(r.JournalDays),
+		FoldedTaskNotes:    r.FoldedTaskNotes,
+		RewrittenTaskRefs:  r.RewrittenTaskRefs,
+	}
+}
+
+func toImportTypeResult(tr textmigrate.TypeResult) importTypeResult {
+	created := make([]importRecordEntry, 0, len(tr.Created))
+	for _, c := range tr.Created {
+		created = append(created, importRecordEntry{SourceID: c.SourceID, Path: c.Path, ULID: c.ULID})
+	}
+	skipped := make([]importSkippedEntry, 0, len(tr.Skipped))
+	for _, s := range tr.Skipped {
+		skipped = append(skipped, importSkippedEntry{SourceID: s.SourceID, Reason: s.Reason})
+	}
+	errored := make([]importErroredEntry, 0, len(tr.Errored))
+	for _, e := range tr.Errored {
+		errored = append(errored, importErroredEntry{SourceID: e.SourceID, Error: e.Error})
+	}
+	return importTypeResult{Created: created, Skipped: skipped, Errored: errored}
+}
+
+// toImportVerifyResult maps a textmigrate.VerifyResult onto the CLI's
+// JSON-tagged result shape (index.Warning values are rendered to strings so
+// the CLI output has no dependency on internal/index's own JSON shape).
+func toImportVerifyResult(vr *textmigrate.VerifyResult) importVerifyResult {
+	warnings := make([]string, 0, len(vr.UnexpectedWarnings))
+	for _, w := range vr.UnexpectedWarnings {
+		if w.Kind == "duplicate_ulid" {
+			warnings = append(warnings, fmt.Sprintf("duplicate_ulid %s (%s)", w.ULID, strings.Join(w.Files, ", ")))
+		} else {
+			warnings = append(warnings, fmt.Sprintf("alias_collision %s (%s)", w.Alias, strings.Join(w.Files, ", ")))
+		}
+	}
+	unresolved := append([]string(nil), vr.UnresolvedAliases...)
+	sort.Strings(unresolved)
+	return importVerifyResult{
+		Counts:             vr.Counts,
+		UnexpectedWarnings: warnings,
+		UnresolvedAliases:  unresolved,
+		OK:                 vr.OK,
+	}
 }
