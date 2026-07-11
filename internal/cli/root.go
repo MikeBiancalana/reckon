@@ -133,6 +133,7 @@ func init() {
 	RootCmd.AddCommand(queryCmd)
 	RootCmd.AddCommand(indexCmd)
 	RootCmd.AddCommand(adoptCmd)
+	RootCmd.AddCommand(importCmd)
 }
 
 // initLoggerE initializes the logger with command-line flags.
