@@ -10,7 +10,21 @@
 // the destination vault is skipped, not duplicated.
 package textmigrate
 
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/MikeBiancalana/reckon/internal/node"
+)
+
+// legacyAuthor is the author stamped on every migrated node: none of the
+// legacy sources record who authored a task/note/checklist/journal entry, so
+// migrated content is attributed to the migration itself rather than
+// fabricating an author.
+const legacyAuthor = "legacy-import"
 
 // Importer performs (or, with DryRun, previews) the migration.
 type Importer struct {
@@ -52,6 +66,18 @@ type TypeResult struct {
 	Errored []ErroredOutcome
 }
 
+func (r *TypeResult) addCreated(sourceID, path, ulid string) {
+	r.Created = append(r.Created, RecordOutcome{SourceID: sourceID, Path: path, ULID: ulid})
+}
+
+func (r *TypeResult) addSkipped(sourceID, reason string) {
+	r.Skipped = append(r.Skipped, SkippedOutcome{SourceID: sourceID, Reason: reason})
+}
+
+func (r *TypeResult) addErrored(sourceID string, err error) {
+	r.Errored = append(r.Errored, ErroredOutcome{SourceID: sourceID, Error: err.Error()})
+}
+
 // JournalPreambleCounts tallies legacy journal sections that have no
 // direct log-entry analog and are instead preserved as a log-day's
 // preamble block, summed across every migrated day.
@@ -80,7 +106,89 @@ type Report struct {
 }
 
 // Run performs the migration (or, under DryRun, previews it) and returns a
-// Report describing every record's outcome.
+// Report describing every record's outcome. Every source is processed even
+// if another source errors partway through (error strategy: accumulate
+// per-record failures into the report, never abort the run).
 func (imp *Importer) Run() (*Report, error) {
-	return nil, fmt.Errorf("textmigrate: Importer.Run not implemented")
+	report := &Report{}
+
+	if err := imp.runTasks(report); err != nil {
+		return nil, fmt.Errorf("textmigrate: tasks: %w", err)
+	}
+	if err := imp.runNotes(report); err != nil {
+		return nil, fmt.Errorf("textmigrate: notes: %w", err)
+	}
+	if err := imp.runChecklists(report); err != nil {
+		return nil, fmt.Errorf("textmigrate: checklists: %w", err)
+	}
+	if err := imp.runJournal(report); err != nil {
+		return nil, fmt.Errorf("textmigrate: journal: %w", err)
+	}
+
+	return report, nil
+}
+
+// renderAndParse is the shared tail of the NewNode -> set fields -> Render ->
+// Parse -> writeFileAtomic recipe every converter follows (IR4): it turns a
+// freshly-built node into the byte-preserving, round-trip-stable form that is
+// actually written to disk.
+func renderAndParse(n *node.Node) (*node.Node, error) {
+	parsed, err := node.Parse(n.Render())
+	if err != nil {
+		return nil, fmt.Errorf("render/parse: %w", err)
+	}
+	return parsed, nil
+}
+
+// scanAliases collects every alias already present on markdown files
+// directly under dir (non-recursive), for the idempotency check (D-
+// Idempotency): a source record whose old id is already one of these aliases
+// has already been migrated. A missing directory is not an error (nothing
+// migrated yet). Unparsable/CRLF files are skipped rather than aborting the
+// scan, matching adopt.go/note_v1.go's tolerant-scan policy.
+func scanAliases(dir string) (map[string]bool, error) {
+	aliases := map[string]bool{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return aliases, nil
+		}
+		return nil, fmt.Errorf("scan %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		raw, err := os.ReadFile(path)
+		if err != nil || bytes.Contains(raw, []byte("\r\n")) {
+			continue
+		}
+		n, err := node.Parse(raw)
+		if err != nil {
+			continue
+		}
+		for _, a := range n.Aliases {
+			aliases[a] = true
+		}
+	}
+	return aliases, nil
+}
+
+// overrideDataDir temporarily points RECKON_DATA_DIR at dir so
+// journal.TaskService.GetAllTasks() -- which resolves its directory via the
+// global config.TasksDir() rather than an injectable parameter -- reads the
+// given legacy root instead of whatever the process's ambient legacy data
+// dir happens to be. The returned func restores the previous value (or
+// unsets it if it was unset).
+func overrideDataDir(dir string) func() {
+	prev, had := os.LookupEnv("RECKON_DATA_DIR")
+	os.Setenv("RECKON_DATA_DIR", dir)
+	return func() {
+		if had {
+			os.Setenv("RECKON_DATA_DIR", prev)
+		} else {
+			os.Unsetenv("RECKON_DATA_DIR")
+		}
+	}
 }
