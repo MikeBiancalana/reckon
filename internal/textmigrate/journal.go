@@ -14,9 +14,8 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/node"
 )
 
-// taskRefRe matches the legacy inline task-reference marker [task:<xid>]
-// (D-TaskRef-rewrite); [meeting:]/[break] markers have no migration target
-// and are left verbatim.
+// taskRefRe matches the legacy inline task-reference marker [task:<xid>];
+// [meeting:]/[break] markers have no migration target and are left verbatim.
 var taskRefRe = regexp.MustCompile(`\[task:([^\]]+)\]`)
 
 // convertJournalDay builds the log-day node.Node for one legacy Journal
@@ -126,8 +125,9 @@ func writeSchedulePreamble(body *strings.Builder, items []journal.ScheduleItem) 
 }
 
 // rewriteTaskRefs rewrites every inline [task:<xid>] marker in content to a
-// [[<xid>]] wikilink (D-TaskRef-rewrite), returning the rewritten content
-// and how many markers were rewritten.
+// [[<xid>]] wikilink so the index derives a reference edge to the migrated
+// todo via its xid alias, returning the rewritten content and how many
+// markers were rewritten.
 func rewriteTaskRefs(content string) (string, int) {
 	count := 0
 	rewritten := taskRefRe.ReplaceAllStringFunc(content, func(m string) string {
@@ -139,9 +139,9 @@ func rewriteTaskRefs(content string) (string, int) {
 }
 
 // runJournal migrates every legacy journal day file into log/<date>.md.
-// Idempotency is per-day-file (D-Idempotency): an existing log/<date>.md is
-// skipped outright, since a day file is written atomically as one unit and
-// is therefore either fully present or fully absent, never half-migrated.
+// Idempotency is per-day-file: an existing log/<date>.md is skipped
+// outright, since a day file is written atomically as one unit and is
+// therefore either fully present or fully absent, never half-migrated.
 func (imp *Importer) runJournal(report *Report) error {
 	journalDir := filepath.Join(imp.Source, "journal")
 	entries, err := os.ReadDir(journalDir)

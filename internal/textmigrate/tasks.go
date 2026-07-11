@@ -51,9 +51,10 @@ func convertTask(t journal.Task) (n *node.Node, foldedNotes int, err error) {
 }
 
 // taskBody composes a todo's body from the task's text and description, plus
-// (D-TaskNotes) a trailing "### Notes" section folding any legacy task_notes
-// -- the new todo schema has no separate notes field, so this is the
-// fold-into-body handling EC-3 requires instead of a silent drop.
+// a trailing "### Notes" section folding any legacy task notes -- the new
+// todo schema has no separate notes field, so folding into the body (with
+// the count reported by the caller) keeps them visible instead of a silent
+// drop.
 func taskBody(t journal.Task) string {
 	var b strings.Builder
 	b.WriteString(t.Text)
@@ -71,8 +72,9 @@ func taskBody(t journal.Task) string {
 	return b.String()
 }
 
-// runTasks migrates every legacy gen-1 task (file-primary, read via
-// journal.TaskService.GetAllTasks per D-Tasks) into todos/<ULID>.md.
+// runTasks migrates every legacy gen-1 task (file-primary, read via the
+// same journal.TaskService.GetAllTasks reader the live `rk task` command
+// uses) into todos/<ULID>.md.
 func (imp *Importer) runTasks(report *Report) error {
 	restore := overrideDataDir(imp.Source)
 	defer restore()

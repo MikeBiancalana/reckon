@@ -48,7 +48,7 @@ func convertNote(dbNote *models.Note, body string, existingSlugs map[string]bool
 
 // disambiguateSlug returns candidate unchanged if it is not already claimed
 // in existingSlugs, else appends a deterministic "-2", "-3", ... suffix
-// until it finds a free one (EC-2), mirroring note_v1.go's slugCollision
+// until it finds a free one, mirroring note_v1.go's slugCollision
 // disambiguation.
 func disambiguateSlug(candidate string, existingSlugs map[string]bool) string {
 	if !existingSlugs[candidate] {
@@ -65,8 +65,8 @@ func disambiguateSlug(candidate string, existingSlugs map[string]bool) string {
 // scanNoteSlugs recursively collects every candidate slug already claimed
 // under notesDir: each file's own basename (minus .md) and every alias on
 // each parsed file. This single set drives both filename-collision
-// disambiguation (EC-2) and the idempotency skip check (a source note's old
-// xid already present as an alias means it was already migrated).
+// disambiguation and the idempotency skip check (a source note's old xid
+// already present as an alias means it was already migrated).
 // Unparsable/CRLF files are skipped rather than aborting the scan, and a
 // missing directory yields an empty set (nothing migrated yet).
 func scanNoteSlugs(notesDir string) (map[string]bool, error) {

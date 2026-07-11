@@ -65,10 +65,11 @@ func (imp *Importer) Verify() (*VerifyResult, error) {
 	for _, w := range stats.Warnings {
 		if w.Kind == "alias_collision" && sourceAliasCount[w.Alias] <= 1 {
 			// This alias is claimed by more than one vault node, but the
-			// legacy source itself only ever produced it once (EC-2): the
-			// other claimant is unrelated, pre-existing vault content (or a
-			// deliberately retained old slug per IR2). That is accepted
-			// collateral of the migration's own design, not a migration bug.
+			// legacy source itself only ever produced it once: the other
+			// claimant is unrelated, pre-existing vault content (or a
+			// deliberately retained old slug on a disambiguated note). That
+			// is accepted collateral of retaining old slugs as aliases
+			// regardless of filename collisions, not a migration bug.
 			continue
 		}
 		unexpected = append(unexpected, w)
@@ -108,7 +109,7 @@ func countByType(ix *index.Index) (map[string]int, error) {
 }
 
 // unresolvedAliases returns every old source id (from sourceAliasCount) that
-// does not resolve via the index's aliases view (AC3/IR5).
+// does not resolve via the index's aliases view.
 func unresolvedAliases(ix *index.Index, sourceAliasCount map[string]int) ([]string, error) {
 	stmt, err := ix.DB().Prepare(`SELECT COUNT(*) FROM aliases WHERE alias = ?`)
 	if err != nil {
@@ -132,7 +133,7 @@ func unresolvedAliases(ix *index.Index, sourceAliasCount map[string]int) ([]stri
 // sourceAliasCounts scans every legacy source record and counts how many
 // distinct records (across every type) independently produce each alias
 // string. A count > 1 means the legacy source data itself has two records
-// claiming the same old id/slug (EC-1) -- a genuine collision, as opposed to
+// claiming the same old id/slug -- a genuine collision, as opposed to
 // a collision against unrelated content that only exists in the destination
 // vault. Records this importer cannot read at all (a missing DB, an unset
 // legacy dir) contribute nothing rather than failing verify outright.

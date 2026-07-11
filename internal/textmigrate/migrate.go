@@ -129,7 +129,7 @@ func (imp *Importer) Run() (*Report, error) {
 }
 
 // renderAndParse is the shared tail of the NewNode -> set fields -> Render ->
-// Parse -> writeFileAtomic recipe every converter follows (IR4): it turns a
+// Parse -> writeFileAtomic recipe every converter follows: it turns a
 // freshly-built node into the byte-preserving, round-trip-stable form that is
 // actually written to disk.
 func renderAndParse(n *node.Node) (*node.Node, error) {
@@ -141,9 +141,9 @@ func renderAndParse(n *node.Node) (*node.Node, error) {
 }
 
 // scanAliases collects every alias already present on markdown files
-// directly under dir (non-recursive), for the idempotency check (D-
-// Idempotency): a source record whose old id is already one of these aliases
-// has already been migrated. A missing directory is not an error (nothing
+// directly under dir (non-recursive), for the idempotency check: a source
+// record whose old id is already one of these aliases has already been
+// migrated. A missing directory is not an error (nothing
 // migrated yet). Unparsable/CRLF files are skipped rather than aborting the
 // scan, matching adopt.go/note_v1.go's tolerant-scan policy.
 func scanAliases(dir string) (map[string]bool, error) {
