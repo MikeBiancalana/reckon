@@ -27,9 +27,47 @@ type VerifyResult struct {
 	// UnresolvedAliases are old source ids that do not resolve via the
 	// index's aliases view.
 	UnresolvedAliases []string
+	// CountMismatches lists every node type whose migrated count fell
+	// short of its source record count (see countMismatches).
+	CountMismatches []CountMismatch
 	// OK is true iff there are no unexpected warnings, no unresolved
-	// aliases, and every per-type count matches the source.
+	// aliases, and no per-type count fell short of the source.
 	OK bool
+}
+
+// CountMismatch is one node type whose migrated count in the rebuilt index
+// fell short of the source record count for that type -- signaling a
+// record dropped somewhere in the migration, as opposed to one reported
+// skipped or errored by Importer.Run. A migrated count greater than the
+// source count is not a mismatch: pre-existing native vault content of the
+// same type is normal and unrelated to what the importer produced.
+type CountMismatch struct {
+	Type     string
+	Source   int
+	Migrated int
+}
+
+// migratedRecordTypes are the node types this importer produces whose
+// source record count is directly enumerable, and therefore the ones
+// countMismatches checks. log-entry is intentionally excluded: a legacy
+// journal day's individual log entries carry no source id/alias, so there
+// is no reliable source count to compare against.
+var migratedRecordTypes = []string{"todo", "note", "checklist-template", "checklist-run", "log-day"}
+
+// countMismatches compares counts (the rebuilt index's per-type row
+// counts) against sourceTypeCount (the source's per-type record counts,
+// from sourceAliasCounts) for each of migratedRecordTypes, returning one
+// CountMismatch per type whose migrated count is less than its source
+// count.
+func countMismatches(counts, sourceTypeCount map[string]int) []CountMismatch {
+	var mismatches []CountMismatch
+	for _, typ := range migratedRecordTypes {
+		source, migrated := sourceTypeCount[typ], counts[typ]
+		if migrated < source {
+			mismatches = append(mismatches, CountMismatch{Type: typ, Source: source, Migrated: migrated})
+		}
+	}
+	return mismatches
 }
 
 // Verify opens (or builds) the index over Dest, rebuilds it, and checks the
@@ -56,7 +94,7 @@ func (imp *Importer) Verify() (*VerifyResult, error) {
 		return nil, fmt.Errorf("textmigrate: verify: count nodes: %w", err)
 	}
 
-	sourceAliasCount, err := imp.sourceAliasCounts()
+	sourceAliasCount, sourceTypeCount, err := imp.sourceAliasCounts()
 	if err != nil {
 		return nil, fmt.Errorf("textmigrate: verify: read source: %w", err)
 	}
@@ -80,11 +118,14 @@ func (imp *Importer) Verify() (*VerifyResult, error) {
 		return nil, fmt.Errorf("textmigrate: verify: resolve aliases: %w", err)
 	}
 
+	mismatches := countMismatches(counts, sourceTypeCount)
+
 	return &VerifyResult{
 		Counts:             counts,
 		UnexpectedWarnings: unexpected,
 		UnresolvedAliases:  unresolved,
-		OK:                 len(unexpected) == 0 && len(unresolved) == 0,
+		CountMismatches:    mismatches,
+		OK:                 len(unexpected) == 0 && len(unresolved) == 0 && len(mismatches) == 0,
 	}, nil
 }
 
@@ -132,25 +173,30 @@ func unresolvedAliases(ix *index.Index, sourceAliasCount map[string]int) ([]stri
 
 // sourceAliasCounts scans every legacy source record and counts how many
 // distinct records (across every type) independently produce each alias
-// string. A count > 1 means the legacy source data itself has two records
-// claiming the same old id/slug -- a genuine collision, as opposed to
-// a collision against unrelated content that only exists in the destination
-// vault. Records this importer cannot read at all (a missing DB, an unset
-// legacy dir) contribute nothing rather than failing verify outright.
-func (imp *Importer) sourceAliasCounts() (map[string]int, error) {
-	counts := map[string]int{}
+// string, and separately tallies how many records of each migratable type
+// (see migratedRecordTypes) the source holds. A count > 1 means the legacy
+// source data itself has two records claiming the same old id/slug -- a
+// genuine collision, as opposed to a collision against unrelated content
+// that only exists in the destination vault. Records this importer cannot
+// read at all (a missing DB, an unset legacy dir) contribute nothing rather
+// than failing verify outright.
+func (imp *Importer) sourceAliasCounts() (aliasCount, typeCount map[string]int, err error) {
+	aliasCount = map[string]int{}
+	typeCount = map[string]int{}
 	add := func(alias string) {
 		if alias != "" {
-			counts[alias]++
+			aliasCount[alias]++
 		}
 	}
 
 	restore := overrideDataDir(imp.Source)
+	defer restore()
+
 	tasks, err := journal.NewTaskService(nil, nil).GetAllTasks()
-	restore()
 	if err != nil {
-		return nil, fmt.Errorf("read legacy tasks: %w", err)
+		return nil, nil, fmt.Errorf("read legacy tasks: %w", err)
 	}
+	typeCount["todo"] = len(tasks)
 	for _, tk := range tasks {
 		add(tk.ID)
 	}
@@ -159,14 +205,15 @@ func (imp *Importer) sourceAliasCounts() (map[string]int, error) {
 	if _, err := os.Stat(dbPath); err == nil {
 		db, err := storage.NewDatabase(dbPath)
 		if err != nil {
-			return nil, fmt.Errorf("open legacy db: %w", err)
+			return nil, nil, fmt.Errorf("open legacy db: %w", err)
 		}
 		defer db.Close()
 
 		notes, err := notessvc.NewNotesRepository(db).GetAllNotes()
 		if err != nil {
-			return nil, fmt.Errorf("read legacy notes: %w", err)
+			return nil, nil, fmt.Errorf("read legacy notes: %w", err)
 		}
+		typeCount["note"] = len(notes)
 		for _, n := range notes {
 			add(n.ID)
 			add(n.Slug)
@@ -175,15 +222,17 @@ func (imp *Importer) sourceAliasCounts() (map[string]int, error) {
 		repo := checklist.NewRepository(db)
 		templates, err := repo.ListTemplates()
 		if err != nil {
-			return nil, fmt.Errorf("read legacy checklist templates: %w", err)
+			return nil, nil, fmt.Errorf("read legacy checklist templates: %w", err)
 		}
+		typeCount["checklist-template"] = len(templates)
 		for _, tpl := range templates {
 			add(tpl.ID)
 		}
 		runs, err := repo.ListRuns(false)
 		if err != nil {
-			return nil, fmt.Errorf("read legacy checklist runs: %w", err)
+			return nil, nil, fmt.Errorf("read legacy checklist runs: %w", err)
 		}
+		typeCount["checklist-run"] = len(runs)
 		for _, run := range runs {
 			add(run.ID)
 		}
@@ -192,14 +241,17 @@ func (imp *Importer) sourceAliasCounts() (map[string]int, error) {
 	journalDir := filepath.Join(imp.Source, "journal")
 	entries, err := os.ReadDir(journalDir)
 	if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("read legacy journal dir: %w", err)
+		return nil, nil, fmt.Errorf("read legacy journal dir: %w", err)
 	}
+	var days int
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
 			continue
 		}
+		days++
 		add(e.Name()[:len(e.Name())-len(".md")])
 	}
+	typeCount["log-day"] = days
 
-	return counts, nil
+	return aliasCount, typeCount, nil
 }
