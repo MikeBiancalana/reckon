@@ -106,7 +106,7 @@ type agendaItem struct {
 	SourceURL string `json:"source_url,omitempty"` // external only
 	ReadOnly  bool   `json:"read_only,omitempty"`  // true for external/work-ticket rows
 	Body      string `json:"body,omitempty"`
-	Title     string `json:"title,omitempty"` // durable only: derived first non-empty body line
+	Title     string `json:"title,omitempty"` // derived first non-empty body line
 }
 
 // agendaResult wraps `rk today`'s items so --json emits a single object
