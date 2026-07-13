@@ -24,7 +24,7 @@ private so storage can be refactored without breaking callers):
 
 | View | Columns |
 |------|---------|
-| `nodes` | `id, ulid, type, time, author, body, loc` |
+| `nodes` | `id, ulid, type, time, author, body, loc, title` |
 | `edges` | `src, rel, dst, dst_key, from_frag, to_frag` |
 | `node_props` | `id, key, value` |
 | `aliases` | `alias, id` |
@@ -34,6 +34,17 @@ private so storage can be refactored without breaking callers):
 `id` is the node's index identity: its inline **ULID** when present, else a
 surrogate `file:<relpath>`. Edge `dst` is the raw parser target (a ULID or alias,
 unresolved); `dst_key` is the resolved node id, or NULL = **dangling**.
+
+**`nodes.title`** is a derived column: the first line of `body` that is
+non-whitespace after `strings.TrimSpace` (skipping leading blank lines; `""`
+if none), computed in `insertNode` (`reconcile.go`) at reconcile/rebuild time
+— not stored inline, not a parser concern. It is uniform across every node
+`type` (todo, note, log-entry, …), which means it diverges from `note`'s
+explicit `props['title']` frontmatter label: a note's `nodes.title` is
+usually `""` (note bodies default empty) while its `props['title']` carries
+the author-set label. See `docs/design/composable-redesign.md` (`### Fields`,
+`body`/`props` rows) for the authored subject/body convention this column
+derives from.
 
 > **Full-text search (reckon-a4eh):** FTS5 `MATCH` needs the virtual table, not a
 > view, so the fts5 store is exposed directly as the public `fts_search` vtable —

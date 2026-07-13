@@ -466,9 +466,9 @@ Spec it once; the plumbing collapses into it.
 | `type` | inline + env | yes | string | node type — a *property*, never in the ULID |
 | `time` | inline + env | yes | RFC3339 | semantic timestamp (may differ from the ULID's mint time, e.g. backdated log) |
 | `author` | inline + env | yes³ | string | provenance — who wrote it (`mike` / agent persona / peer id). ³cheap; harmless solo, required once any agent/multi-writer rides the core. Added 2026-06-22 |
-| `body` | inline + env | yes | string | text content (markdown) |
+| `body` | inline + env | yes | string | text content (markdown). Convention (not parser-enforced): git-commit shape — first non-empty line is the subject/title, an optional blank line, then the remainder is the body. The **index** derives a `nodes.title` column from this downstream (see `internal/index/AGENTS.md`); `node.Parse` does not split subject from body |
 | `aliases` | inline + env | no | [string] | human handles resolving to this ULID; unique in the alias namespace; non-authoritative |
-| `props` | env (from inline fields) | no | object | per-type open bag (todo: `state`,`due`; note: `tags`,`title`; run: `items`). Core indexes generically, does not schematize |
+| `props` | env (from inline fields) | no | object | per-type open bag (todo: `state`,`due`; note: `tags`,`title`; run: `items`). Core indexes generically, does not schematize. `note`'s `props['title']` is an explicit, editable label, distinct from the derived `nodes.title` index column above — the two commonly diverge (a note's body-derived title is usually empty) |
 | `fragments` | inline markers + env | no | [{`id`,`anchor?`}] | node-local sub-anchors; `id` unique *within* node; emitted only when targeted |
 | `links` | env (from body + ref-props) | no | [{`rel`,`to`,`from_frag?`,`to_frag?`}] | forward typed edges; `to` = ULID or alias (resolved later) |
 | `loc` | **env only** | yes² | {`file`,…} | source file; parser-derived; not authored inline. ²required in the envelope |
