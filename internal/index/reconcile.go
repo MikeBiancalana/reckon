@@ -267,10 +267,11 @@ func nodeKey(n *node.Node, rel string, seen map[string]int) string {
 }
 
 func insertNode(tx *sql.Tx, key string, n *node.Node, rel, hash string, mtime int64) error {
+	title := deriveTitle(n.Body)
 	if _, err := tx.Exec(
-		`INSERT OR REPLACE INTO _nodes(node_key,ulid,type,time,author,body,loc_file,hash,mtime)
-		 VALUES(?,?,?,?,?,?,?,?,?)`,
-		key, n.ULID, n.Type, n.Time, n.Author, n.Body, rel, hash, mtime); err != nil {
+		`INSERT OR REPLACE INTO _nodes(node_key,ulid,type,time,author,body,title,loc_file,hash,mtime)
+		 VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		key, n.ULID, n.Type, n.Time, n.Author, n.Body, title, rel, hash, mtime); err != nil {
 		return fmt.Errorf("index: insert node %q: %w", key, err)
 	}
 	for k, v := range n.Props {
