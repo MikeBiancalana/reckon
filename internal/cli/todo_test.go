@@ -44,6 +44,7 @@
 //	    Deadline  string `json:"deadline,omitempty"`    // durable only
 //	    Depends   string `json:"depends,omitempty"`     // durable only
 //	    Body      string `json:"body"`                  // node body (durable) / checkbox text (ephemeral)
+//	    Title     string `json:"title,omitempty"`       // durable only: derived first non-empty body line (reckon-fnqs.3)
 //	}
 //
 //	// todoListResult wraps `rk todo list`'s items so --json emits a single
@@ -707,6 +708,147 @@ func TestTodoList_EphemeralIndexAndChecked(t *testing.T) {
 	}
 	if !strings.Contains(byLine[3].Body, "third item") || byLine[3].Checked {
 		t.Errorf("index 3 = %+v, want unchecked 'third item'", byLine[3])
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// reckon-fnqs.3 — subject/body node convention: `rk todo list` renders only
+// the derived title (not the full body) in pretty mode, while --json carries
+// both title and body. writeTodoFixture is defined in today_test.go (same
+// package) and used here unmodified for its byte-exact fixture-writing shape.
+//
+// RED-state note: TestTodoList_JSON_TitleAndBody decodes into a local
+// map[string]any (not the pinned todoListItem struct) specifically so this
+// file keeps compiling before todo.go gains a Title field -- referencing
+// `it.Title` directly would fail to compile until Phase 4, taking the whole
+// cli package down with it. Decoding generically localizes the red state to
+// a runtime assertion failure (missing "title" key today), matching this
+// ticket's "tests must compile but must fail" rule.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoList_Pretty_RendersTitleOnly (AC4): a durable todo with a 5-line
+// body renders only its first line ("Ship it.") in pretty `rk todo list`
+// output -- not the rest of the body. RED today: todoListResult.Pretty()
+// (todo.go:196) still interpolates it.Body in full.
+func TestTodoList_Pretty_RendersTitleOnly(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	id := node.Mint()
+	writeTodoFixture(t, vault, id, "open", "", "Ship it.\n\nline2\nline3\nline4\n")
+
+	out, stderr, err := runTodo(t, vault, "list")
+	if err != nil {
+		t.Fatalf("rk todo list: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(out, "Ship it.") {
+		t.Errorf("pretty output missing title %q: %q", "Ship it.", out)
+	}
+	for _, unwanted := range []string{"line2", "line3", "line4"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("pretty output leaked body line %q, want title-only rendering: %q", unwanted, out)
+		}
+	}
+}
+
+// TestTodoList_JSON_TitleAndBody (AC7): `rk todo list --json` carries BOTH
+// the derived title and the full multi-line body on the same item -- title
+// is additive, not a body replacement. RED today: no "title" key exists in
+// the JSON output at all, so the decoded title is always "".
+func TestTodoList_JSON_TitleAndBody(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	id := node.Mint()
+	writeTodoFixture(t, vault, id, "open", "", "Ship it.\n\nline2\nline3\nline4\n")
+
+	out, stderr, err := runTodo(t, vault, "list", "--json")
+	if err != nil {
+		t.Fatalf("rk todo list --json: %v\nstderr: %s", err, stderr)
+	}
+
+	var res struct {
+		Items []map[string]any `json:"items"`
+	}
+	mustDecodeJSON(t, out, &res)
+
+	var found map[string]any
+	for _, it := range res.Items {
+		if it["id"] == id {
+			found = it
+		}
+	}
+	if found == nil {
+		t.Fatalf("item %q missing from list JSON: %v", id, res.Items)
+	}
+	if title, _ := found["title"].(string); title != "Ship it." {
+		t.Errorf("title = %v, want %q (item=%v)", found["title"], "Ship it.", found)
+	}
+	body, _ := found["body"].(string)
+	for _, want := range []string{"Ship it.", "line2", "line3", "line4"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q, got %q", want, body)
+		}
+	}
+}
+
+// TestTodoList_Ephemeral_Unaffected: ephemeral checklist rows render exactly
+// as before -- no Title-specific behavior is expected/asserted for
+// Kind=="ephemeral" (each item's text is already inherently single-line).
+// This is a regression guard, not a red-state test: it is expected to PASS
+// both before and after implementation (mirrors TestTodoRoundTrip_RenderStability's
+// legitimate-pass-in-red-state precedent in this file).
+func TestTodoList_Ephemeral_Unaffected(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	writeEphemeralContainer(t, vault, node.Mint(),
+		checklistLine(false, "call dentist"),
+	)
+
+	out, stderr, err := runTodo(t, vault, "list", "--json")
+	if err != nil {
+		t.Fatalf("rk todo list --json: %v\nstderr: %s", err, stderr)
+	}
+	var res todoListResult
+	mustDecodeJSON(t, out, &res)
+
+	found := false
+	for _, it := range res.Items {
+		if it.Kind == "ephemeral" && strings.Contains(it.Body, "call dentist") {
+			found = true
+			if it.Checked {
+				t.Errorf("ephemeral item unexpectedly checked: %+v", it)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("ephemeral item missing from list: %+v", res.Items)
+	}
+}
+
+// TestTodoList_MultiLineBody_RoundTripByteIdentical (AC8b): a multi-line-body
+// todo's file bytes are unchanged after the reconcile `rk todo list` triggers
+// -- round-trip byte-identity is a structural guarantee of node.Parse/Serialize
+// being untouched by this ticket, not new behavior. Mirrors
+// TestTodoDone_DurableBytePreservation's byte-comparison style. This is a
+// regression/confirmation guard expected to PASS both before and after
+// implementation (AC8b: "fails only if some part of this change is wired
+// through Render/SetField or otherwise touches Raw, which it should not").
+func TestTodoList_MultiLineBody_RoundTripByteIdentical(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	id := node.Mint()
+	path, src := writeTodoFixture(t, vault, id, "open", "", "Ship it.\n\nline2\nline3\nline4\n")
+
+	if _, stderr, err := runTodo(t, vault, "list"); err != nil {
+		t.Fatalf("rk todo list: %v\nstderr: %s", err, stderr)
+	}
+
+	got := mustReadFile(t, path)
+	if got != src {
+		t.Fatalf("todo file bytes changed by rk todo list (reconcile)\n--- want ---\n%q\n--- got ---\n%q", src, got)
 	}
 }
 

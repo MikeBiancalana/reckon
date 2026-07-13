@@ -1,0 +1,28 @@
+{
+  "ticket_id": "reckon-fnqs.3",
+  "phase": "test_writer",
+  "worktree": ".worktrees/reckon-fnqs.3",
+  "subsystem": "index,cli",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 1,
+    "implementer": 0,
+    "preflight": 0,
+    "reviewer": 0
+  },
+  "new_test_names": [
+    "TestDeriveTitle",
+    "TestReconcilePopulatesTitle",
+    "TestTodoList_Pretty_RendersTitleOnly",
+    "TestTodoList_JSON_TitleAndBody",
+    "TestTodoList_Ephemeral_Unaffected",
+    "TestTodoList_MultiLineBody_RoundTripByteIdentical",
+    "TestToday_Pretty_RendersTitleOnly",
+    "TestToday_JSON_TitleAndBody",
+    "TestQuery_SelectTitle_NoStringSurgery",
+    "TestQuery_Raw_IdAndTitle"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": null,
+  "status": "in_progress"
+}

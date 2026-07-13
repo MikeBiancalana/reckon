@@ -177,7 +177,7 @@ func dumpAll(t *testing.T, ix *Index) string {
 			lines = append(lines, fmt.Sprintf("%v", vals))
 		}
 	}
-	add("SELECT id,ulid,type,time,author,body,loc FROM nodes")
+	add("SELECT id,ulid,type,time,author,body,loc,title FROM nodes")
 	add("SELECT src,rel,dst,dst_key,from_frag,to_frag FROM edges")
 	add("SELECT id,key,value FROM node_props")
 	add("SELECT alias,id FROM aliases")
@@ -208,6 +208,36 @@ func TestRebuildDeterministic(t *testing.T) {
 	d2 := dumpAll(t, ix)
 	if d1 != d2 {
 		t.Errorf("rebuild not deterministic:\n--- first ---\n%s\n--- second ---\n%s", d1, d2)
+	}
+}
+
+// TestReconcilePopulatesTitle covers AC2 (reckon-fnqs.3): the nodes.title
+// column must be populated at reconcile/rebuild time (insertNode) from each
+// node's first non-empty body line. A passing TestDeriveTitle (title_test.go)
+// only proves the derivation function is correct in isolation; this is the
+// integration assertion that it is actually wired into the index write path.
+func TestReconcilePopulatesTitle(t *testing.T) {
+	cfg, vault := testVault(t)
+	id := node.Mint()
+	body := "Ship it.\n\nline2\nline3\nline4\n"
+	src := "---\nid: " + id + "\ntype: todo\nstate: open\n---\n" + body
+	writeFile(t, vault, "todos/"+id+".md", src)
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+	if _, err := ix.Rebuild(); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	var title string
+	if err := ix.DB().QueryRow("SELECT title FROM nodes WHERE id=?", id).Scan(&title); err != nil {
+		t.Fatalf("scan title: %v", err)
+	}
+	if title != "Ship it." {
+		t.Errorf("title = %q, want %q", title, "Ship it.")
 	}
 }
 
