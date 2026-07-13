@@ -7,8 +7,8 @@ package index
 //
 // v2 (reckon-a4eh): the FTS5 store was promoted from the private `_fts` table to
 // the public, MATCH-capable `fts_search` vtable.
-// v3 (reckon-fnqs.3): added the derived `_nodes.title` column (first non-empty
-// body line, computed in insertNode).
+// v3: added the derived `_nodes.title` column (first non-empty body line,
+// computed in insertNode).
 const SchemaVersion = 3
 
 // BuilderVersion identifies the code that built the index (display/debounce only,
