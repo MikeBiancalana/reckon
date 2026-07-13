@@ -170,6 +170,7 @@ type todoListItem struct {
 	Depends   string `json:"depends,omitempty"`   // durable only
 	Repeat    string `json:"repeat,omitempty"`    // durable only: repeater cookie, sourced from props["repeat"]
 	Body      string `json:"body"`                // node body (durable) / checkbox text (ephemeral)
+	Title     string `json:"title,omitempty"`     // durable only: derived first non-empty body line
 }
 
 // todoListResult wraps `rk todo list`'s items so --json emits a single object
@@ -193,7 +194,7 @@ func (r todoListResult) Pretty() string {
 			fmt.Fprintf(&b, "\n  [%s] %d. %s", mark, it.Line, it.Body)
 			continue
 		}
-		fmt.Fprintf(&b, "\n  %s [%s] %s", it.ID, it.State, it.Body)
+		fmt.Fprintf(&b, "\n  %s [%s] %s", it.ID, it.State, it.Title)
 	}
 	return b.String()
 }
@@ -485,15 +486,15 @@ func runTodoListE(cmd *cobra.Command, args []string) error {
 // per-row loadTodoProps queries below -- a defer would hold this cursor open
 // across those nested queries on the same *sql.DB.
 func listDurableTodos(db *sql.DB, all bool, stateFilter string) ([]todoListItem, error) {
-	rows, err := db.Query("SELECT id, body FROM nodes WHERE type = 'todo'")
+	rows, err := db.Query("SELECT id, body, title FROM nodes WHERE type = 'todo'")
 	if err != nil {
 		return nil, fmt.Errorf("todo list: query durable nodes: %w", err)
 	}
-	type row struct{ id, body string }
+	type row struct{ id, body, title string }
 	var candidates []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.body); err != nil {
+		if err := rows.Scan(&r.id, &r.body, &r.title); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("todo list: scan durable node: %w", err)
 		}
@@ -533,6 +534,7 @@ func listDurableTodos(db *sql.DB, all bool, stateFilter string) ([]todoListItem,
 			Depends:   depends,
 			Repeat:    props["repeat"],
 			Body:      strings.TrimSpace(r.body),
+			Title:     r.title,
 		})
 	}
 	return items, nil
