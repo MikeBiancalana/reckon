@@ -11,14 +11,13 @@ import (
 )
 
 // indexCmd builds/rebuilds the per-device property-graph index from the vault.
-// It is requiresDB=false: the index is its own SQLite store in the cache dir,
-// independent of the legacy operational database.
+// The index is its own SQLite store in the cache dir, independent of the
+// legacy operational database.
 var indexCmd = &cobra.Command{
 	Use:   "index",
 	Short: "Build or rebuild the vault index",
 	Long: "Rebuild the per-device property-graph index cache from the vault text. " +
 		"The index is derived and disposable; this performs a full, deterministic rebuild.",
-	Annotations: map[string]string{"requiresDB": "false"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
 		if err != nil {

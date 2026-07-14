@@ -24,7 +24,6 @@ var importCmd = &cobra.Command{
 		"checklists/, and log/. Each migrated node's old id becomes an alias, so " +
 		"pre-migration references keep resolving through the index. Re-running is " +
 		"idempotent: a source record already migrated is skipped, not duplicated.",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
 	RunE:         runImportE,

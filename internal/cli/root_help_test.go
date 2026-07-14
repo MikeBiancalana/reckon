@@ -9,14 +9,12 @@ import (
 )
 
 // TestRootHelp_ListsSubcommands (T-1 / AC-1): rk --help must exit 0, print
-// "Usage:", and list at minimum the planned v1 stub subcommand verbs.
+// "Usage:", and list the surviving v1 subcommand verbs.
 //
 // Superseded by TestRootCommandSurface for absence checks: this test only
 // asserts presence via substring match, which cannot express "verb X is
 // gone" (dying verb names survive as substrings of surviving flags/help
-// text — see TestRootCommandSurface). Once the v0 verb surface is deleted,
-// update or remove this test rather than trying to extend it with negative
-// assertions.
+// text — see TestRootCommandSurface).
 //
 // NOTE: RootCmd is a package-level global; each test restores SetArgs/SetOut/SetErr
 // in a t.Cleanup to prevent cross-test leakage.
@@ -40,8 +38,8 @@ func TestRootHelp_ListsSubcommands(t *testing.T) {
 	if !strings.Contains(out, "Usage:") {
 		t.Errorf("--help output does not contain 'Usage:'\noutput:\n%s", out)
 	}
-	// AC-1: all planned v1 stub subcommand verbs must appear in the help output.
-	for _, verb := range []string{"add", "log", "todo", "note", "query", "today", "index"} {
+	// AC-1: all surviving v1 subcommand verbs must appear in the help output.
+	for _, verb := range []string{"add", "adopt", "import", "index", "note", "query", "today", "todo"} {
 		if !strings.Contains(out, verb) {
 			t.Errorf("--help output missing verb %q\noutput:\n%s", verb, out)
 		}

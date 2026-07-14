@@ -79,7 +79,6 @@ func validateStage(stage string) error {
 var noteCreateCmd = &cobra.Command{
 	Use:          "create <title>",
 	Short:        "Create a new note (notes/<slug>.md)",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.MinimumNArgs(1),
 	RunE:         runNoteCreateE,
@@ -88,7 +87,6 @@ var noteCreateCmd = &cobra.Command{
 var noteShowCmd = &cobra.Command{
 	Use:          "show <ref>",
 	Short:        "Show a note's fields, forward links, and backlinks",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ExactArgs(1),
 	RunE:         runNoteShowE,
@@ -103,7 +101,6 @@ The note's aliases are rewritten to one canonical flow line (aliases: [a, b]).
 Known limitation: an alias containing a literal comma (e.g. an Obsidian
 block-list item "- Doe, Jane") is parsed by reckon as two aliases and is
 persisted that way on rename (see internal/node/AGENTS.md).`,
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ExactArgs(2),
 	RunE:         runNoteRenameE,
@@ -118,7 +115,6 @@ Generated files are tool-owned: they start with a marker comment, are
 overwritten on every run, and are removed when their directory no longer
 contains notes. A hand-authored index.md (no marker) is never touched --
 it is skipped with a warning.`,
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
 	RunE:         runNoteIndexE,

@@ -17,10 +17,10 @@ import (
 
 // adoptCmd stamps a freshly minted ULID into id-less markdown files. It is a
 // pure filesystem operation on truth files: it never opens, reads, or writes
-// the SQLite index (Annotations requiresDB=false) — the index picks up an
-// adopted file's new id through its own normal reconcile/rebuild pass, same
-// as any other file edit. See docs/design/composable-redesign.md invariant
-// #7 for the policy this command implements.
+// the SQLite index — the index picks up an adopted file's new id through its
+// own normal reconcile/rebuild pass, same as any other file edit. See
+// docs/design/composable-redesign.md invariant #7 for the policy this
+// command implements.
 var adoptCmd = &cobra.Command{
 	Use:   "adopt <path...>",
 	Short: "Stamp a minted ULID into id-less markdown files",
@@ -29,7 +29,6 @@ var adoptCmd = &cobra.Command{
 		"other byte of the file is preserved exactly). Files that already have an " +
 		"`id:` are left untouched (idempotent no-op). Paths must be inside the vault " +
 		"root. This command never touches the index.",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.MinimumNArgs(1),
 	RunE:         runAdoptE,

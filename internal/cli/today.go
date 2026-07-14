@@ -53,7 +53,6 @@ var todayCmd = &cobra.Command{
 	Use:          "today",
 	Short:        "Show today's agenda (overdue + scheduled-today + today-pinned)",
 	Long:         "Live org-agenda over the vault index: overdue, scheduled-today, and today-pinned native todos, plus stubbed external work-ticket rows.",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
 	RunE:         runTodayE,
@@ -65,7 +64,6 @@ var todayActCmd = &cobra.Command{
 	Long: "Split-actuator dispatch for one agenda row: native (type todo) rows are " +
 		"mutated span-locally; external (type work-ticket) rows are rejected " +
 		"read-only (use `rk today open`).",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.RangeArgs(2, 3),
 	RunE:         runTodayActE,
@@ -74,7 +72,6 @@ var todayActCmd = &cobra.Command{
 var todayOpenCmd = &cobra.Command{
 	Use:          "open <ref>",
 	Short:        "Print the source-url of an external (work-ticket) agenda row",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ExactArgs(1),
 	RunE:         runTodayOpenE,

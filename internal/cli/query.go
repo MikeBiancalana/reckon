@@ -33,7 +33,7 @@ var (
 // queryCmd is the read-only retrieval surface: it runs a single SELECT against
 // the T2 index's stable views and emits canonical-node NDJSON (default) or raw
 // result rows (--raw). It opens the index database read-only and never touches
-// the legacy operational database (requiresDB=false).
+// the legacy operational database.
 var queryCmd = &cobra.Command{
 	Use:   "query [SQL]",
 	Short: "Query the vault index (read-only SQL over stable views)",
@@ -45,7 +45,6 @@ var queryCmd = &cobra.Command{
 		"  rk query \"SELECT id FROM fts_search WHERE fts_search MATCH 'hello'\"\n" +
 		"Rank results with ORDER BY bm25(fts_search). The fts view exposes the same " +
 		"columns (id, body) for plain scans but does not support MATCH.",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ArbitraryArgs,
 	RunE:         runQueryE,
