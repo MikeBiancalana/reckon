@@ -27,6 +27,8 @@ Not run by a bare `go test ./...` (build-tagged, same pattern as the
 | `TestNote_RenameRetainsRedirect` | alias-redirect contract: old slug keeps resolving after rename |
 | `TestNote_IndexDeterministicAndOwnershipSafe` | generated `index.md`: marker, byte-determinism across runs, hand-authored files never touched |
 | `TestQuery_CrossTypeGraphReadOnly` | one graph across log/todo/note types; non-SELECT rejected |
+| `TestToday_AgendaSurfacesActionableOnly` | T7 agenda: overdue + scheduled-today in; future, unscheduled, done out |
+| `TestToday_ActCompletesInPlace` | agenda as actuator: `act <ref> x` closes in place + writes the `did::` audit entry; item leaves the agenda |
 | `TestDailyDriver_EndToEnd` | the composed day: capture → todo → note linking the todo by ULID → done → cross-type edge queryable → day file tells the story |
 
 ## Extending
@@ -38,7 +40,8 @@ links working"), runs only the public binary, and asserts on file bytes or
 
 Known gaps (add as the features land or stabilize):
 
-- `rk today` agenda (v1-T7) — surface + split-actuator behavior.
+- `rk today` external work-ticket rows (read-only + `open` jump) once a feed exists.
+- `rk import` legacy migration (T9) against a real gen-1 fixture.
 - Checklist template → run materialization.
 - `rk adopt` on hand-authored/Obsidian files.
 - Concurrent capture (parallel `rk add` writers, `merge=union` behavior).

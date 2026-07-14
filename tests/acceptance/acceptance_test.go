@@ -406,6 +406,56 @@ func TestQuery_CrossTypeGraphReadOnly(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Today — the agenda surface (v1-T7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The agenda surfaces exactly the actionable set — overdue and scheduled-today
+// — and excludes future, unscheduled, and already-done todos.
+func TestToday_AgendaSurfacesActionableOnly(t *testing.T) {
+	t.Parallel()
+	v := newVault(t)
+
+	overdue := str(v.runJSON(t, "todo", "add", "Overdue item", "--scheduled", "2026-01-02"), "id")
+	todayItem := str(v.runJSON(t, "todo", "add", "Today item", "--scheduled", today()), "id")
+	future := str(v.runJSON(t, "todo", "add", "Future item", "--scheduled", "2030-01-01"), "id")
+	unscheduled := str(v.runJSON(t, "todo", "add", "Unscheduled item"), "id")
+	doneToday := str(v.runJSON(t, "todo", "add", "Done item", "--scheduled", today()), "id")
+	v.run(t, "todo", "done", doneToday, "-q")
+
+	out := v.run(t, "today", "--json")
+	for id, want := range map[string]bool{
+		overdue: true, todayItem: true,
+		future: false, unscheduled: false, doneToday: false,
+	} {
+		if got := strings.Contains(out, id); got != want {
+			t.Errorf("today agenda contains %s = %v, want %v:\n%s", id, got, want, out)
+		}
+	}
+}
+
+// The agenda is an actuator for native todos: `rk today act <ref> x` completes
+// the todo in place and (by default) writes the did:: audit entry — the same
+// complete→log loop as `rk todo done`, driven from the agenda surface.
+func TestToday_ActCompletesInPlace(t *testing.T) {
+	t.Parallel()
+	v := newVault(t)
+
+	id := str(v.runJSON(t, "todo", "add", "Actuate me", "--scheduled", today()), "id")
+	v.run(t, "today", "act", id, "x", "-q")
+
+	file := v.readFile(t, "todos/"+id+".md")
+	if !strings.Contains(file, "state: done") {
+		t.Errorf("today act x did not close the todo in place:\n%s", file)
+	}
+	if day := v.readFile(t, "log/"+today()+".md"); !strings.Contains(day, "did:: "+id) {
+		t.Errorf("today act x wrote no did:: audit entry for %s:\n%s", id, day)
+	}
+	if out := v.run(t, "today", "--json"); strings.Contains(out, id) {
+		t.Errorf("completed todo still on the agenda:\n%s", out)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The daily driver — one vault, one day, every pillar
 // ─────────────────────────────────────────────────────────────────────────────
 
