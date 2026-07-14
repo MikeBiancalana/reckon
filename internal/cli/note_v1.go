@@ -18,10 +18,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// v1-T8 (reckon-ih5g): rk note create/show/rename/index, attached to the
-// existing legacy noteCmd (note.go, "new"/"list") as new subcommands. See
-// ticket-work/reckon-ih5g/plan.md for the full design. The legacy `rk notes`
-// (plural) DB-backed surface is untouched pending T9.
+// rk note create/show/rename/index — attached to noteCmd (note.go) as its
+// only children.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Flag variables (package-global so cobra can bind them; each subcommand's
