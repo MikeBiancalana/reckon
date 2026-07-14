@@ -4,6 +4,15 @@
 
 ## Review Verdict: APPROVE WITH CHANGES (comment-fix applied post-review)
 
+## Post-review scope revision
+Ticket author clarified at the PR gate that title derivation should be
+todo-only, not "any node" as originally written (note already has
+`props['title']`; a future checklist/run type should use a frontmatter
+prop too). Amended: `internal/index/reconcile.go` gates `deriveTitle` on
+`n.Type == "todo"`; added `TestReconcileTitleTodoOnly` as the negative-case
+regression; docs (composable-redesign.md, index/AGENTS.md, node/AGENTS.md,
+root AGENTS.md) updated to match. See plan.md's "Amendment" section.
+
 ## Changed Files:
 AGENTS.md
 docs/design/composable-redesign.md
@@ -27,6 +36,8 @@ ticket-work/reckon-fnqs.3/review.md
 ticket-work/reckon-fnqs.3/state.json
 
 ## Commits:
+fa7accc fix: scope title derivation to type=todo only
+9bfd22c docs: Add summary for reckon-fnqs.3
 f598436 fix: correct stale 'durable only' comment on agendaItem.Title
 9de336b docs: Add preflight report for reckon-fnqs.3
 be66282 fix: drop ticket ID from schema.go version-history comment
