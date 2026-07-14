@@ -4,10 +4,19 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // TestRootHelp_ListsSubcommands (T-1 / AC-1): rk --help must exit 0, print
 // "Usage:", and list at minimum the planned v1 stub subcommand verbs.
+//
+// Superseded by TestRootCommandSurface for absence checks: this test only
+// asserts presence via substring match, which cannot express "verb X is
+// gone" (dying verb names survive as substrings of surviving flags/help
+// text — see TestRootCommandSurface). Once the v0 verb surface is deleted,
+// update or remove this test rather than trying to extend it with negative
+// assertions.
 //
 // NOTE: RootCmd is a package-level global; each test restores SetArgs/SetOut/SetErr
 // in a t.Cleanup to prevent cross-test leakage.
@@ -81,5 +90,75 @@ func TestRootHelp_MissingVaultOK(t *testing.T) {
 	err := RootCmd.Execute()
 	if err != nil {
 		t.Fatalf("--help with missing vault: expected nil error, got: %v", err)
+	}
+}
+
+// TestRootCommandSurface asserts the v0 DB-primary verb surface is retired.
+// Assert over RootCmd.Commands() *names*, not rendered help text —
+// dying verb names occur as substrings of surviving output (e.g. "log" in
+// the --log-file/--log-level flags, "task" in RootCmd.Long, "notes" in
+// noteCmd's Short/Long), so a substring-match assertion of absence would
+// false-fail forever. Do not call RootCmd.Execute() here: cobra lazily
+// registers help/completion inside Execute(), and RootCmd is a package-level
+// global shared across this test binary, so an exact-set snapshot would be
+// order-dependent on whichever tests already ran. Two-directional
+// containment sidesteps both problems and needs no total-count assertion.
+func TestRootCommandSurface(t *testing.T) {
+	names := make(map[string]bool)
+	for _, cmd := range RootCmd.Commands() {
+		names[cmd.Name()] = true
+	}
+
+	survivors := []string{"add", "adopt", "import", "index", "note", "query", "today", "todo"}
+	for _, verb := range survivors {
+		if !names[verb] {
+			t.Errorf("expected verb %q to be registered", verb)
+		}
+	}
+
+	dying := []string{
+		"log", "notes", "week", "rebuild", "review", "schedule", "task",
+		"win", "checklist", "tui", "migrate", "summary",
+	}
+	for _, verb := range dying {
+		if names[verb] {
+			t.Errorf("dying verb %q is still registered", verb)
+		}
+	}
+}
+
+// TestNoteSubcommandSurface asserts rk note keeps only its v1 children.
+// Same reasoning as TestRootCommandSurface — assert over noteCmd.Commands()
+// names, not "rk note --help" text, since "notes"/"new"/"list" can appear
+// as substrings of legitimate Short/Long descriptions.
+func TestNoteSubcommandSurface(t *testing.T) {
+	var noteCommand *cobra.Command
+	for _, cmd := range RootCmd.Commands() {
+		if cmd.Name() == "note" {
+			noteCommand = cmd
+			break
+		}
+	}
+	if noteCommand == nil {
+		t.Fatal("note command not found on RootCmd")
+	}
+
+	names := make(map[string]bool)
+	for _, cmd := range noteCommand.Commands() {
+		names[cmd.Name()] = true
+	}
+
+	survivors := []string{"create", "show", "rename", "index"}
+	for _, verb := range survivors {
+		if !names[verb] {
+			t.Errorf("expected note subcommand %q to be registered", verb)
+		}
+	}
+
+	dying := []string{"new", "list"}
+	for _, verb := range dying {
+		if names[verb] {
+			t.Errorf("dying note subcommand %q is still registered", verb)
+		}
 	}
 }
