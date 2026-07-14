@@ -7,7 +7,7 @@ user-invocable: true
 
 # Work Ticket Pipeline
 
-Implements a beads ticket end-to-end: claim → worktree → parallel analysis → TDD loop → preflight → review → PR ready.
+Implements a beads ticket end-to-end: claim → worktree → parallel analysis → TDD loop → simplify → preflight → review → PR ready.
 
 **Replaces:** `.opencode/command/work-ticket.md` and `.opencode/command/work-ticket-pipeline.md`
 
@@ -38,10 +38,11 @@ Phase 1: ┌─ Codebase analysis agent ─┐  (PARALLEL)
 Phase 2: Planning (Opus 4.6) — consumes Phase 1 outputs
 Phase 3: Test writing (Sonnet 4.6) — failing tests, TDD red state
 Phase 4: TDD implementation loop (Sonnet 4.6) — max 10 iterations, stall detection
-Phase 5: Preflight (Haiku 4.5) — go fmt, go vet, go test, pattern checks
-Phase 6: Code review (Opus 4.6) — max 2 feedback loops
-Phase 7: Feedback loop — pattern extraction, guide updates
-Phase 8: Dry-run gate — summary + PR creation (user approves push)
+Phase 5: Simplify (Sonnet 4.6) — cut comment verbosity + complexity, best-effort
+Phase 6: Preflight (Haiku 4.5) — go fmt, go vet, go test, pattern checks
+Phase 7: Code review (Opus 4.6) — max 2 feedback loops
+Phase 8: Feedback loop — pattern extraction, guide updates
+Phase 9: Dry-run gate — summary + PR creation (user approves push)
 ```
 
 ### Model Stratification
@@ -52,6 +53,7 @@ Phase 8: Dry-run gate — summary + PR creation (user approves push)
 | Planning | Opus 4.6 | Architecture decisions |
 | Test writing | Sonnet 4.6 | Code generation |
 | Implementation | Sonnet 4.6 | Code generation |
+| Simplify | Sonnet 4.6 | Quality-only cleanup, no bug hunt |
 | Preflight | Haiku 4.5 | Mechanical checks, 10-20x cheaper |
 | Code review | Opus 4.6 | Subtle bug detection |
 
@@ -60,7 +62,7 @@ Phase 8: Dry-run gate — summary + PR creation (user approves push)
 Sub-agents inherit none of the parent session's style hooks (caveman etc.) —
 the prompt the orchestrator composes is the only style channel. Include this
 block in EVERY sub-agent prompt (analysis, AC, planner, test-writer,
-implementer, preflight, reviewer):
+implementer, simplify, preflight, reviewer):
 
 > **Output style.**
 > - State decisions and facts, not your exploration journey ("I looked at X,
@@ -331,7 +333,64 @@ git commit -m "feat: Implement <feature> for <ticket-id>"
 
 ---
 
-## Phase 5: Preflight (Haiku 4.5)
+## Phase 5: Simplify (Sonnet 4.6)
+
+Best-effort quality pass on the Phase 4 diff before Preflight/Review see it —
+review should judge the shape the code ships in, not the shape the TDD loop
+happened to leave it in mid-iteration.
+
+Use Task tool with `subagent_type="general-purpose"`, model=sonnet:
+
+```
+Context: Read:
+- ticket-work/<ticket-id>/plan.md
+- git diff origin/main (the implementation just written in Phase 4)
+- internal/<subsystem>/AGENTS.md
+
+Review the changed code (not the whole codebase) for:
+- Reuse: duplicated logic that should call an existing helper, or a new
+  helper worth extracting when the same shape appears 3+ times.
+- Simplification: unnecessary abstraction, dead branches, over-parameterized
+  functions for a single call site, premature interfaces.
+- Efficiency: obviously wasteful allocations/loops introduced by the TDD
+  loop's incremental patches -- not micro-optimization, only what's cheap
+  and clearly better.
+- Comment verbosity: comments restating what the code already says, stale
+  comments left over from earlier iterations, comments narrating the TDD
+  process itself. Delete these -- they're exploration residue, not
+  documentation.
+- Architecture altitude: did an iteration bolt something onto the wrong
+  file/package under time pressure; does it belong one layer up or down.
+
+Apply fixes directly. Quality only -- do NOT hunt for correctness bugs (Phase
+7/Review's job) and do NOT change test-observable behavior. Do NOT modify
+test files.
+
+After every edit, run:
+  go build ./... && go test ./...
+If a simplification changes test output, revert that specific change --
+this phase must be a no-op on behavior.
+```
+
+**Validation:** `go test ./...` exits 0 with the same set of passing tests as
+immediately after Phase 4 (no regressions, no accidental deletions).
+
+**Commit (only if something changed):**
+```bash
+cd .worktrees/<ticket-id>
+if ! git diff --quiet; then
+  git add -A
+  git commit -m "refactor: Simplify implementation for <ticket-id>"
+fi
+```
+
+**On test regression:** Revert the offending change, confirm back to green,
+and proceed without it. This phase is optional polish, not gated -- do not
+retry from scratch, do not escalate, do not block the pipeline on it.
+
+---
+
+## Phase 6: Preflight (Haiku 4.5)
 
 Use Task tool with `subagent_type="general-purpose"`, model=haiku:
 
@@ -381,11 +440,12 @@ and resource lifetime, and Haiku is the least-capable model in the pipeline.
 `go fmt` is the only auto-applied fix (it's a deterministic tool, not
 codegen). Anything else routes back to Phase 4 (Sonnet, single iteration),
 matching `docs/agents/preflight.md`'s existing Handoff section. Re-run
-preflight after the fix. Max 2 fix cycles, then escalate.
+Simplify (Phase 5) then Preflight after the fix. Max 2 fix cycles, then
+escalate.
 
 ---
 
-## Phase 6: Code Review (Opus 4.6)
+## Phase 7: Code Review (Opus 4.6)
 
 Use Task tool with `subagent_type="code-reviewer"`, model=opus:
 
@@ -407,14 +467,14 @@ Verdict must be one of: APPROVE / APPROVE WITH CHANGES / REQUEST CHANGES
 **On REQUEST CHANGES:**
 1. Extract required changes from review.md
 2. Return to implementation (Phase 4 — single iteration, not full loop)
-3. Re-run preflight + review
+3. Re-run Simplify (Phase 5) + Preflight (Phase 6) + Review
 4. Max 2 feedback loops, then escalate
 
-**On APPROVE or APPROVE WITH CHANGES:** Proceed to Phase 7.
+**On APPROVE or APPROVE WITH CHANGES:** Proceed to Phase 8.
 
 ---
 
-## Phase 7: Feedback Loop
+## Phase 8: Feedback Loop
 
 Extract patterns from this review to improve future work.
 
@@ -446,6 +506,20 @@ This fixed 5-string vocabulary is a curated list, not a general-purpose
 pattern miner -- a novel recurring issue never enters this loop no matter how
 often it recurs. That's a known, accepted scope limit for this mechanism, not
 a bug to fix here.
+
+**Known limitation (tracked, not yet fixed — reckon-g96t):** the `sed -n
+'/## Functional Review/,/## Design Review/p'` range above has never matched
+this repo's actual reviewer output. Every `review.md` on disk uses
+per-dimension headers instead (`## Correctness`, `## Architecture`, `##
+Testing`, ... or a numbered `### N. Dimension — VERDICT` variant), never a
+literal `## Functional Review` or `## Design Review` heading. Verified
+2026-07-13 against all 12 `ticket-work/*/review.md` files present at the
+time: zero matches on any of the 5 tracked patterns, on any ticket, ever.
+This is distinct from reckon-scx7 (closed, PR #143), which fixed the
+negation-false-positive / monotonic-ratchet / dedup problems in the counting
+logic but did not touch the sed range. Until reckon-g96t lands, treat this
+phase's pattern-frequency output as always-empty and do not infer "no
+recurring patterns" from a zero count.
 
 **Update actions (based on frequency thresholds):**
 - 1-2 occurrences: Document in `docs/REVIEW_PATTERNS.md`
@@ -485,7 +559,7 @@ EOF
 
 ---
 
-## Phase 8: Dry-Run Gate (STOP BEFORE PUSH)
+## Phase 9: Dry-Run Gate (STOP BEFORE PUSH)
 
 **Always pause here — even in headless mode.**
 
@@ -539,7 +613,7 @@ EOF
 **If user confirms push:**
 
 `gh pr create --fill` derives the title/body from git commit metadata. On any
-branch with more than one commit (every ticket branch, since Phase 2/3/4/6/7
+branch with more than one commit (every ticket branch, since Phase 2/3/4/5/6
 each commit separately), `--fill` does NOT synthesize a summary -- it sets the
 title to the branch name (dashes turned to spaces, e.g. "reckon qiua") and the
 body to a bare bullet list of every commit subject line. That is a real,
@@ -598,6 +672,7 @@ echo "  bd close <ticket-id>"
 | Test writer | 2 | Escalate to user |
 | Implementer | 10 iterations | Escalate to user |
 | Stall detection | 3 identical outputs | Escalate immediately |
+| Simplify | N/A (best-effort) | Skip; never escalate, never blocks |
 | Preflight | 2 fix cycles | Escalate to user |
 | Reviewer | 2 feedback loops | Escalate to user |
 
@@ -643,6 +718,7 @@ Store in `ticket-work/<ticket-id>/state.json` (update after each phase):
     "planner": 1,
     "test_writer": 1,
     "implementer": 3,
+    "simplify": 1,
     "preflight": 0,
     "reviewer": 0
   },
