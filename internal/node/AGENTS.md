@@ -19,6 +19,12 @@ serves only the older `internal/cli/notes.go` / `internal/service` path.
   tool (`rk add`, `internal/cli/add.go`); see "Group files: LogParser and
   the `id::` marker" below.
 
+The git-commit-shape subject/body convention (first non-empty `Body` line =
+title, optional blank line, remainder = body) is a downstream **index**
+derivation over `Body` (`internal/index`'s `nodes.title` column, `type: todo`
+only) — `Parse` does not split subject from body itself, and other node
+types don't share the convention.
+
 ## The byte-preservation invariant
 
 `Raw` is authoritative. `Serialize()` returns it unmodified; every typed field

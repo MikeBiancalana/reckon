@@ -7,7 +7,9 @@ package index
 //
 // v2 (reckon-a4eh): the FTS5 store was promoted from the private `_fts` table to
 // the public, MATCH-capable `fts_search` vtable.
-const SchemaVersion = 2
+// v3: added the derived `_nodes.title` column (first non-empty body line,
+// computed in insertNode).
+const SchemaVersion = 3
 
 // BuilderVersion identifies the code that built the index (display/debounce only,
 // never correctness).
@@ -32,6 +34,7 @@ CREATE TABLE _nodes (
     time     TEXT NOT NULL DEFAULT '',
     author   TEXT NOT NULL DEFAULT '',
     body     TEXT NOT NULL DEFAULT '',
+    title    TEXT NOT NULL DEFAULT '',
     loc_file TEXT NOT NULL,
     hash     TEXT NOT NULL,
     mtime    INTEGER NOT NULL
@@ -79,7 +82,7 @@ CREATE TABLE _index_meta (
 );
 
 CREATE VIEW nodes AS
-    SELECT node_key AS id, ulid, type, time, author, body, loc_file AS loc FROM _nodes;
+    SELECT node_key AS id, ulid, type, time, author, body, loc_file AS loc, title FROM _nodes;
 CREATE VIEW edges AS
     SELECT src_key AS src, rel, dst, dst_key, from_frag, to_frag FROM _edges;
 CREATE VIEW node_props AS

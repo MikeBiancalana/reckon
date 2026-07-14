@@ -106,6 +106,7 @@ type agendaItem struct {
 	SourceURL string `json:"source_url,omitempty"` // external only
 	ReadOnly  bool   `json:"read_only,omitempty"`  // true for external/work-ticket rows
 	Body      string `json:"body,omitempty"`
+	Title     string `json:"title,omitempty"` // derived first non-empty body line
 }
 
 // agendaResult wraps `rk today`'s items so --json emits a single object
@@ -125,7 +126,7 @@ func (r agendaResult) Pretty() string {
 		if it.ReadOnly {
 			marker = " [read-only]"
 		}
-		fmt.Fprintf(&b, "\n  %s [%s]%s %s", it.ID, it.State, marker, it.Body)
+		fmt.Fprintf(&b, "\n  %s [%s]%s %s", it.ID, it.State, marker, it.Title)
 	}
 	return b.String()
 }
@@ -228,15 +229,15 @@ func buildAgenda(db *sql.DB, todayStr string) ([]agendaItem, []string, error) {
 		return nil, nil, fmt.Errorf("today: internal: parse today %q: %w", todayStr, err)
 	}
 
-	rows, err := db.Query("SELECT id, type, body, loc FROM nodes WHERE type IN ('todo','work-ticket')")
+	rows, err := db.Query("SELECT id, type, body, loc, title FROM nodes WHERE type IN ('todo','work-ticket')")
 	if err != nil {
 		return nil, nil, fmt.Errorf("today: query candidate nodes: %w", err)
 	}
-	type candidate struct{ id, typ, body, loc string }
+	type candidate struct{ id, typ, body, loc, title string }
 	var candidates []candidate
 	for rows.Next() {
 		var c candidate
-		if err := rows.Scan(&c.id, &c.typ, &c.body, &c.loc); err != nil {
+		if err := rows.Scan(&c.id, &c.typ, &c.body, &c.loc, &c.title); err != nil {
 			rows.Close()
 			return nil, nil, fmt.Errorf("today: scan candidate node: %w", err)
 		}
@@ -303,6 +304,7 @@ func buildAgenda(db *sql.DB, todayStr string) ([]agendaItem, []string, error) {
 			SourceURL: props["source-url"],
 			ReadOnly:  c.typ == "work-ticket",
 			Body:      strings.TrimSpace(c.body),
+			Title:     c.title,
 		})
 	}
 	return items, warnings, nil

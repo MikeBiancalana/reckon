@@ -55,6 +55,7 @@
 //	    SourceURL string `json:"source_url,omitempty"`  // external only
 //	    ReadOnly  bool   `json:"read_only,omitempty"`   // true for external/work-ticket rows
 //	    Body      string `json:"body,omitempty"`
+//	    Title     string `json:"title,omitempty"`       // derived first non-empty body line (reckon-fnqs.3)
 //	}
 //
 //	// agendaResult wraps `rk today`'s items so --json emits a single object
@@ -463,6 +464,87 @@ func TestToday_SkipsMalformedDateRow(t *testing.T) {
 	}
 	if strings.TrimSpace(stderr) == "" {
 		t.Errorf("expected a stderr warning about the malformed scheduled: value on %q, got empty stderr", badID)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// reckon-fnqs.3 — subject/body node convention: `rk today` renders only the
+// derived title (not the full body) in pretty mode, while --json carries
+// both title and body.
+//
+// RED-state note: TestToday_JSON_TitleAndBody reuses decodeAgendaItems (this
+// file's existing map[string]any decoder) rather than referencing a Title
+// field on the pinned agendaItem struct directly -- that field does not
+// exist until today.go is updated (Phase 4), and a direct struct reference
+// would fail to compile, taking the whole cli package down with it.
+// Decoding generically localizes the red state to a runtime assertion
+// failure (missing "title" key today), matching this ticket's "tests must
+// compile but must fail" rule.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestToday_Pretty_RendersTitleOnly (AC5): a scheduled-today todo with a
+// 5-line body renders only its first line ("Ship it.") in pretty `rk today`
+// output -- not the rest of the body. RED today: agendaResult.Pretty()
+// (today.go:128) still interpolates it.Body in full.
+func TestToday_Pretty_RendersTitleOnly(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-10")
+	today := "2026-07-10"
+
+	id := node.Mint()
+	writeTodoFixture(t, vault, id, "open", today, "Ship it.\n\nline2\nline3\nline4\n")
+
+	out, stderr, err := runToday(t, vault)
+	if err != nil {
+		t.Fatalf("rk today: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(out, "Ship it.") {
+		t.Errorf("pretty output missing title %q: %q", "Ship it.", out)
+	}
+	for _, unwanted := range []string{"line2", "line3", "line4"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("pretty output leaked body line %q, want title-only rendering: %q", unwanted, out)
+		}
+	}
+}
+
+// TestToday_JSON_TitleAndBody (AC7): `rk today --json` carries BOTH the
+// derived title and the full multi-line body on the same agenda item --
+// title is additive, not a body replacement. RED today: no "title" key
+// exists in the JSON output at all, so the decoded title is always "".
+func TestToday_JSON_TitleAndBody(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-10")
+	today := "2026-07-10"
+
+	id := node.Mint()
+	writeTodoFixture(t, vault, id, "open", today, "Ship it.\n\nline2\nline3\nline4\n")
+
+	stdout, stderr, err := runToday(t, vault, "--json")
+	if err != nil {
+		t.Fatalf("rk today --json: %v\nstderr: %s", err, stderr)
+	}
+	items := decodeAgendaItems(t, stdout)
+
+	var found map[string]any
+	for _, it := range items {
+		if it["id"] == id {
+			found = it
+		}
+	}
+	if found == nil {
+		t.Fatalf("item %q missing from agenda JSON: %v", id, items)
+	}
+	if title, _ := found["title"].(string); title != "Ship it." {
+		t.Errorf("title = %v, want %q (item=%v)", found["title"], "Ship it.", found)
+	}
+	body, _ := found["body"].(string)
+	for _, want := range []string{"Ship it.", "line2", "line3", "line4"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q, got %q", want, body)
+		}
 	}
 }
 

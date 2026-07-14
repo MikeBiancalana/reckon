@@ -984,6 +984,68 @@ func TestQueryTS22_BrokenPipe(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// reckon-fnqs.3 (AC6): `rk query` can select the derived `title` column
+// directly via SQL, with no post-processing/client-side body splitting.
+// RED today: the `nodes` view has no `title` column, so both queries below
+// fail at RUNTIME with a SQLite "no such column: title" error (err != nil) —
+// this is a genuine SQL execution failure, not a Go compile-time reference,
+// so it does not implicate the rest of this file's tests.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestQuery_SelectTitle_NoStringSurgery (AC6, D2): `SELECT title FROM nodes
+// ...` with no `id` column takes the raw/NDJSON path (query.go:159,
+// hasColumn(cols,"id")==false) and passes `title` through verbatim.
+func TestQuery_SelectTitle_NoStringSurgery(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	id := node.Mint()
+	writeTestNode(t, vault, "todos/"+id+".md", id, "todo",
+		"Ship it.\n\nline2\nline3\nline4", "state: open")
+	buildIndex(t, vault)
+
+	stdout, stderr, err := runQuery(t, vault, "SELECT title FROM nodes WHERE type='todo'")
+	if err != nil {
+		t.Fatalf("rk query SELECT title: %v\nstderr: %s", err, stderr)
+	}
+	rows := parseNDJSONMaps(t, stdout)
+	if len(rows) != 1 {
+		t.Fatalf("expected exactly 1 row, got %d: %v", len(rows), rows)
+	}
+	if rows[0]["title"] != "Ship it." {
+		t.Errorf("title = %v, want %q", rows[0]["title"], "Ship it.")
+	}
+}
+
+// TestQuery_Raw_IdAndTitle (AC6): `--raw "SELECT id, title FROM nodes ..."`
+// never invokes reconstructEnvelopeObject, so both id and title pass through
+// regardless of canonical-mode support (D2's documented canonical-mode gap).
+func TestQuery_Raw_IdAndTitle(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	id := node.Mint()
+	writeTestNode(t, vault, "todos/"+id+".md", id, "todo",
+		"Ship it.\n\nline2\nline3\nline4", "state: open")
+	buildIndex(t, vault)
+
+	stdout, stderr, err := runQuery(t, vault, "--raw", "SELECT id, title FROM nodes WHERE type='todo'")
+	if err != nil {
+		t.Fatalf("rk query --raw SELECT id, title: %v\nstderr: %s", err, stderr)
+	}
+	rows := parseNDJSONMaps(t, stdout)
+	if len(rows) != 1 {
+		t.Fatalf("expected exactly 1 row, got %d: %v", len(rows), rows)
+	}
+	if rows[0]["id"] != id {
+		t.Errorf("id = %v, want %q", rows[0]["id"], id)
+	}
+	if rows[0]["title"] != "Ship it." {
+		t.Errorf("title = %v, want %q", rows[0]["title"], "Ship it.")
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EC-13: --json and --ndjson together → mutually exclusive error
 // Note: this is enforced by root.go PersistentPreRunE and will PASS in red state
 // (existing functionality). Included for completeness and regression coverage.
