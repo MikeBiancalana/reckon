@@ -21,8 +21,9 @@ serves only the older `internal/cli/notes.go` / `internal/service` path.
 
 The git-commit-shape subject/body convention (first non-empty `Body` line =
 title, optional blank line, remainder = body) is a downstream **index**
-derivation over `Body` (`internal/index`'s `nodes.title` column) — `Parse`
-does not split subject from body itself.
+derivation over `Body` (`internal/index`'s `nodes.title` column, `type: todo`
+only) — `Parse` does not split subject from body itself, and other node
+types don't share the convention.
 
 ## The byte-preservation invariant
 

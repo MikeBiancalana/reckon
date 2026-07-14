@@ -16,8 +16,9 @@ Go, multi-call `rk` binary (Cobra), Bubble Tea for TUI porcelains.
 - Everything is a **node**: inline ULID identity, `type` as a property, frontmatter props,
   Obsidian-flavored wikilinks. A file holds 1..N nodes; per-tool `parse`/`serialize` pairs are the
   keystone (byte-preserving round-trip is a **gated invariant** — see `internal/node`).
-- A node's body follows a git-commit shape (first non-empty line = subject/title, optional blank
-  line, remainder = body) — see `docs/design/composable-redesign.md` (`### Fields`).
+- A todo's body follows a git-commit shape (first non-empty line = subject/title, optional blank
+  line, remainder = body) — see `docs/design/composable-redesign.md` (`### Fields`). Other node
+  types don't share this convention yet; `note` uses an explicit `props['title']` instead.
 - Hard separation of types: log entries ≠ tasks ≠ notes. Tasks have a real lifecycle (open→done in
   place, org-style recurrence via stored `scheduled` cursor, ephemeral/durable split).
 - Agent-first verbs (the `bd` standard): structured `--json`/NDJSON output, token-economy scoping,

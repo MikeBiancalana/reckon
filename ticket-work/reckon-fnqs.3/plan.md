@@ -1,5 +1,17 @@
 # Implementation Plan: reckon-fnqs.3 — Subject/body node convention (multi-line bodies, first line displayed)
 
+## Amendment (post-review, pre-push)
+
+D1 below is **superseded**. Ticket author clarified at the PR gate: the ticket's "or any node"
+phrasing overstated intent — the convention was meant for tasks (todo), not notes (already has
+`props['title']`) or a future checklist/run type (frontmatter prop is the better fit there too,
+same reasoning as note). Changed `insertNode` (`internal/index/reconcile.go:270`) to gate
+`deriveTitle` on `n.Type == "todo"`; every other type gets `title = ""`. Added
+`TestReconcileTitleTodoOnly` (`internal/index/index_test.go`) as the negative-case regression.
+Updated `internal/index/AGENTS.md`, `docs/design/composable-redesign.md`, root `AGENTS.md`,
+`internal/node/AGENTS.md` to match. `deriveTitle` itself (`internal/index/title.go`) is unchanged
+— still a pure, type-agnostic string function; the scoping lives entirely at the one call site.
+
 ## Summary
 
 A durable node's body follows the git-commit shape: the first non-empty line is the subject/title, an optional blank line, then the remainder is the body. This ticket makes list-shaped surfaces (`rk todo list`, `rk today`) render only that first line while `--json` keeps the full body plus a new `title` field, and it exposes `title` as a selectable column on the `nodes` query view. The node layer (`internal/node`) is left completely unchanged — round-trip byte-identity is already structurally guaranteed by `node.Parse`/`Serialize`. The work is: (1) a pure Go title-derivation function computed at reconcile and stored as a physical `_nodes.title` column, (2) the `nodes` view exposing it, (3) a `SchemaVersion` bump to force rebuild, (4) two CLI result structs gaining a `Title` field and their `Pretty()` renderers switching from body to title, and (5) documentation of the convention.

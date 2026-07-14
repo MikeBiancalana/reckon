@@ -241,6 +241,29 @@ func TestReconcilePopulatesTitle(t *testing.T) {
 	}
 }
 
+func TestReconcileTitleTodoOnly(t *testing.T) {
+	cfg, vault := testVault(t)
+	id := node.Mint()
+	writeFile(t, vault, "notes/"+id+".md", noteFile(id, "Ship it.\n\nline2\nline3\nline4"))
+
+	ix, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ix.Close()
+	if _, err := ix.Rebuild(); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	var title string
+	if err := ix.DB().QueryRow("SELECT title FROM nodes WHERE id=?", id).Scan(&title); err != nil {
+		t.Fatalf("scan title: %v", err)
+	}
+	if title != "" {
+		t.Errorf("title = %q, want empty (title derivation is todo-only, a non-todo type's body must not be split)", title)
+	}
+}
+
 func TestReconcileAddEditDelete(t *testing.T) {
 	cfg, vault := testVault(t)
 	idA := node.Mint()
