@@ -113,21 +113,8 @@ func init() {
 	RootCmd.PersistentFlags().BoolVar(&ndjsonFlag, "ndjson", false, "Output as newline-delimited JSON")
 	RootCmd.PersistentFlags().StringVar(&vaultFlag, "vault", "", "Override vault directory (default: $RECKON_VAULT or ~/reckon)")
 
-	// v0 subcommands (preserved verbatim)
-	RootCmd.AddCommand(GetLogCommand())
 	RootCmd.AddCommand(GetNoteCommand())
-	RootCmd.AddCommand(GetNotesCommand())
 	RootCmd.AddCommand(todayCmd)
-	RootCmd.AddCommand(weekCmd)
-	RootCmd.AddCommand(rebuildCmd)
-	RootCmd.AddCommand(GetReviewCommand())
-	RootCmd.AddCommand(GetScheduleCommand())
-	RootCmd.AddCommand(GetTaskCommand())
-	RootCmd.AddCommand(GetWinCommand())
-	RootCmd.AddCommand(GetChecklistCommand())
-
-	// v1 subcommands
-	RootCmd.AddCommand(tuiCmd)
 	RootCmd.AddCommand(addCmd)
 	RootCmd.AddCommand(todoCmd)
 	RootCmd.AddCommand(queryCmd)

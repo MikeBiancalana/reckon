@@ -207,16 +207,6 @@ Supports filtering by tags, sorting options, and multiple output formats.`,
 	},
 }
 
-func init() {
-	noteCmd.AddCommand(noteNewCmd)
-	noteCmd.AddCommand(noteListCmd)
-
-	// Add flags for list command
-	noteListCmd.Flags().StringSliceVar(&noteTagsFlag, "tags", []string{}, "Filter by tags (comma-separated, note must have all tags)")
-	noteListCmd.Flags().StringVar(&noteSortFlag, "sort", "created", "Sort by: created, updated, title, slug")
-	noteListCmd.Flags().StringVar(&noteFormatFlag, "format", "", "Output format: table (default), json, csv")
-}
-
 func GetNoteCommand() *cobra.Command {
 	return noteCmd
 }
