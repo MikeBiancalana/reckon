@@ -193,9 +193,9 @@ func TestMigrateSubcommandSurface(t *testing.T) {
 // resolves: RootCmd.Execute() with args ["import"] must fail with cobra's
 // unknown-command error, not run any migration.
 func TestImportVerbRemoved(t *testing.T) {
-	// Isolate: for as long as `import` remains registered, executing it for
-	// real must not touch the caller's actual home-directory vault or data
-	// dir.
+	// Isolate defensively: the assertion is that `import` no longer resolves,
+	// but should verb resolution ever regress, executing it must not touch the
+	// caller's actual home-directory vault or data dir.
 	t.Setenv("RECKON_VAULT", t.TempDir())
 	t.Setenv("RECKON_DATA_DIR", t.TempDir())
 	t.Setenv("RECKON_CACHE", t.TempDir())
