@@ -1,15 +1,15 @@
 {
   "ticket_id": "reckon-fnqs.2",
-  "phase": "implementer",
+  "phase": "ready_for_push",
   "worktree": ".worktrees/reckon-fnqs.2",
   "subsystem": "cli",
   "attempts": {
     "planner": 1,
     "test_writer": 1,
-    "implementer": 0,
-    "simplify": 0,
-    "preflight": 0,
-    "reviewer": 0
+    "implementer": 1,
+    "simplify": 1,
+    "preflight": 1,
+    "reviewer": 1
   },
   "new_test_names": [
     "TestMigrateLegacyCmd_RealRun_CreatesTodoFile",
@@ -27,5 +27,5 @@
   ],
   "stall_count": 0,
   "last_test_output_hash": "",
-  "status": "in_progress"
+  "status": "ready_for_push"
 }
