@@ -1,0 +1,18 @@
+{
+  "ticket_id": "reckon-fnqs.2",
+  "phase": "test_writer",
+  "worktree": ".worktrees/reckon-fnqs.2",
+  "subsystem": "cli",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 0,
+    "implementer": 0,
+    "simplify": 0,
+    "preflight": 0,
+    "reviewer": 0
+  },
+  "new_test_names": [],
+  "stall_count": 0,
+  "last_test_output_hash": "",
+  "status": "in_progress"
+}
