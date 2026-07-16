@@ -32,8 +32,8 @@ func runImport(t *testing.T, vault string, args ...string) (stdout string, err e
 }
 
 // Given a fixture legacy data root with one gen-1 task file, when `rk
-// import` runs against it, then it succeeds and one todos/<ULID>.md file
-// exists under the vault.
+// migrate legacy` runs against it, then it succeeds and one todos/<ULID>.md
+// file exists under the vault.
 func TestMigrateLegacyCmd_RealRun_CreatesTodoFile(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -42,7 +42,7 @@ func TestMigrateLegacyCmd_RealRun_CreatesTodoFile(t *testing.T) {
 	writeLegacyFixtureTask(t, source, "legacy-abc123", "Buy milk")
 
 	if _, err := runImport(t, vault, "--source", source); err != nil {
-		t.Fatalf("rk import: %v", err)
+		t.Fatalf("rk migrate legacy: %v", err)
 	}
 
 	entries, err := os.ReadDir(filepath.Join(vault, "todos"))
@@ -54,8 +54,8 @@ func TestMigrateLegacyCmd_RealRun_CreatesTodoFile(t *testing.T) {
 	}
 }
 
-// Given the same fixture, `rk import --dry-run` succeeds without writing
-// any file under the vault.
+// Given the same fixture, `rk migrate legacy --dry-run` succeeds without
+// writing any file under the vault.
 func TestMigrateLegacyCmd_DryRun_SucceedsWritesNoFiles(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -64,7 +64,7 @@ func TestMigrateLegacyCmd_DryRun_SucceedsWritesNoFiles(t *testing.T) {
 	writeLegacyFixtureTask(t, source, "legacy-abc123", "Buy milk")
 
 	if _, err := runImport(t, vault, "--source", source, "--dry-run"); err != nil {
-		t.Fatalf("rk import --dry-run: %v", err)
+		t.Fatalf("rk migrate legacy --dry-run: %v", err)
 	}
 
 	if _, err := os.Stat(filepath.Join(vault, "todos")); !os.IsNotExist(err) {
@@ -72,7 +72,7 @@ func TestMigrateLegacyCmd_DryRun_SucceedsWritesNoFiles(t *testing.T) {
 	}
 }
 
-// Given a completed real import, `rk import --verify` succeeds.
+// Given a completed real migration, `rk migrate legacy --verify` succeeds.
 func TestMigrateLegacyCmd_Verify_SucceedsAfterRealRun(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -81,18 +81,18 @@ func TestMigrateLegacyCmd_Verify_SucceedsAfterRealRun(t *testing.T) {
 	writeLegacyFixtureTask(t, source, "legacy-abc123", "Buy milk")
 
 	if _, err := runImport(t, vault, "--source", source); err != nil {
-		t.Fatalf("rk import: %v", err)
+		t.Fatalf("rk migrate legacy: %v", err)
 	}
 	resetCLIFlags()
 
 	if _, err := runImport(t, vault, "--source", source, "--verify"); err != nil {
-		t.Fatalf("rk import --verify: %v", err)
+		t.Fatalf("rk migrate legacy --verify: %v", err)
 	}
 }
 
 // Given --source pointing at a fixture legacy root distinct from the
-// default legacy data directory, `rk import` migrates from the flagged
-// source, not the default.
+// default legacy data directory, `rk migrate legacy` migrates from the
+// flagged source, not the default.
 func TestMigrateLegacyCmd_SourceFlagOverridesDefault(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -106,7 +106,7 @@ func TestMigrateLegacyCmd_SourceFlagOverridesDefault(t *testing.T) {
 	writeLegacyFixtureTask(t, source, "legacy-abc123", "Buy milk")
 
 	if _, err := runImport(t, vault, "--source", source); err != nil {
-		t.Fatalf("rk import --source: %v", err)
+		t.Fatalf("rk migrate legacy --source: %v", err)
 	}
 
 	entries, err := os.ReadDir(filepath.Join(vault, "todos"))
