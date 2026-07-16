@@ -18,10 +18,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// v1-T8 (reckon-ih5g): rk note create/show/rename/index, attached to the
-// existing legacy noteCmd (note.go, "new"/"list") as new subcommands. See
-// ticket-work/reckon-ih5g/plan.md for the full design. The legacy `rk notes`
-// (plural) DB-backed surface is untouched pending T9.
+// rk note create/show/rename/index — attached to noteCmd (note.go) as its
+// only children.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Flag variables (package-global so cobra can bind them; each subcommand's
@@ -79,7 +77,6 @@ func validateStage(stage string) error {
 var noteCreateCmd = &cobra.Command{
 	Use:          "create <title>",
 	Short:        "Create a new note (notes/<slug>.md)",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.MinimumNArgs(1),
 	RunE:         runNoteCreateE,
@@ -88,7 +85,6 @@ var noteCreateCmd = &cobra.Command{
 var noteShowCmd = &cobra.Command{
 	Use:          "show <ref>",
 	Short:        "Show a note's fields, forward links, and backlinks",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ExactArgs(1),
 	RunE:         runNoteShowE,
@@ -103,7 +99,6 @@ The note's aliases are rewritten to one canonical flow line (aliases: [a, b]).
 Known limitation: an alias containing a literal comma (e.g. an Obsidian
 block-list item "- Doe, Jane") is parsed by reckon as two aliases and is
 persisted that way on rename (see internal/node/AGENTS.md).`,
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ExactArgs(2),
 	RunE:         runNoteRenameE,
@@ -118,7 +113,6 @@ Generated files are tool-owned: they start with a marker comment, are
 overwritten on every run, and are removed when their directory no longer
 contains notes. A hand-authored index.md (no marker) is never touched --
 it is skipped with a warning.`,
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
 	RunE:         runNoteIndexE,

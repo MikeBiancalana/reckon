@@ -6,7 +6,6 @@ require (
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/fsnotify/fsnotify v1.9.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/rs/xid v1.6.0
 	github.com/sahilm/fuzzy v0.1.1
@@ -14,7 +13,6 @@ require (
 	github.com/spf13/pflag v1.0.9
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sys v0.40.0
-	golang.org/x/term v0.39.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.41.0

@@ -80,16 +80,14 @@ func resetTodoFlags(cmd *cobra.Command) {
 
 // todoCmd is the parent for the durable+ephemeral todo family (add/list/done).
 var todoCmd = &cobra.Command{
-	Use:         "todo",
-	Short:       "Manage todo items (durable and ephemeral)",
-	Long:        "Create, list, and complete todo items. Durable todos live one-per-file under todos/<ULID>.md; ephemeral todos are checkbox lines in a shared todos/inbox.md container.",
-	Annotations: map[string]string{"requiresDB": "false"},
+	Use:   "todo",
+	Short: "Manage todo items (durable and ephemeral)",
+	Long:  "Create, list, and complete todo items. Durable todos live one-per-file under todos/<ULID>.md; ephemeral todos are checkbox lines in a shared todos/inbox.md container.",
 }
 
 var todoAddCmd = &cobra.Command{
 	Use:          "add <text...>",
 	Short:        "Create a new todo (durable by default, or --ephemeral)",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.MinimumNArgs(1),
 	RunE:         runTodoAddE,
@@ -98,7 +96,6 @@ var todoAddCmd = &cobra.Command{
 var todoListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List open todos (durable and ephemeral)",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
 	RunE:         runTodoListE,
@@ -107,7 +104,6 @@ var todoListCmd = &cobra.Command{
 var todoDoneCmd = &cobra.Command{
 	Use:          "done <ref>",
 	Short:        "Mark a todo done (durable ref/alias, or --ephemeral <index>)",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.ExactArgs(1),
 	RunE:         runTodoDoneE,

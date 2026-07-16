@@ -5,12 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/MikeBiancalana/reckon/internal/checklist"
-	"github.com/MikeBiancalana/reckon/internal/config"
-	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/logger"
-	notessvc "github.com/MikeBiancalana/reckon/internal/service"
-	"github.com/MikeBiancalana/reckon/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -27,17 +22,13 @@ const (
 )
 
 var (
-	journalService     *journal.Service
-	journalTaskService *journal.TaskService
-	notesService       *notessvc.NotesService
-	checklistService   *checklist.Service
-	dateFlag           string
-	quietFlag          bool
-	logFileFlag        string
-	logLevelFlag       string
-	jsonFlag           bool
-	ndjsonFlag         bool
-	vaultFlag          string
+	dateFlag     string
+	quietFlag    bool
+	logFileFlag  string
+	logLevelFlag string
+	jsonFlag     bool
+	ndjsonFlag   bool
+	vaultFlag    string
 )
 
 // buildLoggerConfig creates a logger configuration from flags and environment variables.
@@ -78,30 +69,14 @@ var RootCmd = &cobra.Command{
 
 func init() {
 	// PersistentPreRunE replaces cobra.OnInitialize: it runs only for actual
-	// commands (not --help), validates flag exclusivity, and skips DB init for
-	// commands annotated requiresDB=false.
+	// commands (not --help), validating flag exclusivity before logger init.
 	RootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		// Mutually exclusive output mode flags
 		if jsonFlag && ndjsonFlag {
 			return fmt.Errorf("--json and --ndjson are mutually exclusive")
 		}
 
-		if err := initLoggerE(); err != nil {
-			return err
-		}
-
-		// Walk cmd and its ancestors: if any is annotated requiresDB=false, skip DB.
-		requiresDB := true
-		for c := cmd; c != nil; c = c.Parent() {
-			if v, ok := c.Annotations["requiresDB"]; ok && v == "false" {
-				requiresDB = false
-				break
-			}
-		}
-		if requiresDB {
-			return initServiceE()
-		}
-		return nil
+		return initLoggerE()
 	}
 
 	// Persistent flags — available to all subcommands
@@ -113,21 +88,8 @@ func init() {
 	RootCmd.PersistentFlags().BoolVar(&ndjsonFlag, "ndjson", false, "Output as newline-delimited JSON")
 	RootCmd.PersistentFlags().StringVar(&vaultFlag, "vault", "", "Override vault directory (default: $RECKON_VAULT or ~/reckon)")
 
-	// v0 subcommands (preserved verbatim)
-	RootCmd.AddCommand(GetLogCommand())
 	RootCmd.AddCommand(GetNoteCommand())
-	RootCmd.AddCommand(GetNotesCommand())
 	RootCmd.AddCommand(todayCmd)
-	RootCmd.AddCommand(weekCmd)
-	RootCmd.AddCommand(rebuildCmd)
-	RootCmd.AddCommand(GetReviewCommand())
-	RootCmd.AddCommand(GetScheduleCommand())
-	RootCmd.AddCommand(GetTaskCommand())
-	RootCmd.AddCommand(GetWinCommand())
-	RootCmd.AddCommand(GetChecklistCommand())
-
-	// v1 subcommands
-	RootCmd.AddCommand(tuiCmd)
 	RootCmd.AddCommand(addCmd)
 	RootCmd.AddCommand(todoCmd)
 	RootCmd.AddCommand(queryCmd)
@@ -144,35 +106,6 @@ func initLoggerE() error {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	logger.Info("reckon initialized", "version", "dev", "log_file", logger.GetLogFile(), "log_level", cfg.Level)
-	return nil
-}
-
-// initServiceE initializes all service layer dependencies.
-// Returns a wrapped error instead of calling os.Exit (per REVIEW_PATTERNS).
-func initServiceE() error {
-	dbPath, err := config.DatabasePath()
-	if err != nil {
-		return fmt.Errorf("failed to get database path: %w", err)
-	}
-
-	db, err := storage.NewDatabase(dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
-	}
-
-	repo := journal.NewRepository(db)
-	fileStore := storage.NewFileStore()
-	journalService = journal.NewService(repo, fileStore)
-
-	journalTaskRepo := journal.NewTaskRepository(db)
-	journalTaskService = journal.NewTaskService(journalTaskRepo, fileStore)
-
-	notesRepo := notessvc.NewNotesRepository(db)
-	notesService = notessvc.NewNotesService(notesRepo)
-
-	checklistRepo := checklist.NewRepository(db)
-	checklistService = checklist.NewService(checklistRepo)
-
 	return nil
 }
 

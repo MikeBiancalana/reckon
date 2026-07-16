@@ -1,0 +1,10 @@
+{
+  "ticket_id": "reckon-fnqs.1",
+  "phase": "implementer",
+  "worktree": ".worktrees/reckon-fnqs.1",
+  "subsystem": "cli",
+  "attempts": {"planner": 1, "test_writer": 1, "implementer": 0, "simplify": 0, "preflight": 0, "reviewer": 0},
+  "new_test_names": ["TestRootCommandSurface", "TestNoteSubcommandSurface"],
+  "stall_count": 0,
+  "status": "in_progress"
+}

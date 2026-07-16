@@ -36,7 +36,6 @@ var addCmd = &cobra.Command{
 	Use:          "add <text...>",
 	Short:        "Capture a timestamped log entry into the vault",
 	Long:         "Append a timestamped, authored entry to today's (or --date's) log day file under log/<date>.md.",
-	Annotations:  map[string]string{"requiresDB": "false"},
 	SilenceUsage: true,
 	Args:         cobra.MinimumNArgs(1),
 	RunE:         runAddE,
