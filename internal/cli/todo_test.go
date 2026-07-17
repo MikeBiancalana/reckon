@@ -751,6 +751,60 @@ func TestTodoList_Pretty_RendersTitleOnly(t *testing.T) {
 	}
 }
 
+// TestTodoList_Pretty_ShowsMetadata (reckon-brny): the plain-text `rk todo
+// list` output includes scheduled, deadline, and depends-on inline for
+// durable todos that have them, so priority decisions don't require --json.
+func TestTodoList_Pretty_ShowsMetadata(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	// A dependency target that the depends-on link will reference.
+	depID := node.Mint()
+	writeTodoFixture(t, vault, depID, "open", "", "Dependency todo\n")
+
+	// Todo with all three metadata fields.
+	id := node.Mint()
+	writeTodoFixture(t, vault, id, "open", "2026-07-20", "Ship v1\n",
+		"deadline: 2026-07-26",
+		`depends-on: "[[`+depID+`]]"`,
+	)
+
+	out, stderr, err := runTodo(t, vault, "list")
+	if err != nil {
+		t.Fatalf("rk todo list: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(out, "(scheduled 2026-07-20)") {
+		t.Errorf("pretty output missing scheduled annotation: %q", out)
+	}
+	if !strings.Contains(out, "(deadline 2026-07-26)") {
+		t.Errorf("pretty output missing deadline annotation: %q", out)
+	}
+	if !strings.Contains(out, "(blocked on "+depID+")") {
+		t.Errorf("pretty output missing depends-on annotation: %q", out)
+	}
+}
+
+// TestTodoList_Pretty_NoMetadataOmitsAnnotations (reckon-brny): a durable
+// todo with no scheduled/deadline/depends renders cleanly with no trailing
+// annotations — the original output shape is preserved.
+func TestTodoList_Pretty_NoMetadataOmitsAnnotations(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	id := node.Mint()
+	writeTodoFixture(t, vault, id, "open", "", "Plain todo\n")
+
+	out, stderr, err := runTodo(t, vault, "list")
+	if err != nil {
+		t.Fatalf("rk todo list: %v\nstderr: %s", err, stderr)
+	}
+	for _, unwanted := range []string{"(scheduled", "(deadline", "(blocked on"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("plain todo should not have %q annotation: %q", unwanted, out)
+		}
+	}
+}
+
 // TestTodoList_JSON_TitleAndBody (AC7): `rk todo list --json` carries BOTH
 // the derived title and the full multi-line body on the same item -- title
 // is additive, not a body replacement. RED today: no "title" key exists in

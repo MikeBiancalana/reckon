@@ -191,6 +191,15 @@ func (r todoListResult) Pretty() string {
 			continue
 		}
 		fmt.Fprintf(&b, "\n  %s [%s] %s", it.ID, it.State, it.Title)
+		if it.Scheduled != "" {
+			fmt.Fprintf(&b, " (scheduled %s)", it.Scheduled)
+		}
+		if it.Deadline != "" {
+			fmt.Fprintf(&b, " (deadline %s)", it.Deadline)
+		}
+		if it.Depends != "" {
+			fmt.Fprintf(&b, " (blocked on %s)", it.Depends)
+		}
 	}
 	return b.String()
 }
