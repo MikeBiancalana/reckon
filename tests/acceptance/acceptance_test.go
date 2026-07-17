@@ -543,18 +543,33 @@ func TestQuiet_SuppressesInitLog(t *testing.T) {
 	}
 }
 
-// Baseline: with no flags, the init banner still reaches stderr. Documents
-// the unchanged default rather than asserting new behavior.
-func TestBaseline_EmitsInitLog(t *testing.T) {
+// Baseline: with no flags, the default floor is WARN — INFO-level noise
+// (including the init banner) is suppressed even without --quiet.
+func TestBaseline_SuppressesInitLog(t *testing.T) {
 	t.Parallel()
 	v := newVault(t)
 
-	_, stderr, err := v.exec("todo", "add", "baseline emits init log")
+	_, stderr, err := v.exec("todo", "add", "baseline suppresses init log")
 	if err != nil {
 		t.Fatalf("rk todo add: %v\nstderr:\n%s", err, stderr)
 	}
+	if strings.Contains(stderr, `msg="reckon initialized"`) {
+		t.Errorf("stderr contains init log line under default flags:\n%s", stderr)
+	}
+}
+
+// The default WARN floor is opt-out, not a removal: an explicit
+// --log-level INFO still surfaces the banner.
+func TestLogLevelInfo_ShowsInitLog(t *testing.T) {
+	t.Parallel()
+	v := newVault(t)
+
+	_, stderr, err := v.exec("--log-level", "INFO", "todo", "add", "explicit info shows init log")
+	if err != nil {
+		t.Fatalf("rk --log-level INFO todo add: %v\nstderr:\n%s", err, stderr)
+	}
 	if !strings.Contains(stderr, `msg="reckon initialized"`) {
-		t.Errorf("stderr missing init log line:\n%s", stderr)
+		t.Errorf("stderr missing init log line under --log-level INFO:\n%s", stderr)
 	}
 }
 

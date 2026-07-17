@@ -46,7 +46,7 @@ func buildLoggerConfig(isTUIMode bool) logger.Config {
 		// LOG_LEVEL/RECKON_DEBUG: flag > env, matching --log-level's own precedence.
 		switch {
 		case quietFlag:
-			cfg.Level = "WARN"
+			cfg.Level = "ERROR"
 		default:
 			cfg.Level = os.Getenv("LOG_LEVEL")
 			if cfg.Level == "" {
@@ -54,7 +54,7 @@ func buildLoggerConfig(isTUIMode bool) logger.Config {
 				if debugVal == "1" || debugVal == "true" {
 					cfg.Level = "DEBUG"
 				} else {
-					cfg.Level = "INFO"
+					cfg.Level = "WARN"
 				}
 			}
 		}
