@@ -522,7 +522,7 @@ func TestDailyDriver_EndToEnd(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// --quiet — logger suppression (reckon-miuh)
+// --quiet — logger suppression
 // ─────────────────────────────────────────────────────────────────────────────
 
 // --quiet raises the effective log floor: a clean run leaves stderr fully
