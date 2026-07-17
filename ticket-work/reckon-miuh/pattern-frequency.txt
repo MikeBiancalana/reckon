@@ -1,0 +1,6 @@
+unwrapped error: 0
+missing defer: 0
+closure capture: 0
+nil check: 0
+missing validation: 0
+# Known limitation (reckon-g96t): sed range above never matches this repo's actual review.md headers -- counts are always 0, not a signal of 'no recurring patterns'.
