@@ -92,6 +92,23 @@ func (v *vault) exec(args ...string) (stdout, stderr string, err error) {
 	return out.String(), errb.String(), err
 }
 
+// execEnv is like exec but layers extraEnv on top of the vault's base
+// environment, for tests that need LOG_LEVEL/RECKON_DEBUG or similar.
+func (v *vault) execEnv(extraEnv []string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.Command(rkBin, args...)
+	cmd.Env = append(os.Environ(),
+		"RECKON_VAULT="+v.dir,
+		"RECKON_CACHE="+v.cache,
+		"RECKON_AUTHOR=acceptance",
+	)
+	cmd.Env = append(cmd.Env, extraEnv...)
+	var out, errb strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	err = cmd.Run()
+	return out.String(), errb.String(), err
+}
+
 // runJSON executes rk with --json appended and unmarshals stdout.
 func (v *vault) runJSON(t *testing.T, args ...string) map[string]any {
 	t.Helper()
@@ -502,4 +519,155 @@ func TestDailyDriver_EndToEnd(t *testing.T) {
 			t.Errorf("day file missing %q:\n%s", want, day)
 		}
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// --quiet — logger suppression (reckon-miuh)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// --quiet raises the effective log floor: a clean run leaves stderr fully
+// empty, not just missing the one banner string.
+func TestQuiet_SuppressesInitLog(t *testing.T) {
+	t.Parallel()
+	v := newVault(t)
+
+	_, stderr, err := v.exec("--quiet", "todo", "add", "quiet suppresses init log")
+	if err != nil {
+		t.Fatalf("rk --quiet todo add: %v\nstderr:\n%s", err, stderr)
+	}
+	if strings.Contains(stderr, "reckon initialized") {
+		t.Errorf("stderr contains init log line under --quiet:\n%s", stderr)
+	}
+	if stderr != "" {
+		t.Errorf("stderr not empty under --quiet:\n%q", stderr)
+	}
+}
+
+// Baseline: with no flags, the init banner still reaches stderr. Documents
+// the unchanged default rather than asserting new behavior.
+func TestBaseline_EmitsInitLog(t *testing.T) {
+	t.Parallel()
+	v := newVault(t)
+
+	_, stderr, err := v.exec("todo", "add", "baseline emits init log")
+	if err != nil {
+		t.Fatalf("rk todo add: %v\nstderr:\n%s", err, stderr)
+	}
+	if !strings.Contains(stderr, `msg="reckon initialized"`) {
+		t.Errorf("stderr missing init log line:\n%s", stderr)
+	}
+}
+
+// An explicit --log-level always outranks --quiet: --quiet only raises the
+// default floor, it never clamps an explicit user request.
+func TestQuiet_ExplicitLogLevelWins(t *testing.T) {
+	t.Parallel()
+	v := newVault(t)
+
+	_, stderr, err := v.exec("--quiet", "--log-level", "DEBUG", "todo", "add", "explicit level wins")
+	if err != nil {
+		t.Fatalf("rk --quiet --log-level DEBUG todo add: %v\nstderr:\n%s", err, stderr)
+	}
+	if !strings.Contains(stderr, "reckon initialized") {
+		t.Errorf("explicit --log-level DEBUG did not override --quiet:\n%s", stderr)
+	}
+}
+
+// --log-level WARN alone (no --quiet) already silences the init line —
+// regression baseline matching the ticket's own repro.
+func TestLogLevelWarn_SuppressesInitLog(t *testing.T) {
+	t.Parallel()
+	v := newVault(t)
+
+	_, stderr, err := v.exec("--log-level", "WARN", "todo", "add", "log level warn alone")
+	if err != nil {
+		t.Fatalf("rk --log-level WARN todo add: %v\nstderr:\n%s", err, stderr)
+	}
+	if strings.Contains(stderr, "reckon initialized") {
+		t.Errorf("stderr contains init log line under --log-level WARN:\n%s", stderr)
+	}
+}
+
+// --quiet and --log-level WARN together are redundant, not conflicting.
+func TestQuiet_RedundantWithWarn(t *testing.T) {
+	t.Parallel()
+	v := newVault(t)
+
+	_, stderr, err := v.exec("--quiet", "--log-level", "WARN", "todo", "add", "quiet redundant with warn")
+	if err != nil {
+		t.Fatalf("rk --quiet --log-level WARN todo add: %v\nstderr:\n%s", err, stderr)
+	}
+	if strings.Contains(stderr, "reckon initialized") {
+		t.Errorf("stderr contains init log line under --quiet --log-level WARN:\n%s", stderr)
+	}
+}
+
+// --quiet is orthogonal to output-mode flags: JSON/NDJSON on stdout stays
+// intact and parseable (AC3), independent of the logger-suppression fix.
+func TestQuiet_JSONStdoutIntact(t *testing.T) {
+	t.Parallel()
+
+	t.Run("json", func(t *testing.T) {
+		t.Parallel()
+		v := newVault(t)
+		stdout, stderr, err := v.exec("--quiet", "--json", "todo", "add", "quiet json stdout intact")
+		if err != nil {
+			t.Fatalf("rk --quiet --json todo add: %v\nstderr:\n%s", err, stderr)
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(stdout), &m); err != nil {
+			t.Errorf("stdout not valid JSON under --quiet --json: %v\nstdout:\n%s", err, stdout)
+		}
+	})
+
+	t.Run("ndjson", func(t *testing.T) {
+		t.Parallel()
+		v := newVault(t)
+		stdout, stderr, err := v.exec("--quiet", "--ndjson", "todo", "add", "quiet ndjson stdout intact")
+		if err != nil {
+			t.Fatalf("rk --quiet --ndjson todo add: %v\nstderr:\n%s", err, stderr)
+		}
+		for _, line := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
+			if line == "" {
+				continue
+			}
+			var m map[string]any
+			if err := json.Unmarshal([]byte(line), &m); err != nil {
+				t.Errorf("stdout line not valid NDJSON under --quiet --ndjson: %v\nline:\n%s", err, line)
+			}
+		}
+	})
+}
+
+// --quiet outranks LOG_LEVEL/RECKON_DEBUG env vars when no explicit
+// --log-level flag is given: flag beats env, the same precedence order
+// --log-level itself already uses against those env vars.
+func TestQuiet_EnvLogLevelLoses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("LOG_LEVEL", func(t *testing.T) {
+		t.Parallel()
+		v := newVault(t)
+		_, stderr, err := v.execEnv([]string{"LOG_LEVEL=DEBUG"},
+			"--quiet", "todo", "add", "env log level loses to quiet")
+		if err != nil {
+			t.Fatalf("rk --quiet todo add (LOG_LEVEL=DEBUG): %v\nstderr:\n%s", err, stderr)
+		}
+		if strings.Contains(stderr, "reckon initialized") {
+			t.Errorf("stderr contains init log line under --quiet with LOG_LEVEL=DEBUG:\n%s", stderr)
+		}
+	})
+
+	t.Run("RECKON_DEBUG", func(t *testing.T) {
+		t.Parallel()
+		v := newVault(t)
+		_, stderr, err := v.execEnv([]string{"RECKON_DEBUG=1"},
+			"--quiet", "todo", "add", "reckon debug env loses to quiet")
+		if err != nil {
+			t.Fatalf("rk --quiet todo add (RECKON_DEBUG=1): %v\nstderr:\n%s", err, stderr)
+		}
+		if strings.Contains(stderr, "reckon initialized") {
+			t.Errorf("stderr contains init log line under --quiet with RECKON_DEBUG=1:\n%s", stderr)
+		}
+	})
 }
