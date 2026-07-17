@@ -1,0 +1,4 @@
+Pattern extraction skipped: mechanism known-broken (reckon-g96t — sed range
+never matches this repo's per-dimension review.md headers). Review verdict was
+APPROVE with only cosmetic Minor findings; none match the tracked 5-pattern
+vocabulary. No REVIEW_PATTERNS.md / AGENTS.md / preflight thresholds crossed.

@@ -39,7 +39,7 @@ func TestRootHelp_ListsSubcommands(t *testing.T) {
 		t.Errorf("--help output does not contain 'Usage:'\noutput:\n%s", out)
 	}
 	// AC-1: all surviving v1 subcommand verbs must appear in the help output.
-	for _, verb := range []string{"add", "adopt", "import", "index", "note", "query", "today", "todo"} {
+	for _, verb := range []string{"add", "adopt", "migrate", "index", "note", "query", "today", "todo"} {
 		if !strings.Contains(out, verb) {
 			t.Errorf("--help output missing verb %q\noutput:\n%s", verb, out)
 		}
@@ -107,7 +107,7 @@ func TestRootCommandSurface(t *testing.T) {
 		names[cmd.Name()] = true
 	}
 
-	survivors := []string{"add", "adopt", "import", "index", "note", "query", "today", "todo"}
+	survivors := []string{"add", "adopt", "migrate", "index", "note", "query", "today", "todo"}
 	for _, verb := range survivors {
 		if !names[verb] {
 			t.Errorf("expected verb %q to be registered", verb)
@@ -116,7 +116,7 @@ func TestRootCommandSurface(t *testing.T) {
 
 	dying := []string{
 		"log", "notes", "week", "rebuild", "review", "schedule", "task",
-		"win", "checklist", "tui", "migrate", "summary",
+		"win", "checklist", "tui", "import", "summary",
 	}
 	for _, verb := range dying {
 		if names[verb] {

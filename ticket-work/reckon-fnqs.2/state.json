@@ -1,0 +1,31 @@
+{
+  "ticket_id": "reckon-fnqs.2",
+  "phase": "ready_for_push",
+  "worktree": ".worktrees/reckon-fnqs.2",
+  "subsystem": "cli",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 1,
+    "implementer": 1,
+    "simplify": 1,
+    "preflight": 1,
+    "reviewer": 1
+  },
+  "new_test_names": [
+    "TestMigrateLegacyCmd_RealRun_CreatesTodoFile",
+    "TestMigrateLegacyCmd_DryRun_SucceedsWritesNoFiles",
+    "TestMigrateLegacyCmd_Verify_SucceedsAfterRealRun",
+    "TestMigrateLegacyCmd_SourceFlagOverridesDefault",
+    "TestMigrateLegacyCmd_OutputSummary",
+    "TestMigrateLegacy_MutualExclusivity",
+    "TestMigrateSubcommandSurface",
+    "TestImportVerbRemoved",
+    "TestMigrateBareInvocation",
+    "TestMigrateUnknownSubcommand",
+    "TestRootCommandSurface",
+    "TestRootHelp_ListsSubcommands"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": "",
+  "status": "ready_for_push"
+}
