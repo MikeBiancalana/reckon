@@ -48,9 +48,11 @@ cat > /tmp/extract_patterns.sh <<'EOF'
 REVIEW_FILE="$1"
 TICKET_ID=$(basename $(dirname "$REVIEW_FILE"))
 
-# Extract issues section
-sed -n '/## Functional Review/,/## Design Review/p' "$REVIEW_FILE" | \
-  grep -E "^\d+\. \*\*\[Critical|Major|Minor\]" | \
+# Extract numbered findings directly — the grep anchor restricts to
+# severity-tagged entries, so no section-range sed is needed (the
+# reviewer output uses per-dimension headers with no consistent pair
+# of section boundaries to scope between).
+grep -E "^\d+\. \*\*\[(Critical|Major|Minor)\]" "$REVIEW_FILE" | \
   while read line; do
     severity=$(echo "$line" | grep -oP '\[\K(Critical|Major|Minor)')
     description=$(echo "$line" | sed 's/^.*\] //')

@@ -487,14 +487,15 @@ reviewer found a real problem, so a "checked, none found" sentence written
 as prose can never live there:
 
 ```bash
-# Check frequency of patterns found in this review, scoped to numbered
-# issue entries (not the whole file -- kills the "checked, none found"
-# false-positive, since prose like that is never a numbered Issues entry).
+# Check frequency of patterns found in this review.  The grep anchor
+# (^[0-9]+\. \*\*\[severity\]) already restricts to numbered finding
+# entries, so no section-range sed is needed — the reviewer output uses
+# per-dimension headers (## Correctness, ## Architecture, ...) with no
+# consistent pair of section boundaries to scope between.
 for pattern in "unwrapped error" "missing defer" "closure capture" "nil check" "missing validation"; do
   count=$(
     for f in ticket-work/*/review.md; do
-      sed -n '/## Functional Review/,/## Design Review/p' "$f" \
-        | grep -iE "^[0-9]+\. \*\*\[(Critical|Major|Minor)\].*${pattern}" \
+      grep -iE "^[0-9]+\. \*\*\[(Critical|Major|Minor)\].*${pattern}" "$f" \
         && echo "$f"
     done 2>/dev/null | sort -u | wc -l
   )
@@ -507,19 +508,15 @@ pattern miner -- a novel recurring issue never enters this loop no matter how
 often it recurs. That's a known, accepted scope limit for this mechanism, not
 a bug to fix here.
 
-**Known limitation (tracked, not yet fixed — reckon-g96t):** the `sed -n
-'/## Functional Review/,/## Design Review/p'` range above has never matched
-this repo's actual reviewer output. Every `review.md` on disk uses
-per-dimension headers instead (`## Correctness`, `## Architecture`, `##
-Testing`, ... or a numbered `### N. Dimension — VERDICT` variant), never a
-literal `## Functional Review` or `## Design Review` heading. Verified
-2026-07-13 against all 12 `ticket-work/*/review.md` files present at the
-time: zero matches on any of the 5 tracked patterns, on any ticket, ever.
-This is distinct from reckon-scx7 (closed, PR #143), which fixed the
-negation-false-positive / monotonic-ratchet / dedup problems in the counting
-logic but did not touch the sed range. Until reckon-g96t lands, treat this
-phase's pattern-frequency output as always-empty and do not infer "no
-recurring patterns" from a zero count.
+**Note (reckon-g96t, fixed):** the pattern scan above previously scoped
+its grep through `sed -n '/## Functional Review/,/## Design Review/p'`,
+which never matched the reviewer's actual output format.  That sed range
+has been removed — the `^[0-9]+\. \*\*[severity]` anchor alone is
+sufficient to restrict to numbered finding entries, and it works against
+both the old `## Functional Review` convention and the current
+per-dimension (`## Correctness`, `## Architecture`, ...) convention.
+Verified against all existing `ticket-work/*/review.md` files and a
+synthetic review containing known findings for each tracked pattern.
 
 **Update actions (based on frequency thresholds):**
 - 1-2 occurrences: Document in `docs/REVIEW_PATTERNS.md`
