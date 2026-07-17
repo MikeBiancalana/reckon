@@ -624,7 +624,7 @@ title/body explicitly from ticket + pipeline artifacts instead:
 ```bash
 cd .worktrees/<ticket-id>
 
-TICKET_TITLE=$(bd show <ticket-id> --json 2>/dev/null | jq -r '.title // empty')
+TICKET_TITLE=$(bd show <ticket-id> --json 2>/dev/null | jq -r '.[0].title // empty')
 [ -z "$TICKET_TITLE" ] && TICKET_TITLE="<ticket-id>"
 
 git push -u origin HEAD
