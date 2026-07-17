@@ -41,13 +41,21 @@ func buildLoggerConfig(isTUIMode bool) logger.Config {
 	}
 
 	if cfg.Level == "" {
-		cfg.Level = os.Getenv("LOG_LEVEL")
-		if cfg.Level == "" {
-			debugVal := os.Getenv("RECKON_DEBUG")
-			if debugVal == "1" || debugVal == "true" {
-				cfg.Level = "DEBUG"
-			} else {
-				cfg.Level = "INFO"
+		// No explicit --log-level. --quiet raises the floor to WARN, suppressing
+		// INFO (incl. the "reckon initialized" banner) and below. --quiet beats
+		// LOG_LEVEL/RECKON_DEBUG: flag > env, matching --log-level's own precedence.
+		switch {
+		case quietFlag:
+			cfg.Level = "ERROR"
+		default:
+			cfg.Level = os.Getenv("LOG_LEVEL")
+			if cfg.Level == "" {
+				debugVal := os.Getenv("RECKON_DEBUG")
+				if debugVal == "1" || debugVal == "true" {
+					cfg.Level = "DEBUG"
+				} else {
+					cfg.Level = "WARN"
+				}
 			}
 		}
 	}
