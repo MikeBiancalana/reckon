@@ -574,7 +574,7 @@ func TestQuiet_ExplicitLogLevelWins(t *testing.T) {
 }
 
 // --log-level WARN alone (no --quiet) already silences the init line —
-// regression baseline matching the ticket's own repro.
+// regression baseline for pre-existing behavior.
 func TestLogLevelWarn_SuppressesInitLog(t *testing.T) {
 	t.Parallel()
 	v := newVault(t)
