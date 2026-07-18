@@ -90,14 +90,9 @@ func (m *tuiModel) addTodoCmd(body string) tea.Cmd {
 
 ## Summary
 
-**Status: PASS WITH WARNINGS**
+**Status: PASS**
 
-All automated checks pass. TUI closure patterns correct; variable capture proper; nil guards present. Two style/consistency issues:
+Both warnings fixed post-report (commit e1842b0): `note_v1.go:285` now wraps with `fmt.Errorf("note create: %w", err)`; `tui_read.go`'s `loadLogEntries`/`listNotes` now use `defer rows.Close()` instead of scattered manual calls. `go build`/`go vet`/`go test ./...` reverified green after the fix.
 
-1. Error wrapping inconsistency (1 instance)
-2. Non-idiomatic resource cleanup (2 functions, 6 instances)
-
-Issues are fixable but not blockers for code review.
-
-**Changed files:** 28 files, 3684 insertions, 906 deletions
-**Commit range:** a72745b..HEAD (15 commits)
+**Changed files:** 30 files (final)
+**Commit range:** a72745b..HEAD
