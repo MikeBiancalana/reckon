@@ -168,11 +168,16 @@ func newLogPane() *logPane {
 	return &logPane{view: components.NewLogView(nil)}
 }
 
-// SetSize resizes the pane's viewport.
+// SetSize resizes the pane's viewport. p.width/p.height stay the outer
+// dimensions renderPaneBox is later called with; the inner LogView gets the
+// content-area dimensions renderPaneBox will actually render into
+// (paneContentDims, tui_model.go), so the two never disagree about how much
+// room is really available.
 func (p *logPane) SetSize(width, height int) {
 	p.width = clampDim(width)
 	p.height = clampDim(height)
-	p.view.SetSize(p.width, p.height)
+	innerW, innerH := paneContentDims(p.width, p.height)
+	p.view.SetSize(innerW, innerH)
 }
 
 // notesPaneShowMode is the composite notes pane's internal mode: browse
@@ -214,10 +219,14 @@ func newNotesPane() *notesPane {
 
 // SetSize resizes the pane's viewport, propagating to both the picker
 // (browse) and the links inspector (inspect) since either may be visible.
+// p.width/p.height stay the outer dimensions renderPaneBox is later called
+// with; the inner widgets get the content-area dimensions renderPaneBox will
+// actually render into (paneContentDims, tui_model.go).
 func (p *notesPane) SetSize(width, height int) {
 	p.width = clampDim(width)
 	p.height = clampDim(height)
-	p.picker.SetWidth(p.width)
-	p.picker.SetHeight(p.height)
-	p.links.SetSize(p.width, p.height)
+	innerW, innerH := paneContentDims(p.width, p.height)
+	p.picker.SetWidth(innerW)
+	p.picker.SetHeight(innerH)
+	p.links.SetSize(innerW, innerH)
 }
