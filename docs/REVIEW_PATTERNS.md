@@ -1023,3 +1023,36 @@ t, _ := time.ParseInLocation("2006-01-02", dateStr, time.Local)
 **Frequency:** 🔴 (1 occurrence — but high impact: silent wrong behavior for UTC- users)
 
 **When to apply:** Any code that parses "YYYY-MM-DD" calendar dates and compares them to "today".
+
+### TUI Layout Sizing
+
+#### ❌ Anti-Pattern: Outer Pane Dimensions Passed to Inner Widget SetSize
+**Discovered in:** reckon-fnqs.8 (2026-07-18)
+**Issue:** `lipgloss.Style.Width()`/`.Height()` on a style with a border and/or padding set the *outer* box size — the content area inside is narrower/shorter by however much the border and padding consume. A pane wrapper that forwards its own outer `width`/`height` straight to an inner widget's `SetSize` (instead of subtracting border+padding first) causes the inner widget to lay out assuming more room than it actually gets, so its own render then gets re-wrapped/clipped by the outer box — systematic extra wrapping or overflow, not just a long-content edge case.
+
+```go
+// BAD: inner widget sized to the outer pane's target dimensions
+func (p *logPane) SetSize(width, height int) {
+    p.width, p.height = width, height
+    p.view.SetSize(width, height)  // view lays out assuming the full outer size
+}
+// ...then the pane is rendered inside a bordered+padded box that subtracts
+// 4 cols / 2 rows before printing — a mismatch the inner widget never sees.
+
+// GOOD: compute the content-area size once, feed that to both the box
+// renderer and every inner widget, so there's one source of truth
+func paneContentDims(width, height int) (int, int) {
+    return clampDim(width - horizontalBorderAndPadding), clampDim(height - verticalBorderAndPadding)
+}
+func (p *logPane) SetSize(width, height int) {
+    p.width, p.height = width, height
+    cw, ch := paneContentDims(width, height)
+    p.view.SetSize(cw, ch)
+}
+```
+
+**Why it matters:** The bug is invisible in a unit test that renders the inner widget in isolation (`p.view.View()` never passes through the outer box), so it only shows up once the full layout is assembled — easy to miss in an implementer's own testing pass and only caught by explicit review of the box-rendering call site.
+
+**Frequency:** 🟡 (1 ticket, 2 independent occurrences within it — both `logPane` and `notesPane` had the same bug, caught only on review, not by the implementer's own tests)
+
+**When to apply:** Any bordered/padded pane wrapper (lipgloss box style) that also owns an inner bubbletea component — `SetSize` must feed the inner component content-area dimensions, computed the same way the box-rendering function computes its own subtraction, not the raw outer target.
