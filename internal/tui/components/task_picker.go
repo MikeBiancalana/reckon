@@ -43,11 +43,11 @@ type TaskPickerSelectMsg struct {
 // TaskPickerCancelMsg is sent when the task picker is cancelled
 type TaskPickerCancelMsg struct{}
 
-// TaskRow is the journal-free row shape TaskPicker displays (Decision:
-// decouple vs delete, reckon-fnqs.8 — kept wired-but-unused pending a future
-// "link todo" flow; fnqs.6 owns retargeting it at index rows). Embeds
-// DateInfo (task_list.go, same package) so this picker's Description() can
-// show scheduled/deadline without importing internal/journal.
+// TaskRow is the journal-free row shape TaskPicker displays. Kept
+// wired-but-unused pending a future "link todo" flow that retargets this
+// picker at index rows. Embeds DateInfo (task_list.go, same package) so
+// this picker's Description() can show scheduled/deadline without importing
+// internal/journal.
 type TaskRow struct {
 	ID    string
 	Title string

@@ -43,10 +43,9 @@ type TaskNoteDeleteMsg struct {
 }
 
 // DateInfo carries the two schedule-related date fields task_list's date
-// formatting/styling helpers need. It decouples this package from
-// internal/journal (Decision 1, reckon-fnqs.8): FormatDateInfo/GetDateStyle
-// only ever touch these two *string fields, never anything else on
-// journal.Task.
+// formatting/styling helpers need, decoupling this package from
+// internal/journal: FormatDateInfo/GetDateStyle only ever touch these two
+// *string fields, never anything else on a task.
 type DateInfo struct {
 	ScheduledDate *string
 	DeadlineDate  *string

@@ -14,7 +14,7 @@ import (
 
 // loadLogEntries loads every index `log-entry` node (internal/node/
 // logparser.go:118) as a components.LogEntryRow, newest first. Log entries
-// are distinct index nodes, not raw day-file text (plan.md scenario 2).
+// are distinct index nodes, not raw day-file text.
 func loadLogEntries(db *sql.DB) ([]components.LogEntryRow, error) {
 	rows, err := db.Query("SELECT id, time, body FROM nodes WHERE type = 'log-entry' ORDER BY time DESC")
 	if err != nil {

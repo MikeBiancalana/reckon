@@ -49,7 +49,7 @@ const (
 // tuiModel is the top-level bubbletea model for `rk tui`: a persistent
 // 4-pane porcelain over the index (reads) and the unexported CLI verbs
 // (writes). All orchestration lives in package cli because the verbs it
-// calls are unexported (Decision: Package placement, plan.md).
+// calls are unexported.
 type tuiModel struct {
 	ix       *index.Index
 	cfg      *config.Config
@@ -299,7 +299,7 @@ func (m *tuiModel) loadNotesLinksCmd(noteID string) tea.Cmd {
 }
 
 // selectNoteCmd resolves a NotePickerSelectMsg's slug to a note id and fires
-// the link-graph load for it (Decision: Notes-pane composition, plan.md).
+// the link-graph load for it.
 func (m *tuiModel) selectNoteCmd(slug string) tea.Cmd {
 	db := m.ix.DB()
 	return func() tea.Msg {
@@ -319,11 +319,9 @@ func (m *tuiModel) selectNoteCmd(slug string) tea.Cmd {
 }
 
 // reloadCmdFor fires the reload cmd for the pane a mutation just wrote to.
-// Only "agenda" is emitted today (the actuator sub-flow, tui_keyboard.go);
-// the switch stays keyed by string rather than a single hardcoded call so a
-// future creation-flow keybinding (add todo/log, create note -- verbs and
-// read helpers already exist, see loadTodosCmd/loadLogCmd/
-// loadNotesListCmd) can reuse this same reload path.
+// Only "agenda" is wired today (the actuator sub-flow, tui_keyboard.go); the
+// string key lets a future todos/log/notes creation flow reuse this same
+// dispatch (see loadTodosCmd/loadLogCmd/loadNotesListCmd).
 func (m *tuiModel) reloadCmdFor(kind string) tea.Cmd {
 	switch kind {
 	case "agenda":
@@ -402,7 +400,7 @@ func renderAgendaBody(p *agendaPane) string {
 }
 
 // renderTodosBody renders the todos pane's hand-rolled, subject-only row
-// list (AC#4: Title/Body only, never the full node body).
+// list: the item's Title (or Body as fallback), never the full node body.
 func renderTodosBody(p *todosPane) string {
 	if len(p.items) == 0 {
 		return "todo: no items"

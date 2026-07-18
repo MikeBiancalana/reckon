@@ -23,12 +23,12 @@ var (
 )
 
 // LogEntryRow is the flat, journal-free shape LogView renders: one row per
-// index `log-entry` node (internal/node/logparser.go). Decoupled from
-// internal/journal.LogEntry (Decision 1, reckon-fnqs.8). Log entries have no
-// nested-notes source or verb in v1, so the Notes/LogNote machinery this
-// component used to carry (findLogNoteText, LogNoteAddMsg/LogNoteDeleteMsg,
-// the n/d note keys, SelectedLogNote, IsSelectedItemNote, note-collapse
-// state) is dropped, not decoupled.
+// index `log-entry` node (internal/node/logparser.go), decoupled from
+// internal/journal.LogEntry. Log entries have no nested-notes source or verb
+// in v1, so the Notes/LogNote machinery this component used to carry
+// (findLogNoteText, LogNoteAddMsg/LogNoteDeleteMsg, the n/d note keys,
+// SelectedLogNote, IsSelectedItemNote, note-collapse state) is dropped, not
+// decoupled.
 type LogEntryRow struct {
 	ID        string
 	Timestamp time.Time

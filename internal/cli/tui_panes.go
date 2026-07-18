@@ -90,7 +90,7 @@ func (p *agendaPane) reselect() {
 
 // todosPane is the hand-rolled, subject-only list wrapper over
 // []todoListItem (todo.go's listDurableTodos/listEphemeralTodos output;
-// AC#4: Title only, no body).
+// displays Title only, never the full body).
 type todosPane struct {
 	items      []todoListItem
 	selected   int
@@ -175,9 +175,9 @@ func (p *logPane) SetSize(width, height int) {
 	p.view.SetSize(p.width, p.height)
 }
 
-// notesPaneShowMode is the composite notes pane's internal mode (Decision:
-// Notes-pane composition, plan.md): browse shows components.NotePicker,
-// inspect shows components.NotesPane. Independent of top-level pane focus.
+// notesPaneShowMode is the composite notes pane's internal mode: browse
+// shows components.NotePicker, inspect shows components.NotesPane.
+// Independent of top-level pane focus.
 type notesPaneShowMode int
 
 const (

@@ -123,10 +123,9 @@ type NotePicker struct {
 	height       int
 
 	// embedded is true when the picker is mounted inline as part of a larger
-	// pane region (e.g. the TUI notes pane, reckon-fnqs.8 Decision 2) rather
-	// than shown as a self-contained modal popup. View() skips
-	// notePickerBoxStyle's own border/padding wrap when true, so the picker
-	// doesn't double up against its host's own frame.
+	// pane region rather than shown as a self-contained modal popup. View()
+	// skips notePickerBoxStyle's own border/padding wrap when true, so the
+	// picker doesn't double up against its host's own frame.
 	embedded bool
 }
 
@@ -223,7 +222,7 @@ func (np *NotePicker) SetWidth(width int) {
 // before this method existed the list always rendered at height 0 — fine for
 // the self-sized modal-popup usage (SetWidth's own hardcoded listHeight
 // covers that), but wrong for mounting the picker inline in a fixed-height
-// pane region (Decision: Notes-pane composition, reckon-fnqs.8).
+// pane region.
 func (np *NotePicker) SetHeight(h int) {
 	np.height = h
 	np.list.SetHeight(h)

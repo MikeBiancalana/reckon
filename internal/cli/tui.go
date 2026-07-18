@@ -15,8 +15,7 @@ import (
 // through the SQLite index's public views and writes exclusively by calling
 // the existing unexported CLI verb functions (addDurableTodo,
 // dispatchTodayAct, appendLogEntry, createNote), reconciling after every
-// mutation (plan.md, reckon-fnqs.8). Mirrors the pre-deletion (reckon-fnqs.1)
-// stubs.go shape but opens its own index directly rather than depending on
+// mutation. Opens its own index directly rather than depending on
 // PersistentPreRunE-initialized package-level services — hence no
 // requiresDB annotation.
 var tuiCmd = &cobra.Command{

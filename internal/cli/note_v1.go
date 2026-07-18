@@ -314,8 +314,8 @@ type noteCreateParams struct {
 // createNote writes a new note file under notesDir (or notesDir/params.Dir):
 // dir validation, mkdir, overwrite/collision checks, NewNode -> Render ->
 // Parse -> writeFileAtomic. Extracted from runNoteCreateE (pure refactor, no
-// behavior change) so the TUI's note-create sub-flow (Decision 2,
-// reckon-fnqs.8) can call the same verb the CLI uses.
+// behavior change) so callers other than the cobra RunE (e.g. the TUI) can
+// call the same verb the CLI uses.
 func createNote(notesDir string, params noteCreateParams) (noteCreateResult, error) {
 	targetDir := notesDir
 	relDir := "notes"

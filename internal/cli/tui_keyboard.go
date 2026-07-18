@@ -10,19 +10,13 @@ import (
 
 // handleKey is the keyboard priority-chain dispatcher: sub-flow-input-active
 // > focused-pane-normal > global (Tab focus-cycle across the 4 fixed panes,
-// quit). Also hosts the agenda actuator sub-flow state machine (plan.md
-// "Agenda actuator sub-flow", AC §2.11): read-only guard first, then no-arg
-// keys (t/x/i/c) dispatch immediately while arg keys (d/D/p) open an input
-// sub-flow before dispatching.
+// quit). Also hosts the agenda actuator sub-flow state machine: read-only
+// guard first, then no-arg keys (t/x/i/c) dispatch immediately while arg
+// keys (d/D/p) open an input sub-flow before dispatching.
 //
-// Creation flows (add todo/log, create note) are out of scope here: they
-// have no pinned keybinding (tui_test.go's header comment notes this is
-// "still-undefined") and no test exercises one, so binding an invented key
-// would be untested surface with no spec behind it. Their verbs
-// (addDurableTodo, appendLogEntry, createNote) are already reachable from
-// this model's Update via todosLoadedMsg/logLoadedMsg/mutationDoneMsg
-// (TestAddTodoFlow, TestAddLogFlow) -- wiring a concrete keypress to them is
-// a follow-up, not a rebuild.
+// Creation flows (add todo/log, create note) have no keybinding yet: their
+// verbs (addDurableTodo, appendLogEntry, createNote) are reachable from this
+// model's Update, but binding a key to them is a follow-up.
 func (m *tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.inputMode == inputModeSubFlow {
 		return m.handleSubFlowKey(msg)
@@ -61,7 +55,7 @@ func nextFocus(f tuiFocus) tuiFocus {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Agenda pane: navigation + actuator dispatch (AC §2.11, scenarios 6, 8).
+// Agenda pane: navigation + actuator dispatch.
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (m *tuiModel) handleAgendaKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -116,16 +110,15 @@ func (m *tuiModel) dispatchAgendaActuator(key string) (tea.Model, tea.Cmd) {
 
 // actuateCmd calls dispatchTodayAct (the same function `rk today act`
 // calls) and reconciles the index on success, emitting mutationDoneMsg so
-// the model re-fires the agenda reload. logDid is always true here (today.go
-// :570-571's default: --no-log defaults off, i.e. logging on) -- the
+// the model re-fires the agenda reload. noLog is always false here, matching
+// today.go:570-571's CLI default (--no-log defaults off) -- the
 // complete-as-logging behavior that's the point of the agenda pane's 'x'
 // key existing at all.
 func (m *tuiModel) actuateCmd(ref, key, arg string) tea.Cmd {
 	vaultDir := m.vaultDir
 	ix := m.ix
 	return func() tea.Msg {
-		const noLog = false // logDid = !noLog = true
-		if _, err := dispatchTodayAct(vaultDir, ref, key, arg, noLog); err != nil {
+		if _, err := dispatchTodayAct(vaultDir, ref, key, arg, false); err != nil {
 			return errMsg{err: err}
 		}
 		if _, err := ix.Reconcile(); err != nil {
@@ -161,8 +154,7 @@ func (m *tuiModel) handleLogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Notes pane: browse (NotePicker) / inspect (NotesPane), per Decision:
-// Notes-pane composition, plan.md.
+// Notes pane: browse (NotePicker) / inspect (NotesPane).
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (m *tuiModel) handleNotesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -236,8 +228,8 @@ func (m *tuiModel) handleSubFlowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // own ParseRelativeDate-backed preview is UI-only: on submit we resolve to a
 // concrete date and emit that literal YYYY-MM-DD as the actuator arg, never
 // the shorthand -- resolveDeferDate/parseSchedDate (today.go) accept that
-// literal directly, sidestepping the CLI-vs-TUI parser-syntax divergence
-// entirely (plan.md "ParseRelativeDate divergence").
+// literal directly, sidestepping any CLI-vs-TUI parser-syntax divergence
+// entirely.
 func (m *tuiModel) handleDateSubFlowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
