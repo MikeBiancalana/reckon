@@ -198,6 +198,15 @@ func (np *NotePicker) IsVisible() bool {
 	return np.visible
 }
 
+// IsFiltering reports whether the picker's internal list is mid-filter-entry
+// (the user has pressed "/" and is typing into the filter input). A host
+// composing this picker inline (e.g. the notes pane's browse mode) must
+// check this before treating a plain letter key as its own shortcut, or it
+// steals keystrokes the filter input should have received.
+func (np *NotePicker) IsFiltering() bool {
+	return np.list.FilterState() == list.Filtering
+}
+
 // GetSelectedNoteSlug returns the slug of the selected note, or empty string if none
 func (np *NotePicker) GetSelectedNoteSlug() string {
 	if np.selectedNote == nil {

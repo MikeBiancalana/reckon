@@ -998,3 +998,141 @@ func TestErrMsgSurfacesCRLFRejection(t *testing.T) {
 		t.Errorf("CRLF file must remain untouched (refused, not worked around)")
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Creation keybindings: unlike TestAddTodoFlow/TestAddLogFlow (which call the
+// verb directly, since no keybinding existed yet), these drive the actual
+// keypress path -- handleKey("n") to open the sub-flow, then handleKey(Enter)
+// to submit -- now that a real keybinding exists for all 3 panes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodosPaneAddKeybinding: pressing "n" while the todos pane is focused
+// must open the add-todo text-entry sub-flow; submitting text must call
+// addDurableTodo (a real vault file appears) and the todos pane must reload
+// to include it.
+func TestTodosPaneAddKeybinding(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	m, _ := newTUITestModel(t, vault)
+	m.focus = focusTodos
+
+	newModel, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m2, ok := newModel.(*tuiModel)
+	if !ok {
+		t.Fatalf("handleKey(n) returned a %T, want *tuiModel", newModel)
+	}
+	if m2.inputMode != inputModeSubFlow || m2.subFlow != subFlowAddTodo {
+		t.Fatalf("handleKey(n) on the todos pane did not open the add-todo sub-flow: inputMode=%v subFlow=%v", m2.inputMode, m2.subFlow)
+	}
+
+	m2.textEntry.SetValue("buy milk")
+	newModel2, cmd2 := m2.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m3, ok := newModel2.(*tuiModel)
+	if !ok {
+		t.Fatalf("handleKey(Enter) returned a %T, want *tuiModel", newModel2)
+	}
+	for _, follow := range drainTUICmd(cmd2) {
+		m3 = applyTUIMsg(t, m3, follow)
+	}
+
+	if m3.inputMode != inputModeNormal {
+		t.Errorf("sub-flow did not close after submit: inputMode = %v", m3.inputMode)
+	}
+	if !containsTodoText(m3.todos.items, "buy milk") {
+		t.Errorf("todos pane after n -> submit -> reload: items = %+v, want the new todo included", m3.todos.items)
+	}
+}
+
+// TestLogPaneAddKeybinding: pressing "n" while the log pane is focused must
+// open the add-log text-entry sub-flow; submitting text must call
+// appendLogEntry (today's day file appears) and the log pane must reload to
+// include it.
+func TestLogPaneAddKeybinding(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	m, _ := newTUITestModel(t, vault)
+	m.focus = focusLog
+
+	newModel, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m2, ok := newModel.(*tuiModel)
+	if !ok {
+		t.Fatalf("handleKey(n) returned a %T, want *tuiModel", newModel)
+	}
+	if m2.inputMode != inputModeSubFlow || m2.subFlow != subFlowAddLog {
+		t.Fatalf("handleKey(n) on the log pane did not open the add-log sub-flow: inputMode=%v subFlow=%v", m2.inputMode, m2.subFlow)
+	}
+
+	m2.textEntry.SetValue("wrote the keybinding test")
+	newModel2, cmd2 := m2.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m3, ok := newModel2.(*tuiModel)
+	if !ok {
+		t.Fatalf("handleKey(Enter) returned a %T, want *tuiModel", newModel2)
+	}
+	for _, follow := range drainTUICmd(cmd2) {
+		m3 = applyTUIMsg(t, m3, follow)
+	}
+
+	if m3.inputMode != inputModeNormal {
+		t.Errorf("sub-flow did not close after submit: inputMode = %v", m3.inputMode)
+	}
+	if _, statErr := os.Stat(dayLogPath(vault, utcToday())); statErr != nil {
+		t.Fatalf("handleKey(n) -> submit did not create today's log day file: %v", statErr)
+	}
+	selected := m3.log.view.SelectedLogEntry()
+	if selected == nil || selected.Content != "wrote the keybinding test" {
+		t.Errorf("log pane after n -> submit -> reload: SelectedLogEntry() = %+v, want the new entry reflected", selected)
+	}
+}
+
+// TestNotesPaneCreateKeybinding: pressing "n" while the notes pane is
+// focused and in browse mode must open the create-note text-entry sub-flow;
+// submitting a title must call createNote (a real vault file appears) and
+// the notes pane must reload to include it.
+func TestNotesPaneCreateKeybinding(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	m, _ := newTUITestModel(t, vault)
+	m.focus = focusNotes
+	if m.notes.mode != notesShowBrowse {
+		t.Fatalf("precondition: notes pane must start in browse mode, got %v", m.notes.mode)
+	}
+
+	newModel, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m2, ok := newModel.(*tuiModel)
+	if !ok {
+		t.Fatalf("handleKey(n) returned a %T, want *tuiModel", newModel)
+	}
+	if m2.inputMode != inputModeSubFlow || m2.subFlow != subFlowNewNote {
+		t.Fatalf("handleKey(n) on the notes pane (browse) did not open the new-note sub-flow: inputMode=%v subFlow=%v", m2.inputMode, m2.subFlow)
+	}
+
+	m2.textEntry.SetValue("Meeting Notes")
+	newModel2, cmd2 := m2.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m3, ok := newModel2.(*tuiModel)
+	if !ok {
+		t.Fatalf("handleKey(Enter) returned a %T, want *tuiModel", newModel2)
+	}
+	for _, follow := range drainTUICmd(cmd2) {
+		m3 = applyTUIMsg(t, m3, follow)
+	}
+
+	if m3.inputMode != inputModeNormal {
+		t.Errorf("sub-flow did not close after submit: inputMode = %v", m3.inputMode)
+	}
+	path := filepath.Join(vault, "notes", "meeting-notes.md")
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("handleKey(n) -> submit did not create %s: %v", path, statErr)
+	}
+	var found bool
+	for _, n := range m3.notes.notes {
+		if n.Slug == "meeting-notes" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("notes pane after n -> submit -> reload: notes = %+v, want the new note included", m3.notes.notes)
+	}
+}

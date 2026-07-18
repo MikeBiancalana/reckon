@@ -34,9 +34,10 @@ const (
 	inputModeSubFlow
 )
 
-// tuiSubFlowKind identifies which agenda actuator arg sub-flow
-// (tui_keyboard.go) is currently capturing input, when inputMode is
-// inputModeSubFlow.
+// tuiSubFlowKind identifies which text-capture sub-flow (tui_keyboard.go) is
+// currently stealing key events, when inputMode is inputModeSubFlow: an
+// agenda actuator arg (defer/deadline/priority) or one of the 3 pane
+// creation flows (add todo, add log, new note).
 type tuiSubFlowKind int
 
 const (
@@ -44,6 +45,9 @@ const (
 	subFlowAgendaDefer
 	subFlowAgendaDeadline
 	subFlowAgendaPriority
+	subFlowAddTodo
+	subFlowAddLog
+	subFlowNewNote
 )
 
 // tuiModel is the top-level bubbletea model for `rk tui`: a persistent
@@ -204,7 +208,7 @@ func (m *tuiModel) View() string {
 		switch m.subFlow {
 		case subFlowAgendaDefer, subFlowAgendaDeadline:
 			return m.datePicker.View()
-		case subFlowAgendaPriority:
+		case subFlowAgendaPriority, subFlowAddTodo, subFlowAddLog, subFlowNewNote:
 			return m.textEntry.View()
 		}
 	}
@@ -318,14 +322,19 @@ func (m *tuiModel) selectNoteCmd(slug string) tea.Cmd {
 	}
 }
 
-// reloadCmdFor fires the reload cmd for the pane a mutation just wrote to.
-// Only "agenda" is wired today (the actuator sub-flow, tui_keyboard.go); the
-// string key lets a future todos/log/notes creation flow reuse this same
-// dispatch (see loadTodosCmd/loadLogCmd/loadNotesListCmd).
+// reloadCmdFor fires the reload cmd for the pane a mutation just wrote to:
+// the agenda actuator sub-flow and the add-todo/add-log/create-note
+// keybindings (tui_keyboard.go) all funnel through this same dispatch.
 func (m *tuiModel) reloadCmdFor(kind string) tea.Cmd {
 	switch kind {
 	case "agenda":
 		return m.loadAgendaCmd()
+	case "todos":
+		return m.loadTodosCmd()
+	case "log":
+		return m.loadLogCmd()
+	case "notes":
+		return m.loadNotesListCmd()
 	}
 	return nil
 }
