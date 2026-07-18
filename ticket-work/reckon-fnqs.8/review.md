@@ -1,70 +1,84 @@
 # Code Review: reckon-fnqs.8 — Persistent multi-pane `rk tui`
 
-**Verdict: REQUEST CHANGES**
+**Verdict: APPROVE**
 
-Build/vet/tests all green (`go build ./...`, `go vet ./internal/cli/... ./internal/tui/...`, `go test ./internal/cli/... ./internal/tui/...`). The safety-critical mechanics (read-only guard, logDid default, verb-only writes + reconcile + reselect-by-ID, strict journal/service decoupling, async closure capture) are all correctly implemented and covered by real tests — no notes there. The blocking issue is narrower and uncontested: the new hand-rolled agenda/todos row renderers ship with zero width truncation, in direct violation of an explicit AC edge case that the implementer demonstrably knew about and tested for the log pane but not for the two new renderers. Separately, `bd show reckon-fnqs.8` (the authoritative ticket, not the derived planning docs) confirms creation/edit flows were committed Scope, and the delivered TUI has no keyboard path to reach any of them — a real, disclosed-but-unresolved gap worth resolving before merge, though it's arguably a closer call against the ticket's narrower "Done when" text (see §3).
+> **Supersedes the prior REQUEST CHANGES review** (kept below as §5 for the record).
+> Since that review the owner chose to wire real creation flows now (not ship agenda-only).
+> All blocking/should-fix items are resolved: (1) agenda/todos row truncation added;
+> (2) `n` keybindings wired for todos/log/notes creation; (3) box-sizing mismatch fixed via a
+> shared `paneContentDims`; (4) `notes_pane.go:455` nil-guard added; plus a simplify pass
+> (`reconcileDone`/`startCreateSubFlow`/`finishCreateSubFlow`) and two preflight fixes. Build/vet/
+> tests green (`go build ./...`, `go vet ./internal/cli/... ./internal/tui/...`, `go test` same).
 
 ---
 
-## 1. The 7 flagged risk areas
+## 1. Required-fix verification (re-read actual code, not commit messages)
 
-| # | Area | Verdict | Evidence |
+| Prior blocker/should-fix | Status | Evidence |
+|---|---|---|
+| Truncation missing on agenda/todos rows | **Resolved** | `renderAgendaBody`/`renderTodosBody` (`tui_model.go:415-460`) compute `innerW` via `paneContentDims(p.width,p.height)` and clip each line through `truncateRow` → `lipgloss.NewStyle().MaxWidth(width)` — the same mechanism `log_view.go`'s `LogDelegate.Render` uses. `TestAgendaPaneRenderTruncatesLongContent` (`tui_test.go`) covers the agenda renderer. |
+| Box-sizing inconsistent across panes | **Resolved** | `paneContentDims` (`tui_model.go:369-382`) is now the single source of truth: `renderPaneBox` calls it, and both `logPane.SetSize` (`tui_panes.go:176-181`) and `notesPane.SetSize` (`tui_panes.go:225-232`) feed the inner widgets `paneContentDims(...)` instead of the outer target. `View` passes outer `p.width`/`p.height` into `renderPaneBox` (`tui_model.go:216-225`), which re-derives inner via the same helper — no double-subtraction. Duplication risk from the prior review is gone (the border/pad constants live in one function). |
+| `notes_pane.go:455` unguarded `SourceNote` deref | **Resolved** | `getLinkAtCursor` (`notes_pane.go:452-458`) returns `nil` when `bl.NoteLink.SourceNote == nil`. The only caller, `selectCurrentLink` (`notes_pane.go:408-411`), already `return nil`s on a nil link → the nil case is a clean skip-navigation no-op, **not** a silent wrong-navigation. |
+| Creation flows unreachable by keyboard | **Resolved** (owner chose to wire now) | `n` bound in all three panes; verbs called correctly; see §2–§3. |
+
+Preflight fixes also confirmed: `note_v1.go:285` now `fmt.Errorf("note create: %w", err)`; `tui_read.go`'s `loadLogEntries`/`listNotes` use `defer rows.Close()`.
+
+## 2. New keybinding surface — collisions
+
+| Pane | New key | Collision check | Verdict |
 |---|---|---|---|
-| 1 | Agenda read-only guard | **Correct** | `tui_keyboard.go:79-95` (`dispatchAgendaActuator`) checks `item.ReadOnly` unconditionally before the `switch key` that includes t/d/D/p/x/i/c — no verb call, no file touch. Error text `fmt.Errorf("%s is read-only (external work ticket); use rk today open instead", item.ID)` matches the required exact string. `TestAgendaReadOnlyGuard` (tui_test.go:608) asserts the message and a file-snapshot no-op, but only for keys `x/t/i/c` — `d/D/p` aren't exercised even though they run through the same guard (test-coverage gap, not a behavior bug — the guard runs before the key switch regardless of which key). |
-| 2 | `logDid` default for `x` | **Correct** | `actuateCmd` (`tui_keyboard.go:117-129`) calls `dispatchTodayAct(vaultDir, ref, key, arg, false)` — `noLog=false` → `actDone`'s `!noLog` → `logDid=true`, matching `today.go:570-571`'s CLI default. `TestAgendaActDoneEmitsLogEntry` (tui_test.go:518) confirms a `did`-linked log entry is created with no explicit toggle. |
-| 3 | Mutation flow (verb → reconcile → reload → reselect-by-ID) | **Correct** | `actuateCmd` calls `dispatchTodayAct` → `ix.Reconcile()` → `mutationDoneMsg{kind:"agenda"}`; `Update` (`tui_model.go:190`) routes that to `reloadCmdFor("agenda")` → `loadAgendaCmd()`. `agendaPane.reselect()` (`tui_panes.go:69-89`) and `todosPane.reselect()` (`tui_panes.go:128-148`) re-derive `selected` from `selectedID`/`todoItemKey`, not the old index. No `writeFileAtomic`/`os.WriteFile` call anywhere in `internal/cli/tui*.go` outside test fixtures (grep confirmed). `reloadCmdFor` only handles `"agenda"` today — acceptable, since agenda actuators are the only mutation reachable via keyboard (see §3 below). |
-| 4 | Strict decoupling (no `internal/journal`/`internal/service` under `internal/tui`) | **Correct** | `internal/tui/no_journal_import_test.go` is a real AST-based test (`go/parser`, `ImportsOnly`) walking every `.go` file, plus a sanity test that the walk actually visits ≥10 files. Manual grep of `internal/tui/**` confirms zero live imports (only comment mentions). `task_list.go`/`task_picker.go`/`log_view.go` import blocks confirmed journal-free. |
-| 5 | Async closure capture | **Correct** | Every `tea.Cmd` builder in `tui_model.go` (`loadAgendaCmd`, `loadTodosCmd`, `loadLogCmd`, `loadNotesListCmd`, `loadNotesLinksCmd`, `selectNoteCmd`) snapshots `db := m.ix.DB()` (and `today := todoNow().Format(...)` where relevant) before returning the closure; the closure body references only the local, never `m.*`. `actuateCmd` (`tui_keyboard.go:117-119`) snapshots `vaultDir`/`ix` the same way. No closure reads a mutable model field at call time. |
-| 6 | Notes-pane browse→inspect + `SourceNote` nil risk | **Partially correct — one unguarded panic path remains** | `loadNotesPaneLinks` (`tui_read.go:151-201`) resolves `NoteLink.SourceNote` for every backlink whose source note still resolves, and `TestLoadNotesPaneLinks` confirms this for the happy path. `notes_pane.go:231` (`formatLinkItem`) is nil-safe (`if isBacklink && link.NoteLink.SourceNote != nil`). **But `notes_pane.go:451-460` (`getLinkAtCursor`, the Enter-to-navigate path) dereferences `bl.NoteLink.SourceNote.Slug` with no nil check.** If a backlink's source id doesn't resolve (`loadNoteDisplay` returns `(nil, nil)` on `sql.ErrNoRows`, e.g. a dangling edge whose source node was deleted without an edge cleanup), `loadNotesPaneLinks` correctly leaves `SourceNote` nil on that item — and pressing Enter on that row in the notes pane's inspect mode panics. This is pre-existing code (not touched by this diff, `notes_pane.go` doesn't appear in `git diff --stat`), but this ticket is what makes the path live and reachable by a real user for the first time. Not exercised by any test (only the fully-resolved case is tested). Cheap fix: nil-guard at `notes_pane.go:455` mirroring the one already at line 231. Browse↔inspect mode handoff itself (`tui_keyboard.go:160-177`, `tui_model.go:173-188`) is correct: `Esc` from inspect re-`Show()`s the picker with the cached `m.notes.notes`, `NotePickerSelectMsg`/`LinkSelectedMsg` route through typed messages, no missed focus transfer. |
-| 7 | Resize/negative-dim clamping + box-sizing consistency | **Clamping correct; box-sizing NOT consistent across panes** | Negative-dimension clamping is solid: `calcPaneDims` (`tui_layout.go:19-24`), `handleWindowSize` (`tui_layout.go:42-47`), and every pane's own `clampDim` (`tui_panes.go:12-17`) all clamp to 0, and `TestResizeClampsDimensions` verifies both the positive-size and `(-10,-5)` cases. Box-sizing has two confirmed problems — see §2 below for detail. |
+| Todos | `n` → add-todo | Existing keys are `j/k/down/up` only (`handleTodosKey`, `tui_keyboard.go:147-156`). | No collision. |
+| Log | `n` → add-log | `n` is intercepted in `handleLogKey` **before** forwarding to `LogView.Update` (`tui_keyboard.go:163-171`). The log list has **filtering disabled** (`log_view.go:127` `SetFilteringEnabled(false)`), so there is no `/`-filter typing state for `n` to be stolen from. | No collision. |
+| Notes | `n` → create-note (browse only) | Guarded by `!m.notes.picker.IsFiltering()` (`tui_keyboard.go:180-183`). `IsFiltering()` (`note_picker.go:206-208`) returns `list.FilterState()==list.Filtering`; the picker has filtering **enabled** (`note_picker.go:157`), so mid-filter `n` keystrokes correctly reach the filter input. Inspect mode never reaches the `n` branch (create is browse-only). | No collision. |
 
-## 2. Box-sizing inconsistency (detail on risk area 7)
+## 3. Creation sub-flows call the right verb with sane args
 
-Verified empirically (`lipgloss.Style.Width()` **wraps** content wider than the target width; it does not truncate — confirmed by a standalone repro). Two distinct bugs follow from this:
+| Flow | Verb + args (`tui_keyboard.go`) | Signature | Verdict |
+|---|---|---|---|
+| Add todo | `addDurableTodo(todosDir, author, body, "", "", "", "")` | `todo.go:328` (7 params) | Correct. No scheduled/deadline/depends/repeat for v1 — consistent with what `TestAddTodoFlow` exercises. |
+| Add log | `appendLogEntry(logDir, day, hhmm, author, body)` with `day=time.Now().UTC().Format("2006-01-02")`, `hhmm=…"15:04"` | `add.go:183` | Correct. **Matches the CLI default exactly** — `rk add`'s `getEffectiveDate`/`getEffectiveTime` default to `time.Now().UTC()` (`add.go:161,170`). No UTC/local divergence; TUI entries file under the same day the CLI would. |
+| Create note | `createNote(notesDir, noteCreateParams{Title, Slug: slugify(title), Type: "note", Author})` | `note_v1.go:319` | Correct. Slug self-minted via `slugify`+`validateSlug`, mirroring `runNoteCreateE:244-247`; `Type:"note"` matches the CLI's empty→"note" default; `Body` empty (single-line entry bar, v1). `createNote` does its own dir-mkdir/collision/overwrite checks, so duplicate titles surface a real error to `m.lastErr`. |
 
-1. **Agenda/todos rows have zero width truncation.** `renderAgendaBody`/`renderTodosBody` (`tui_model.go:383-421`) print `it.Title` verbatim with no `MaxWidth`/truncation, unlike `log_view.go`'s `LogDelegate.Render` (`MaxWidth(d.width)`, prior art from commit `eec3af8`). A long todo/agenda title will wrap inside `renderPaneBox`'s fixed-height box rather than truncate, pushing rows down and clipping the last ones — the exact behavior AC §3's edge case ("Very long body/title content in a pane row… do not let one row expand pane height or scroll horizontally") forbids. No test covers this for agenda/todos (only `TestLogPaneSetSizeTruncatesLongContent` exists, and only for the log pane).
+## 4. Simplify-pass extraction — no regression
 
-2. **`logPane`/`notesPane` inner widgets are sized to the outer box dimension, not the inner content dimension.** `renderPaneBox` (`tui_model.go:361-380`) correctly documents and implements "requested outer width/height must have border+padding subtracted first" — but that subtraction happens *only* inside `renderPaneBox` itself. `logPane.SetSize` (`tui_panes.go:172-176`) and `notesPane.SetSize` (`tui_panes.go:217-223`) forward `p.width`/`p.height` (the *outer* target, same value later passed into `renderPaneBox`) straight to `p.view.SetSize(...)` / `p.picker.SetWidth/SetHeight(...)` / `p.links.SetSize(...)`. Those inner widgets then lay out/wrap content assuming the full outer width, which `renderPaneBox` then re-wraps into a content area 4 columns narrower (2 border + 2 padding) and 2 rows shorter — causing systematic extra wrapping/overflow inside the box on any render where content approaches the pane's configured width, not just pathological long-content cases. `TestLogPaneSetSizeTruncatesLongContent` doesn't catch this because it renders `p.view.View()` in isolation and never passes through `renderPaneBox`.
+The "collapse 3 near-identical flows into one parameterized helper" refactor is wired correctly end-to-end; the kind string and dispatch func stay matched on every path:
 
-Net: the box-sizing fix the implementer applied to `renderPaneBox` (correct, well-commented) was not threaded through to each pane's own internal `SetSize`, so "consistent across all 4 panes" — the thing this review was asked to verify — does not hold.
+| Pane handler (`startCreateSubFlow`) | `handleSubFlowKey` dispatch | `*Cmd` → `reconcileDone(kind)` | `reloadCmdFor(kind)` |
+|---|---|---|---|
+| `subFlowAddTodo` | `m.addTodoCmd` | `"todos"` | `loadTodosCmd` |
+| `subFlowAddLog` | `m.addLogCmd` | `"log"` | `loadLogCmd` |
+| `subFlowNewNote` | `m.createNoteCmd` | `"notes"` | `loadNotesListCmd` |
 
-## 3. New finding: creation flows have no keybinding (not one of the 7 flagged areas, but significant)
+`View`'s modal switch (`tui_model.go:211`) routes all three new kinds to `textEntry.View()`. `finishCreateSubFlow` (`tui_keyboard.go`) handles Esc (cancel, no verb), Enter (trim → cancel → dispatch iff non-empty → silent no-op on empty), else forwards to `textEntry.Update`. The three `*Cmd`s snapshot `vaultDir`/`ix`/`author` before returning the closure (no mutable model field read inside the async closure) — the closure-capture pattern from the prior review holds. `reconcileDone` reconciles then emits `mutationDoneMsg{kind}`, routed by `Update` (`tui_model.go:194`). No mis-routing, no cross-wiring.
 
-`addDurableTodo`, `appendLogEntry`, and `createNote` are referenced only in comments and doc-strings within `tui_keyboard.go`/`tui_model.go`/`tui.go` — grep confirms **zero call sites for these three verbs anywhere in the non-test TUI code**. `handleTodosKey` (`tui_keyboard.go:136-144`) only handles `j/k/down/up`; `handleLogKey` only forwards to `components.LogView.Update` (navigation); `handleNotesKey`'s browse mode only forwards to `NotePicker.Update` (filter/select, no "create new note" key). The `textEntry` widget is wired only for the priority (`p`) actuator sub-flow, never for add-todo/add-log text capture. **This is disclosed, not hidden**: `tui_keyboard.go:17-19` states plainly "Creation flows (add todo/log, create note) have no keybinding yet… binding a key to them is a follow-up," and `tui_test.go`'s header explains up front that the add-todo/add-log tests exercise "the verb call plus the model's reload path rather than a specific, still-undefined keypress sequence." The implementer flagged the gap; they just didn't close it.
+Test coverage for the new path is real: `TestTodosPaneAddKeybinding`/`TestLogPaneAddKeybinding`/`TestNotesPaneCreateKeybinding` drive the actual `handleKey("n")` → `handleKey(Enter)` sequence and assert a real vault file appears plus the pane reloads to include it.
 
-Checked against the authoritative source (`bd show reckon-fnqs.8`, not the derived planning docs — per this repo's own AGENTS.md, "Check `bd show <id>` for live task state — not the lists in any doc"), there's a real but nuanced tension:
+## 5. Other dimensions (fresh pass on new surface)
 
-- **Scope** commits to this explicitly: "Creation/edit flows inside the TUI call verb functions directly (same as a bare CLI invocation), same as v0's per-component helper models did. Not routed through a shared Prompt interface yet — that's phase 2." This describes actual reachable creation/edit UX (matching what v0's per-component helper models apparently provided), with the only thing deferred to phase 2 being the *shared Prompt abstraction*, not creation UX itself.
-- **Done when** — the actual measurable gate — is narrower and doesn't test for it: "Every TUI mutation is observable as a vault file change and survives `rk index --rebuild`; no code path in `internal/tui` imports the journal/service packages; `rk tui` opens a persistent multi-pane layout on a TTY." Read literally, this bar is satisfiable by the agenda actuator alone (which does mutate, does survive rebuild, is journal-free) — it doesn't require creation flows to be keyboard-reachable.
+**Correctness / error handling** — Add-todo and add-log `os.MkdirAll` their target dir before the verb; create-note relies on `createNote`'s internal mkdir (cosmetic inconsistency, harmless). Errors from all three verbs surface to `m.lastErr` via `errMsg`, unmodified. `addLogCmd` reads `time.Now().UTC()` twice (day, then hhmm) — a sub-nanosecond midnight-crossing could split them, but the CLI's own path has the identical two-call shape, so it is not a new divergence.
 
-So this is a **Scope-commitment gap that the narrow Done-when checklist doesn't directly catch** — a real discrepancy between what the ticket says will be built and what shipped, but not an unambiguous Done-when violation the way the truncation gap (§2) is. Net effect either way: a user running the shipped `rk tui` can view all 4 panes and act on *existing* agenda rows, but cannot add a todo, log an entry, or create a note through any keyboard interaction — three of the four panes are read-only in practice, which undercuts the ticket's own framing of what this porcelain does.
+**Security** — Note title flows through `slugify`→`validateSlug` before becoming a filename; `createNote` also runs collision/overwrite guards. No injection or path-escape surface added.
 
-## 4. Other dimensions
+**Testing / maintainability / performance** — No new concerns; the shared helpers reduce duplication cleanly and are well-commented (why, not what).
 
-**Correctness** — Beyond the flagged areas: recurrence handling (`TestAgendaActDoneRecurring`) correctly keeps `state: open` and renders the reloaded row's real state rather than forcing `done`. CRLF refusal surfaces to `m.lastErr` untouched (`TestErrMsgSurfacesCRLFRejection`). `note_v1.go`'s `createNote` extraction (`internal/cli/note_v1.go:228-353`) is a clean, behavior-preserving pure refactor — parameters substituted 1:1, no logic changes, `runNoteCreateE` now a thin wrapper. All SQL in `tui_read.go` is parameterized (no injection surface).
+## 6. Non-blocking observations (follow-up, not gating)
 
-**Architecture** — Package placement matches the plan (`package cli` for orchestration, `internal/tui/components` stays a leaf the CLI package imports one-way, no cycle). Split across `tui.go`/`tui_model.go`/`tui_layout.go`/`tui_keyboard.go`/`tui_panes.go`/`tui_read.go` is reasonable and matches the plan's file table.
+1. **Stale empty-state hint now points at the wrong key** (`log_view.go:155`): the empty log pane renders `"No log entries yet - press L to add one"`, but the key just wired is `n`, and there is **no `L` handler anywhere** (verified: global keys are Tab/CtrlC/q, no pane binds `L`, `LogView.Update` only forwards to `list.Update`). Pre-existing text, but wiring `n` as add-log is what makes it *actively* wrong — at the exact moment (empty log) the hint matters. One-line fix: change `L` → `n`. Should-fix.
+2. **Double `"note create:"` prefix on the CLI path** (`note_v1.go:285`): the preflight fix wrapped `createNote`'s error with `fmt.Errorf("note create: %w", err)`, but every error `createNote` returns already self-prefixes `"note create: …"` (`note_v1.go:324-352`), so e.g. a duplicate slug via `rk note create` now surfaces as `"note create: note create: slug … already claimed"`. (The TUI's `createNoteCmd` returns the verb error un-rewrapped, so the TUI banner is unaffected.) Clean fix is either drop the self-prefix in the verb or don't re-wrap at the call site — minor, error-handling dimension.
+3. **Pre-existing (not this diff): global `q`/`Tab`/`Ctrl+C` are matched in `handleKey` (`tui_keyboard.go:30-39`) *before* the focused-pane handlers**, so they steal keystrokes while the notes picker is mid-filter — the same class of bug the `n` guard fixes, but for global keys (a filter query containing `q` would quit instead of typing). Present in the prior TUI version too; the model doesn't track picker filter-state at the global layer. Worth a follow-up (e.g. gate global single-letter quit on `!picker.IsFiltering()` when notes is focused), but out of scope here and minor.
+4. **Coverage gap**: no test asserts the `IsFiltering()` guard (that `n` typed mid-filter does *not* create a note). The guard is correct by inspection; a one-case test would lock it in.
+5. `renderTodosBody` truncation has no direct test (only the agenda renderer does), though it is the same code path.
 
-**Testing** — 26 test functions, all green. Coverage gaps beyond what's noted above: read-only guard only tested for 4 of 7 actuator keys; no test renders through `renderPaneBox` end-to-end (would have caught the box-sizing mismatch); no test exercises an unresolved/dangling backlink (would have caught the `notes_pane.go:455` panic risk).
+None of the above gate merge.
 
-**Maintainability** — Comments are substantive and load-bearing (explain *why*, e.g. the closure-capture and box-sizing rationale), not restating code. Minor style inconsistency: `tui_read.go`'s `loadLogEntries`/`listNotes` call `rows.Close()` explicitly at each exit point rather than `defer rows.Close()` (the pattern `note_v1.go`'s `loadNoteForwardLinks`/`loadNoteBacklinks` use) — functionally fine, just an avoidable divergence from the file right next to it.
+---
 
-**Error handling** — Errors wrapped with context throughout (`fmt.Errorf("tui: ...: %w", err)`). One UX nit: `m.lastErr` is only explicitly cleared at the top of `dispatchAgendaActuator` (`tui_keyboard.go:80`); an error from one pane's load persists in the error banner across unrelated successful actions on other panes until the next agenda actuator attempt. Not blocking.
+## APPENDIX — Prior review (REQUEST CHANGES), retained for history
 
-**Performance** — `listNotes`/`loadNotesPaneLinks` do one query per note/link (N+1) rather than a join; fine at personal-vault scale, worth a comment if vaults grow large. All reads are dispatched via `tea.Cmd` (non-blocking), matching the async model.
-
-**Security** — No injection surface (parameterized SQL throughout), no unsafe file operations, no secrets handled. Nothing notable.
-
-## Required fixes
-
-**Gates merge:**
-
-1. Add truncation to `renderAgendaBody`/`renderTodosBody` row text (mirror `log_view.go`'s `MaxWidth` pattern, `tui_model.go:383-421`), per AC §3's explicit edge case. Uncontested: the implementer built and tested this exact behavior for the log pane (`TestLogPaneSetSizeTruncatesLongContent`, prior art `eec3af8`) but didn't carry it to the two new hand-rolled renderers — a known-expected behavior demonstrably missed, no scope ambiguity involved.
-2. Wire real keybindings for add-todo, add-log, and create-note — or, if Mike judges the agenda-only v1 sufficient, explicitly descope them in the ticket and update `plan.md`/AC to match. As delivered, `bd show reckon-fnqs.8`'s Scope section commits to reachable creation/edit flows "same as v0's per-component helper models did," and three of the four panes currently support no user-driven mutation at all. This is disclosed in the code, not hidden, and the narrower "Done when" checklist doesn't unambiguously require it — Mike should make the call on whether this ships now or splits off, but it shouldn't pass silently as "done" either way.
-
-**Should-fix (real, but lower severity — fine to land in the same PR or as an immediate fast-follow):**
-
-3. Fix the box-sizing mismatch: either compute `renderPaneBox`'s inner width/height once and feed *that* into `logPane.SetSize`/`notesPane.SetSize` (not the outer target), or move the border/padding accounting into each pane wrapper so `SetSize` always receives content-area dimensions. Real and systematic (not just a long-content edge case) but purely visual — no crash, no data risk.
-4. Nil-guard `notes_pane.go:455` (`bl.NoteLink.SourceNote.Slug`) the same way `formatLinkItem` already guards line 231. One line. Pre-existing code, not touched by this diff, and requires a dangling edge (rare in a consistent index) to trigger — but this ticket is what makes the path reachable by a live user for the first time, so worth closing now rather than waiting for a bug report.
-
-None of the above require architectural rework — the verb-calling, reconcile, and reload plumbing is already correct and well-tested; these are localized fixes.
+The prior review gated on: (blocking) missing agenda/todos truncation and unreachable creation
+keybindings; (should-fix) box-sizing mismatch and the `notes_pane.go:455` nil deref. It confirmed
+as correct: the read-only guard, `logDid=true` default for `x`, the verb→reconcile→reload→
+reselect-by-ID mutation flow, strict journal/service decoupling (AST test), and async closure
+capture. The current diff does not touch those five confirmed-correct areas except through the
+shared `reconcileDone`/creation-cmd plumbing, which was re-verified above (§4). All four flagged
+items are now resolved.
