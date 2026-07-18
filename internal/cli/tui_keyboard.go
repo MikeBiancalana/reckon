@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikeBiancalana/reckon/internal/index"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -123,11 +124,19 @@ func (m *tuiModel) actuateCmd(ref, key, arg string) tea.Cmd {
 		if _, err := dispatchTodayAct(vaultDir, ref, key, arg, false); err != nil {
 			return errMsg{err: err}
 		}
-		if _, err := ix.Reconcile(); err != nil {
-			return errMsg{err: err}
-		}
-		return mutationDoneMsg{kind: "agenda"}
+		return reconcileDone(ix, "agenda")
 	}
+}
+
+// reconcileDone reconciles the index after a successful mutation and
+// returns the reload signal for kind (tui_model.go's reloadCmdFor), or an
+// errMsg if Reconcile itself fails. Shared tail for every mutation cmd
+// (actuateCmd and the 3 creation cmds below).
+func reconcileDone(ix *index.Index, kind string) tea.Msg {
+	if _, err := ix.Reconcile(); err != nil {
+		return errMsg{err: err}
+	}
+	return mutationDoneMsg{kind: kind}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,7 +150,7 @@ func (m *tuiModel) handleTodosKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.todos.moveUp()
 	case "n":
-		return m, m.startAddTodoSubFlow()
+		return m, m.startCreateSubFlow(subFlowAddTodo, components.ModeTask)
 	}
 	return m, nil
 }
@@ -153,7 +162,7 @@ func (m *tuiModel) handleTodosKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *tuiModel) handleLogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "n" {
-		return m, m.startAddLogSubFlow()
+		return m, m.startCreateSubFlow(subFlowAddLog, components.ModeLog)
 	}
 	var cmd tea.Cmd
 	m.log.view, cmd = m.log.view.Update(msg)
@@ -169,7 +178,7 @@ func (m *tuiModel) handleLogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *tuiModel) handleNotesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.notes.mode == notesShowBrowse {
 		if msg.String() == "n" && !m.notes.picker.IsFiltering() {
-			return m, m.startNewNoteSubFlow()
+			return m, m.startCreateSubFlow(subFlowNewNote, components.ModeNote)
 		}
 		var cmd tea.Cmd
 		m.notes.picker, cmd = m.notes.picker.Update(msg)
@@ -212,35 +221,15 @@ func (m *tuiModel) startPrioritySubFlow(ref string) tea.Cmd {
 	return m.textEntry.Focus()
 }
 
-// startAddTodoSubFlow opens the todos pane's "n" (new) text-entry sub-flow.
-func (m *tuiModel) startAddTodoSubFlow() tea.Cmd {
-	m.subFlow = subFlowAddTodo
+// startCreateSubFlow opens a pane's "n" (new) text-entry sub-flow: kind
+// selects which finalize case handleSubFlowKey routes to, mode configures
+// TextEntryBar for that verb's expected input. Shared by the todos/log/notes
+// creation flows (add todo, add log, new note).
+func (m *tuiModel) startCreateSubFlow(kind tuiSubFlowKind, mode components.EntryMode) tea.Cmd {
+	m.subFlow = kind
 	m.subFlowRef = ""
 	m.inputMode = inputModeSubFlow
-	m.textEntry.SetMode(components.ModeTask)
-	m.textEntry.Clear()
-	return m.textEntry.Focus()
-}
-
-// startAddLogSubFlow opens the log pane's "n" (new) text-entry sub-flow.
-func (m *tuiModel) startAddLogSubFlow() tea.Cmd {
-	m.subFlow = subFlowAddLog
-	m.subFlowRef = ""
-	m.inputMode = inputModeSubFlow
-	m.textEntry.SetMode(components.ModeLog)
-	m.textEntry.Clear()
-	return m.textEntry.Focus()
-}
-
-// startNewNoteSubFlow opens the notes pane's "n" (new) text-entry sub-flow.
-// v1 captures only a title (TextEntryBar is single-line): createNote's Slug
-// is derived from it, and Body stays empty, matching the same
-// minimal-fields shape the todos/log creation flows use.
-func (m *tuiModel) startNewNoteSubFlow() tea.Cmd {
-	m.subFlow = subFlowNewNote
-	m.subFlowRef = ""
-	m.inputMode = inputModeSubFlow
-	m.textEntry.SetMode(components.ModeNote)
+	m.textEntry.SetMode(mode)
 	m.textEntry.Clear()
 	return m.textEntry.Focus()
 }
@@ -265,11 +254,11 @@ func (m *tuiModel) handleSubFlowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case subFlowAgendaPriority:
 		return m.handlePrioritySubFlowKey(msg)
 	case subFlowAddTodo:
-		return m.handleAddTodoSubFlowKey(msg)
+		return m.finishCreateSubFlow(msg, m.addTodoCmd)
 	case subFlowAddLog:
-		return m.handleAddLogSubFlowKey(msg)
+		return m.finishCreateSubFlow(msg, m.addLogCmd)
 	case subFlowNewNote:
-		return m.handleNewNoteSubFlowKey(msg)
+		return m.finishCreateSubFlow(msg, m.createNoteCmd)
 	}
 	m.cancelSubFlow()
 	return m, nil
@@ -337,57 +326,20 @@ func (m *tuiModel) handlePrioritySubFlowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 // `rk todo add`/`rk add` without duplicating its exact error text.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// handleAddTodoSubFlowKey finalizes the todos pane's "n" sub-flow.
-func (m *tuiModel) handleAddTodoSubFlowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// finishCreateSubFlow finalizes one of the 3 creation sub-flows, shared
+// since they differ only in which mutation cmd Enter dispatches.
+func (m *tuiModel) finishCreateSubFlow(msg tea.KeyMsg, dispatch func(text string) tea.Cmd) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
 		m.cancelSubFlow()
 		return m, nil
 	case tea.KeyEnter:
-		body := strings.TrimSpace(m.textEntry.GetValue())
+		text := strings.TrimSpace(m.textEntry.GetValue())
 		m.cancelSubFlow()
-		if body == "" {
+		if text == "" {
 			return m, nil
 		}
-		return m, m.addTodoCmd(body)
-	}
-	var cmd tea.Cmd
-	m.textEntry, cmd = m.textEntry.Update(msg)
-	return m, cmd
-}
-
-// handleAddLogSubFlowKey finalizes the log pane's "n" sub-flow.
-func (m *tuiModel) handleAddLogSubFlowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEsc:
-		m.cancelSubFlow()
-		return m, nil
-	case tea.KeyEnter:
-		body := strings.TrimSpace(m.textEntry.GetValue())
-		m.cancelSubFlow()
-		if body == "" {
-			return m, nil
-		}
-		return m, m.addLogCmd(body)
-	}
-	var cmd tea.Cmd
-	m.textEntry, cmd = m.textEntry.Update(msg)
-	return m, cmd
-}
-
-// handleNewNoteSubFlowKey finalizes the notes pane's "n" sub-flow.
-func (m *tuiModel) handleNewNoteSubFlowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEsc:
-		m.cancelSubFlow()
-		return m, nil
-	case tea.KeyEnter:
-		title := strings.TrimSpace(m.textEntry.GetValue())
-		m.cancelSubFlow()
-		if title == "" {
-			return m, nil
-		}
-		return m, m.createNoteCmd(title)
+		return m, dispatch(text)
 	}
 	var cmd tea.Cmd
 	m.textEntry, cmd = m.textEntry.Update(msg)
@@ -415,10 +367,7 @@ func (m *tuiModel) addTodoCmd(body string) tea.Cmd {
 		if _, err := addDurableTodo(todosDir, author, body, "", "", "", ""); err != nil {
 			return errMsg{err: err}
 		}
-		if _, err := ix.Reconcile(); err != nil {
-			return errMsg{err: err}
-		}
-		return mutationDoneMsg{kind: "todos"}
+		return reconcileDone(ix, "todos")
 	}
 }
 
@@ -438,10 +387,7 @@ func (m *tuiModel) addLogCmd(body string) tea.Cmd {
 		if _, err := appendLogEntry(logDir, day, hhmm, author, body); err != nil {
 			return errMsg{err: err}
 		}
-		if _, err := ix.Reconcile(); err != nil {
-			return errMsg{err: err}
-		}
-		return mutationDoneMsg{kind: "log"}
+		return reconcileDone(ix, "log")
 	}
 }
 
@@ -468,9 +414,6 @@ func (m *tuiModel) createNoteCmd(title string) tea.Cmd {
 		}); err != nil {
 			return errMsg{err: err}
 		}
-		if _, err := ix.Reconcile(); err != nil {
-			return errMsg{err: err}
-		}
-		return mutationDoneMsg{kind: "notes"}
+		return reconcileDone(ix, "notes")
 	}
 }
