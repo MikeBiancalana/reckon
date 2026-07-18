@@ -351,6 +351,28 @@ var (
 	tuiErrStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 )
 
+// paneContentDims computes the usable interior width/height for pane content
+// once renderPaneBox's own border+padding decoration is subtracted from an
+// outer width/height. This is the single source of truth both renderPaneBox
+// and each pane wrapper's SetSize (tui_panes.go) must agree on -- an inner
+// widget sized to the outer target instead lays out assuming more room than
+// renderPaneBox will actually give it.
+func paneContentDims(width, height int) (innerW, innerH int) {
+	const (
+		borderH = 2 // 1 cell left + right
+		borderV = 2 // 1 cell top + bottom
+		padH    = 2 // Padding(0, 1): 1 cell left + right
+	)
+	innerW, innerH = width-borderH-padH, height-borderV
+	if innerW < 0 {
+		innerW = 0
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+	return innerW, innerH
+}
+
 // renderPaneBox wraps body in a titled, bordered box sized to width/height,
 // styled to indicate whether it currently has focus. lipgloss's Width/Height
 // set the CONTENT box (before padding/border are added on top), so the
@@ -363,20 +385,21 @@ func renderPaneBox(title string, focused bool, width, height int, body string) s
 	if focused {
 		style = tuiFocusedPaneStyle
 	}
-	const (
-		borderH = 2 // 1 cell left + right
-		borderV = 2 // 1 cell top + bottom
-		padH    = 2 // Padding(0, 1): 1 cell left + right
-	)
-	innerW, innerH := width-borderH-padH, height-borderV
-	if innerW < 0 {
-		innerW = 0
-	}
-	if innerH < 1 {
-		innerH = 1
-	}
+	innerW, innerH := paneContentDims(width, height)
 	content := tuiPaneTitleStyle.Render(title) + "\n" + body
 	return style.Width(innerW).Height(innerH).Render(content)
+}
+
+// truncateRow renders line clipped to width cells (lipgloss's MaxWidth, the
+// same mechanism log_view.go's LogDelegate.Render uses) so a long row can
+// never force renderPaneBox's fixed-height box to wrap -- wrapping would push
+// later rows down and clip them off the bottom instead of just clipping the
+// one long row's tail.
+func truncateRow(line string, width int) string {
+	if width <= 0 {
+		return line
+	}
+	return lipgloss.NewStyle().MaxWidth(width).Render(line)
 }
 
 // renderAgendaBody renders the agenda pane's hand-rolled row list.
@@ -384,6 +407,7 @@ func renderAgendaBody(p *agendaPane) string {
 	if len(p.items) == 0 {
 		return "today: nothing due"
 	}
+	innerW, _ := paneContentDims(p.width, p.height)
 	var b strings.Builder
 	for i, it := range p.items {
 		cursor := "  "
@@ -394,7 +418,9 @@ func renderAgendaBody(p *agendaPane) string {
 		if it.ReadOnly {
 			marker = " [read-only]"
 		}
-		fmt.Fprintf(&b, "%s[%s]%s %s\n", cursor, it.State, marker, it.Title)
+		line := fmt.Sprintf("%s[%s]%s %s", cursor, it.State, marker, it.Title)
+		b.WriteString(truncateRow(line, innerW))
+		b.WriteString("\n")
 	}
 	return b.String()
 }
@@ -405,6 +431,7 @@ func renderTodosBody(p *todosPane) string {
 	if len(p.items) == 0 {
 		return "todo: no items"
 	}
+	innerW, _ := paneContentDims(p.width, p.height)
 	var b strings.Builder
 	for i, it := range p.items {
 		cursor := "  "
@@ -415,7 +442,9 @@ func renderTodosBody(p *todosPane) string {
 		if text == "" {
 			text = it.Body
 		}
-		fmt.Fprintf(&b, "%s%s\n", cursor, text)
+		line := cursor + text
+		b.WriteString(truncateRow(line, innerW))
+		b.WriteString("\n")
 	}
 	return b.String()
 }

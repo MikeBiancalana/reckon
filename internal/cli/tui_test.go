@@ -941,6 +941,26 @@ func TestLogPaneSetSizeTruncatesLongContent(t *testing.T) {
 	}
 }
 
+// TestAgendaPaneRenderTruncatesLongContent: a very long agenda row title
+// must be truncated to fit the pane's configured width -- mirrors
+// TestLogPaneSetSizeTruncatesLongContent's shape, but for the hand-rolled
+// renderAgendaBody renderer, which (unlike log_view.go's LogDelegate) has no
+// underlying bubbles/list component doing wrapping/truncation for it.
+func TestAgendaPaneRenderTruncatesLongContent(t *testing.T) {
+	p := newAgendaPane()
+	p.SetSize(40, 10)
+	p.items = []agendaItem{
+		{ID: "01LONGROW", State: "open", Title: strings.Repeat("x", 500)},
+	}
+
+	rendered := renderAgendaBody(p)
+	for _, line := range strings.Split(rendered, "\n") {
+		if len(line) > 60 {
+			t.Fatalf("renderAgendaBody with pane width 40 did not truncate a long row: rendered line is %d chars wide, want it truncated to fit the pane\nline: %q", len(line), line)
+		}
+	}
+}
+
 // TestErrMsgSurfacesCRLFRejection: a verb call refused for CRLF line endings
 // must surface onto the model's error state when delivered as an errMsg, not
 // be silently dropped or worked around; the offending file must stay
