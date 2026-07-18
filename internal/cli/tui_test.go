@@ -6,16 +6,15 @@
 // tuiModel.Update, mirroring this package's existing convention of testing
 // Bubble Tea components through direct Update() calls rather than a
 // pty/teatest harness. Read-side tests build a real vault + *index.Index and
-// call the read helpers/verb functions directly; write-flow tests call the
-// same verb functions (addDurableTodo, dispatchTodayAct, appendLogEntry,
-// createNote) the keyboard layer is meant to invoke, then assert the model
-// picks the mutation up through its own typed message pipeline — the
-// keyboard layer itself has no concrete text-entry-sub-flow keybinding yet,
-// so those two tests (add-todo, add-log) exercise the verb call plus the
-// model's reload path rather than a specific, still-undefined keypress
-// sequence. Agenda actuator keys (t/d/D/p/x/i/c) are not ambiguous — they are
-// the same single-letter vocabulary `rk today act` already uses — so agenda
-// tests drive tuiModel.handleKey with those literal keys.
+// call the read helpers/verb functions directly. TestAddTodoFlow/
+// TestAddLogFlow call the write verbs (addDurableTodo, appendLogEntry)
+// directly and assert the model picks the mutation up through its own typed
+// message pipeline; TestTodosPaneAddKeybinding/TestLogPaneAddKeybinding/
+// TestNotesPaneCreateKeybinding cover the same verbs but driven through the
+// real "n" keypress path (tui_keyboard.go) instead. Agenda actuator keys
+// (t/d/D/p/x/i/c) are not ambiguous — they are the same single-letter
+// vocabulary `rk today act` already uses — so agenda tests drive
+// tuiModel.handleKey with those literal keys.
 //
 // Harness reuse (already defined elsewhere in this package, not redefined
 // here): setupQueryVault, writeTestNode, resetCLIFlags, writeTodoFixture,
