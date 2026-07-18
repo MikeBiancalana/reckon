@@ -6,6 +6,7 @@ import (
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/index"
 	"github.com/MikeBiancalana/reckon/internal/logger"
+	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
@@ -58,12 +59,14 @@ func runTUIE(cmd *cobra.Command, args []string) error {
 // newTUIModel constructs the top-level model and its 4 pane wrappers.
 func newTUIModel(ix *index.Index, cfg *config.Config) *tuiModel {
 	return &tuiModel{
-		ix:       ix,
-		cfg:      cfg,
-		vaultDir: cfg.VaultDir,
-		agenda:   newAgendaPane(),
-		todos:    newTodosPane(),
-		log:      newLogPane(),
-		notes:    newNotesPane(),
+		ix:         ix,
+		cfg:        cfg,
+		vaultDir:   cfg.VaultDir,
+		agenda:     newAgendaPane(),
+		todos:      newTodosPane(),
+		log:        newLogPane(),
+		notes:      newNotesPane(),
+		datePicker: components.NewDatePicker("Date"),
+		textEntry:  components.NewTextEntryBar(),
 	}
 }

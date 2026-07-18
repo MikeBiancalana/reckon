@@ -13,15 +13,45 @@ type paneDims struct {
 
 // calcPaneDims computes each pane's width/height from the terminal's total
 // w/h, clamping negative dimensions to 0 (edge case: a resize below the
-// panes' minimum layout).
+// panes' minimum layout). Fixed 2x2 grid: agenda/todos share the left
+// column, log/notes share the right column.
 func calcPaneDims(w, h int) paneDims {
-	// TODO(reckon-fnqs.8): implement
-	return paneDims{}
+	if w < 0 {
+		w = 0
+	}
+	if h < 0 {
+		h = 0
+	}
+	leftW := w / 2
+	rightW := w - leftW
+	topH := h / 2
+	bottomH := h - topH
+
+	return paneDims{
+		agendaWidth: leftW, agendaHeight: topH,
+		todosWidth: leftW, todosHeight: bottomH,
+		logWidth: rightW, logHeight: topH,
+		notesWidth: rightW, notesHeight: bottomH,
+	}
 }
 
 // handleWindowSize recomputes pane dimensions for a tea.WindowSizeMsg and
 // propagates them via each pane wrapper's SetSize.
 func (m *tuiModel) handleWindowSize(msg tea.WindowSizeMsg) tea.Cmd {
-	// TODO(reckon-fnqs.8): implement
+	w, h := msg.Width, msg.Height
+	if w < 0 {
+		w = 0
+	}
+	if h < 0 {
+		h = 0
+	}
+	m.width = w
+	m.height = h
+
+	dims := calcPaneDims(w, h)
+	m.agenda.SetSize(dims.agendaWidth, dims.agendaHeight)
+	m.todos.SetSize(dims.todosWidth, dims.todosHeight)
+	m.log.SetSize(dims.logWidth, dims.logHeight)
+	m.notes.SetSize(dims.notesWidth, dims.notesHeight)
 	return nil
 }
