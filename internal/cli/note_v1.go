@@ -282,7 +282,8 @@ func runNoteCreateE(cmd *cobra.Command, args []string) error {
 		Body:        body,
 	})
 	if err != nil {
-		return fmt.Errorf("note create: %w", err)
+		// createNote already prefixes its own errors with "note create: ".
+		return err
 	}
 
 	if !(mode == output.Pretty && quietFlag) {
