@@ -1,116 +1,103 @@
 # Preflight Check Report: reckon-fnqs.8
 
+**RE-RUN POST REVIEW-FEEDBACK FIXES**
+
 ## Automated Checks
 
 - ✅ go fmt (no formatting changes needed)
 - ✅ go vet (no issues found)
 - ✅ go test ./... (all tests pass)
-- ✅ go test -cover ./... (coverage within acceptable ranges)
+- ✅ go test -cover ./... (coverage: 29%-100%, median ~75%)
 
 ## Manual Checks
 
 ### Error Handling
-- ✅ All errors wrapped with context using fmt.Errorf("context: %w", err)
-- ✅ No ignored errors found
-- ✅ Consistent error handling pattern throughout changed files
 
-**Files checked:**
-- internal/cli/note_v1.go: createNote extraction properly wraps all errors
-- internal/cli/tui_model.go: All async operations return errMsg on error
-- internal/cli/tui_read.go: Database errors wrapped contextually; rows.Close() called before error returns
-- internal/cli/tui_keyboard.go: Command execution errors properly propagated
+- ⚠️ One error not wrapped with context
+- ✅ No ignored errors found
+
+**Finding:** internal/cli/note_v1.go:285
+- Current: `return err`
+- Should be: `return fmt.Errorf("note create: %w", err)`
+- Inconsistent with surrounding error wrapping (lines 263, 268, 290 all wrap errors)
+
+All other error paths properly wrapped with context.
 
 ### Resource Cleanup
-- ✅ Database rows properly closed with explicit calls (internal/cli/tui_read.go:28, 34, 37, 78, 84, 86)
-- ✅ Index Close() properly deferred in tests (internal/cli/tui_test.go with t.Cleanup)
-- ✅ No resource leaks detected
 
-**Pattern verified:**
-```go
-rows, err := db.Query(...)
-if err != nil { return nil, fmt.Errorf(...) }
-// ... handle early errors with rows.Close() before return
-defer rows.Close()  // or explicit Close() before return on error
-```
+- ✅ No resource leaks (all rows properly closed)
+- ⚠️ Non-idiomatic pattern in database query cleanup
+
+**Finding:** internal/cli/tui_read.go uses manual Close() calls scattered through code instead of idiomatic `defer rows.Close()`:
+- loadLogEntries() (line 19): explicit Close() at lines 28, 34, 37
+- listNotes() (line 69): explicit Close() at lines 77, 83, 86
+
+While functionally correct (all paths close rows), idiomatic Go pattern is to defer close immediately after error check.
 
 ### CLI-Specific Patterns
-- ✅ --quiet flag properly respected: `if !(mode == output.Pretty && quietFlag)` pattern used consistently
-- ✅ No os.Exit() in library code (internal/cli/*.go)
-- ✅ Functions return errors, not call os.Exit()
+
+- ✅ --quiet flag properly respected
+- ✅ No os.Exit() in library code
+- ✅ Functions return errors, not os.Exit()
 - ✅ Quiet flag guards output in note_v1.go:288, 471, 613, 856
 
 ### TUI-Specific Patterns
-- ✅ Variables captured before closures (internal/cli/tui_keyboard.go:118-119: vaultDir and ix captured before closure)
-- ✅ Nil checks present where needed (internal/cli/tui_panes.go checks array bounds)
-- ✅ Proper package decoupling verified by no_journal_import_test.go
 
-**Pattern verified:**
+- ✅ Variables captured before closures
+- ✅ All mutation commands properly capture local copies of model state before returning closure
+- ✅ Proper nil guards present (components.nilGuard, array bounds checks)
+- ✅ No direct model-pointer access in closures
+
+**Pattern verified (tui_keyboard.go:358-372, 376-392, 399-419):**
 ```go
-func (m *tuiModel) actuateCmd(...) tea.Cmd {
-    vaultDir := m.vaultDir  // Capture before closure
+func (m *tuiModel) addTodoCmd(body string) tea.Cmd {
+    vaultDir := m.vaultDir  // Capture local copies
     ix := m.ix
     return func() tea.Msg {
-        // Uses captured vaultDir, ix, not m.vaultDir, m.ix
+        // Uses captured values, not m.vaultDir, m.ix
     }
 }
 ```
 
 ### Test Coverage
-- ✅ New functions have tests: createNote tested in internal/cli/tui_test.go
-- ✅ Comprehensive TUI test coverage: tui_test.go has 980 lines, 26 test functions
-- ✅ Component tests updated for decoupled interfaces: task_list_test.go refactored to use DateInfo instead of journal.Task
-- ✅ Integration test validates decoupling: internal/tui/no_journal_import_test.go tests no imports of journal/service
 
-**Test counts:**
-- tui_model.go: 13 functions
-- tui_test.go: 26 test functions (includes integration tests and helpers)
-- task_list_test.go: 5 test functions (updated for DateInfo decoupling)
+- ✅ New functions have tests
+- ✅ Comprehensive TUI test coverage (1137 lines in tui_test.go)
+- ✅ Integration tests validate decoupling (no_journal_import_test.go)
+- ✅ Component tests updated for new interfaces
 
 ### Code Quality
-- ✅ No TODO without issue number found
-- ✅ No commented-out code found
-- ✅ No print statements in library code found
-- ✅ Imports cleaned up: removed journal imports from log_view.go (line 7), task_list.go (line 7), task_list_test.go (line 6)
-- ✅ No unused imports
-- ✅ Proper separation of concerns: TUI components decoupled from journal/service layers
 
-**Decoupling improvements verified:**
-- LogEntryRow type introduced to replace journal.LogEntry (internal/tui/components/log_view.go:32-37)
-- DateInfo type introduced for date-only access (internal/tui/components/task_list.go:48-52)
-- NoteLink and Note DTOs used instead of journal types
+- ✅ No TODO without issue number
+- ✅ No commented-out code
+- ✅ No print statements in library code
+- ✅ No hardcoded paths (proper filepath.Join usage)
+- ✅ No unused imports
 
 ## Issues Found
 
-### Critical
-None.
+### Warning (Should Fix)
 
-### Warnings
-None.
+1. **internal/cli/note_v1.go:285** - Error not wrapped with context
+   - Current: `return err`
+   - Should be: `return fmt.Errorf("note create: %w", err)`
+   - Inconsistent with error wrapping pattern used throughout this function
 
-### Info
-None.
+2. **internal/cli/tui_read.go:19, 69** - Non-idiomatic resource cleanup
+   - Current: Explicit Close() calls scattered in error paths
+   - Should be: Use `defer rows.Close()` immediately after db.Query error check
+   - Functionally correct but violates Go idioms
 
 ## Summary
 
-**Status: PASS**
+**Status: PASS WITH WARNINGS**
 
-All automated checks pass. Manual pattern checks on changed files verify:
-- Correct error handling with context wrapping
-- Proper resource cleanup with defer patterns
-- CLI --quiet flag properly respected
-- TUI closure variable capture correct
-- Comprehensive test coverage including integration tests
-- Clean code with no common anti-patterns
+All automated checks pass. TUI closure patterns correct; variable capture proper; nil guards present. Two style/consistency issues:
 
-The branch is ready for code review.
+1. Error wrapping inconsistency (1 instance)
+2. Non-idiomatic resource cleanup (2 functions, 6 instances)
 
-## Files Changed Summary
+Issues are fixable but not blockers for code review.
 
-Changed files scanned:
-- internal/cli/note_v1.go (extraction of createNote function)
-- internal/cli/tui.go, tui_keyboard.go, tui_layout.go, tui_model.go, tui_panes.go, tui_read.go (new TUI layer)
-- internal/cli/tui_test.go (comprehensive tests for TUI)
-- internal/cli/root.go, root_help_test.go (minor changes)
-- internal/tui/components/log_view.go, task_list.go, task_picker.go (decoupling from journal)
-- internal/tui/components/task_list_test.go, task_picker_test.go (updated for new interfaces)
-- internal/tui/no_journal_import_test.go (new integration test for decoupling validation)
+**Changed files:** 28 files, 3684 insertions, 906 deletions
+**Commit range:** a72745b..HEAD (15 commits)
