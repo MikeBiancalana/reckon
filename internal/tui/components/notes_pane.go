@@ -449,6 +449,13 @@ func (np *NotesPane) getLinkAtCursor() *LinkDisplayItem {
 				if currentLine == np.cursor {
 					// For backlinks, we want to navigate to the source note
 					bl := &np.backlinks[i]
+					if bl.NoteLink.SourceNote == nil {
+						// Unresolved source (e.g. a dangling edge whose
+						// source node was deleted without an edge cleanup):
+						// nothing to navigate to. Mirrors formatLinkItem's
+						// same nil guard instead of panicking.
+						return nil
+					}
 					// Create a copy with swapped source/target for navigation
 					return &LinkDisplayItem{
 						NoteLink: models.NoteLink{
