@@ -20,21 +20,19 @@ func loadLogEntries(db *sql.DB) ([]components.LogEntryRow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tui: query log entries: %w", err)
 	}
+	defer rows.Close()
 	type row struct{ id, time, body string }
 	var candidates []row
 	for rows.Next() {
 		var r row
 		if err := rows.Scan(&r.id, &r.time, &r.body); err != nil {
-			rows.Close()
 			return nil, fmt.Errorf("tui: scan log entry: %w", err)
 		}
 		candidates = append(candidates, r)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return nil, fmt.Errorf("tui: iterate log entries: %w", err)
 	}
-	rows.Close()
 
 	entries := []components.LogEntryRow{}
 	for _, r := range candidates {
@@ -70,20 +68,18 @@ func listNotes(db *sql.DB) ([]*models.Note, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tui: query notes: %w", err)
 	}
+	defer rows.Close()
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
 			return nil, fmt.Errorf("tui: scan note: %w", err)
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return nil, fmt.Errorf("tui: iterate notes: %w", err)
 	}
-	rows.Close()
 
 	notes := []*models.Note{}
 	for _, id := range ids {
