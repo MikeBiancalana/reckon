@@ -269,79 +269,20 @@ func runNoteCreateE(cmd *cobra.Command, args []string) error {
 	}
 
 	notesDir := filepath.Join(cfg.VaultDir, "notes")
-	targetDir := notesDir
-	relDir := "notes"
-	if dir != "" {
-		if filepath.IsAbs(dir) {
-			return fmt.Errorf("note create: --dir must be a relative subdirectory under notes/, got %q", dir)
-		}
-		targetDir = filepath.Join(notesDir, dir)
-		rel, relErr := filepath.Rel(notesDir, targetDir)
-		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("note create: --dir must stay under notes/, got %q", dir)
-		}
-		relDir = filepath.ToSlash(filepath.Join("notes", dir))
-	}
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return fmt.Errorf("note create: create notes dir: %w", err)
-	}
-
-	path := filepath.Join(targetDir, slug+".md")
-	if _, statErr := os.Stat(path); statErr == nil {
-		return fmt.Errorf("note create: refusing to overwrite existing file at %s (duplicate)", path)
-	} else if !os.IsNotExist(statErr) {
-		return fmt.Errorf("note create: stat %s: %w", path, statErr)
-	}
-
-	collide, err := slugCollision(notesDir, slug, "")
+	res, err := createNote(notesDir, noteCreateParams{
+		Title:       title,
+		Stage:       stage,
+		Slug:        slug,
+		Type:        typ,
+		Author:      author,
+		Description: description,
+		Dir:         dir,
+		Tags:        noteTagFlag,
+		Aliases:     noteAliasFlag,
+		Body:        body,
+	})
 	if err != nil {
-		return fmt.Errorf("note create: scan notes dir: %w", err)
-	}
-	if collide {
-		return fmt.Errorf("note create: slug %q already claimed by an existing note (duplicate); use --slug to override", slug)
-	}
-
-	aliases := []string{slug}
-	seen := map[string]bool{slug: true}
-	for _, a := range noteAliasFlag {
-		a = strings.TrimSpace(a)
-		if a != "" && !seen[a] {
-			seen[a] = true
-			aliases = append(aliases, a)
-		}
-	}
-
-	n := node.NewNode(typ, author, body)
-	n.Time = time.Now().UTC().Format(time.RFC3339)
-	n.Aliases = aliases
-
-	props := map[string]string{"title": title}
-	if description != "" {
-		props["description"] = description
-	}
-	if stage != "" {
-		props["stage"] = stage
-	}
-	if len(noteTagFlag) > 0 {
-		props["tags"] = "[" + strings.Join(noteTagFlag, ", ") + "]"
-	}
-	n.Props = props
-
-	rendered := n.Render()
-	parsed, err := node.Parse(rendered)
-	if err != nil {
-		return fmt.Errorf("note create: parse rendered node: %w", err)
-	}
-
-	if err := writeFileAtomic(path, parsed.Serialize()); err != nil {
-		return fmt.Errorf("note create: write: %w", err)
-	}
-
-	res := noteCreateResult{
-		ID:    parsed.ULID,
-		Path:  relDir + "/" + slug + ".md",
-		Slug:  slug,
-		Title: title,
+		return err
 	}
 
 	if !(mode == output.Pretty && quietFlag) {
@@ -350,6 +291,106 @@ func runNoteCreateE(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return nil
+}
+
+// noteCreateParams bundles runNoteCreateE's resolved flag values for
+// createNote. Fields are already validated/normalized by the caller (slug
+// slugified+validated, stage validated, author resolved, body newline-
+// terminated) — createNote itself only handles filesystem/collision/write
+// concerns.
+type noteCreateParams struct {
+	Title       string
+	Stage       string
+	Slug        string
+	Type        string
+	Author      string
+	Description string
+	Dir         string // relative subdirectory under notes/, "" for none
+	Tags        []string
+	Aliases     []string // extra aliases beyond the self-minted slug
+	Body        string
+}
+
+// createNote writes a new note file under notesDir (or notesDir/params.Dir):
+// dir validation, mkdir, overwrite/collision checks, NewNode -> Render ->
+// Parse -> writeFileAtomic. Extracted from runNoteCreateE (pure refactor, no
+// behavior change) so the TUI's note-create sub-flow (Decision 2,
+// reckon-fnqs.8) can call the same verb the CLI uses.
+func createNote(notesDir string, params noteCreateParams) (noteCreateResult, error) {
+	targetDir := notesDir
+	relDir := "notes"
+	if params.Dir != "" {
+		if filepath.IsAbs(params.Dir) {
+			return noteCreateResult{}, fmt.Errorf("note create: --dir must be a relative subdirectory under notes/, got %q", params.Dir)
+		}
+		targetDir = filepath.Join(notesDir, params.Dir)
+		rel, relErr := filepath.Rel(notesDir, targetDir)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return noteCreateResult{}, fmt.Errorf("note create: --dir must stay under notes/, got %q", params.Dir)
+		}
+		relDir = filepath.ToSlash(filepath.Join("notes", params.Dir))
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return noteCreateResult{}, fmt.Errorf("note create: create notes dir: %w", err)
+	}
+
+	path := filepath.Join(targetDir, params.Slug+".md")
+	if _, statErr := os.Stat(path); statErr == nil {
+		return noteCreateResult{}, fmt.Errorf("note create: refusing to overwrite existing file at %s (duplicate)", path)
+	} else if !os.IsNotExist(statErr) {
+		return noteCreateResult{}, fmt.Errorf("note create: stat %s: %w", path, statErr)
+	}
+
+	collide, err := slugCollision(notesDir, params.Slug, "")
+	if err != nil {
+		return noteCreateResult{}, fmt.Errorf("note create: scan notes dir: %w", err)
+	}
+	if collide {
+		return noteCreateResult{}, fmt.Errorf("note create: slug %q already claimed by an existing note (duplicate); use --slug to override", params.Slug)
+	}
+
+	aliases := []string{params.Slug}
+	seen := map[string]bool{params.Slug: true}
+	for _, a := range params.Aliases {
+		a = strings.TrimSpace(a)
+		if a != "" && !seen[a] {
+			seen[a] = true
+			aliases = append(aliases, a)
+		}
+	}
+
+	n := node.NewNode(params.Type, params.Author, params.Body)
+	n.Time = time.Now().UTC().Format(time.RFC3339)
+	n.Aliases = aliases
+
+	props := map[string]string{"title": params.Title}
+	if params.Description != "" {
+		props["description"] = params.Description
+	}
+	if params.Stage != "" {
+		props["stage"] = params.Stage
+	}
+	if len(params.Tags) > 0 {
+		props["tags"] = "[" + strings.Join(params.Tags, ", ") + "]"
+	}
+	n.Props = props
+
+	rendered := n.Render()
+	parsed, err := node.Parse(rendered)
+	if err != nil {
+		return noteCreateResult{}, fmt.Errorf("note create: parse rendered node: %w", err)
+	}
+
+	if err := writeFileAtomic(path, parsed.Serialize()); err != nil {
+		return noteCreateResult{}, fmt.Errorf("note create: write: %w", err)
+	}
+
+	return noteCreateResult{
+		ID:    parsed.ULID,
+		Path:  relDir + "/" + params.Slug + ".md",
+		Slug:  params.Slug,
+		Title: params.Title,
+	}, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,7 +4,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -43,8 +42,18 @@ type TaskNoteDeleteMsg struct {
 	NoteID string
 }
 
+// DateInfo carries the two schedule-related date fields task_list's date
+// formatting/styling helpers need. It decouples this package from
+// internal/journal (Decision 1, reckon-fnqs.8): FormatDateInfo/GetDateStyle
+// only ever touch these two *string fields, never anything else on
+// journal.Task.
+type DateInfo struct {
+	ScheduledDate *string
+	DeadlineDate  *string
+}
+
 // FormatDateInfo returns a formatted date string for a task's schedule/deadline dates.
-func FormatDateInfo(task journal.Task) string { return formatDateInfo(task) }
+func FormatDateInfo(info DateInfo) string { return formatDateInfo(info) }
 
 func localToday() time.Time {
 	now := time.Now()
@@ -52,16 +61,16 @@ func localToday() time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, now.Location())
 }
 
-func formatDateInfo(task journal.Task) string {
+func formatDateInfo(info DateInfo) string {
 	today := localToday()
 	var parts []string
 
-	if scheduledDate, ok := parseDate(task.ScheduledDate); ok {
+	if scheduledDate, ok := parseDate(info.ScheduledDate); ok {
 		dateStr := formatFriendlyDate(scheduledDate, today)
 		parts = append(parts, "📅 "+dateStr)
 	}
 
-	if deadlineDate, ok := parseDate(task.DeadlineDate); ok {
+	if deadlineDate, ok := parseDate(info.DeadlineDate); ok {
 		dateStr := formatFriendlyDate(deadlineDate, today)
 		daysUntil := int(deadlineDate.Sub(today).Hours() / 24)
 
@@ -95,12 +104,12 @@ func formatFriendlyDate(t time.Time, today time.Time) string {
 }
 
 // GetDateStyle returns the appropriate lipgloss style for a task based on its urgency.
-func GetDateStyle(task journal.Task) lipgloss.Style { return getDateStyle(task) }
+func GetDateStyle(info DateInfo) lipgloss.Style { return getDateStyle(info) }
 
-func getDateStyle(task journal.Task) lipgloss.Style {
+func getDateStyle(info DateInfo) lipgloss.Style {
 	today := localToday()
 
-	if deadlineDate, ok := parseDate(task.DeadlineDate); ok {
+	if deadlineDate, ok := parseDate(info.DeadlineDate); ok {
 		daysUntil := int(deadlineDate.Sub(today).Hours() / 24)
 
 		if daysUntil < 0 {
@@ -114,7 +123,7 @@ func getDateStyle(task journal.Task) lipgloss.Style {
 		}
 	}
 
-	if scheduledDate, ok := parseDate(task.ScheduledDate); ok {
+	if scheduledDate, ok := parseDate(info.ScheduledDate); ok {
 		daysUntil := int(scheduledDate.Sub(today).Hours() / 24)
 		if daysUntil >= 0 && daysUntil <= 7 {
 			return scheduledStyle

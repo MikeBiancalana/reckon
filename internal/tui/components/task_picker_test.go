@@ -2,9 +2,7 @@ package components
 
 import (
 	"testing"
-	"time"
 
-	"github.com/MikeBiancalana/reckon/internal/journal"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 )
@@ -18,9 +16,9 @@ func TestNewTaskPicker(t *testing.T) {
 }
 
 func TestTaskPicker_Show(t *testing.T) {
-	tasks := []journal.Task{
-		{ID: "task-1", Text: "Write tests", Status: journal.TaskOpen},
-		{ID: "task-2", Text: "Implement feature", Status: journal.TaskOpen},
+	tasks := []TaskRow{
+		{ID: "task-1", Title: "Write tests"},
+		{ID: "task-2", Title: "Implement feature"},
 	}
 
 	picker := NewTaskPicker("Select a task")
@@ -33,7 +31,7 @@ func TestTaskPicker_Show(t *testing.T) {
 
 func TestTaskPicker_ShowWithEmptyTasks(t *testing.T) {
 	picker := NewTaskPicker("Select a task")
-	cmd := picker.Show([]journal.Task{})
+	cmd := picker.Show([]TaskRow{})
 
 	assert.True(t, picker.visible)
 	assert.Len(t, picker.tasks, 0)
@@ -65,15 +63,15 @@ func TestTaskPicker_GetSelectedTaskID(t *testing.T) {
 	assert.Equal(t, "", taskID)
 
 	// After selection
-	selectedTask := &journal.Task{ID: "task-1", Text: "Test task"}
+	selectedTask := &TaskRow{ID: "task-1", Title: "Test task"}
 	picker.selectedTask = selectedTask
 	taskID = picker.GetSelectedTaskID()
 	assert.Equal(t, "task-1", taskID)
 }
 
 func TestTaskPicker_UpdateWithEscapeKey(t *testing.T) {
-	tasks := []journal.Task{
-		{ID: "task-1", Text: "Write tests", Status: journal.TaskOpen},
+	tasks := []TaskRow{
+		{ID: "task-1", Title: "Write tests"},
 	}
 
 	picker := NewTaskPicker("Select a task")
@@ -92,9 +90,9 @@ func TestTaskPicker_UpdateWithEscapeKey(t *testing.T) {
 }
 
 func TestTaskPicker_UpdateWithEnterKey(t *testing.T) {
-	tasks := []journal.Task{
-		{ID: "task-1", Text: "Write tests", Status: journal.TaskOpen},
-		{ID: "task-2", Text: "Implement feature", Status: journal.TaskOpen},
+	tasks := []TaskRow{
+		{ID: "task-1", Title: "Write tests"},
+		{ID: "task-2", Title: "Implement feature"},
 	}
 
 	picker := NewTaskPicker("Select a task")
@@ -124,7 +122,7 @@ func TestTaskPicker_UpdateWhenNotVisible(t *testing.T) {
 }
 
 func TestTaskPicker_FilterValue(t *testing.T) {
-	task := journal.Task{ID: "task-1", Text: "Write comprehensive tests"}
+	task := TaskRow{ID: "task-1", Title: "Write comprehensive tests"}
 	item := taskPickerItem{task: task}
 
 	filterValue := item.FilterValue()
@@ -132,36 +130,34 @@ func TestTaskPicker_FilterValue(t *testing.T) {
 }
 
 func TestTaskPicker_ItemDescription(t *testing.T) {
-	// Task with tags
-	task1 := journal.Task{
-		ID:        "task-1",
-		Text:      "Write tests",
-		Status:    journal.TaskOpen,
-		Tags:      []string{"testing", "important"},
-		CreatedAt: time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
+	// Task with scheduled + deadline dates
+	scheduled := "2026-01-10"
+	deadline := "2026-01-15"
+	task1 := TaskRow{
+		ID:       "task-1",
+		Title:    "Write tests",
+		DateInfo: DateInfo{ScheduledDate: &scheduled, DeadlineDate: &deadline},
 	}
 	item1 := taskPickerItem{task: task1}
 	desc1 := item1.Description()
-	assert.Contains(t, desc1, "testing")
-	assert.Contains(t, desc1, "important")
+	assert.Contains(t, desc1, "Scheduled: "+scheduled)
+	assert.Contains(t, desc1, "Deadline: "+deadline)
 
-	// Task without tags
-	task2 := journal.Task{
-		ID:        "task-2",
-		Text:      "No tags task",
-		Status:    journal.TaskOpen,
-		CreatedAt: time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC),
+	// Task without dates
+	task2 := TaskRow{
+		ID:    "task-2",
+		Title: "No dates task",
 	}
 	item2 := taskPickerItem{task: task2}
 	desc2 := item2.Description()
-	assert.NotEmpty(t, desc2)
+	assert.Empty(t, desc2)
 }
 
 func TestTaskPicker_FuzzyFiltering(t *testing.T) {
-	tasks := []journal.Task{
-		{ID: "task-1", Text: "Write comprehensive tests", Status: journal.TaskOpen},
-		{ID: "task-2", Text: "Implement fuzzy search", Status: journal.TaskOpen},
-		{ID: "task-3", Text: "Review pull request", Status: journal.TaskOpen},
+	tasks := []TaskRow{
+		{ID: "task-1", Title: "Write comprehensive tests"},
+		{ID: "task-2", Title: "Implement fuzzy search"},
+		{ID: "task-3", Title: "Review pull request"},
 	}
 
 	picker := NewTaskPicker("Select a task")
@@ -187,8 +183,8 @@ func TestTaskPicker_ViewWhenNotVisible(t *testing.T) {
 }
 
 func TestTaskPicker_ViewWhenVisible(t *testing.T) {
-	tasks := []journal.Task{
-		{ID: "task-1", Text: "Write tests", Status: journal.TaskOpen},
+	tasks := []TaskRow{
+		{ID: "task-1", Title: "Write tests"},
 	}
 
 	picker := NewTaskPicker("Select a task")

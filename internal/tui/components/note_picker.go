@@ -120,6 +120,14 @@ type NotePicker struct {
 	notes        []*models.Note
 	selectedNote *models.Note
 	width        int
+	height       int
+
+	// embedded is true when the picker is mounted inline as part of a larger
+	// pane region (e.g. the TUI notes pane, reckon-fnqs.8 Decision 2) rather
+	// than shown as a self-contained modal popup. View() skips
+	// notePickerBoxStyle's own border/padding wrap when true, so the picker
+	// doesn't double up against its host's own frame.
+	embedded bool
 }
 
 // notePickerFuzzyFilter implements fuzzy matching for note picker items
@@ -210,6 +218,25 @@ func (np *NotePicker) SetWidth(width int) {
 	np.list.SetSize(listWidth, listHeight)
 }
 
+// SetHeight sets the height of the note picker's internal list. The
+// constructor (list.New(items, delegate, 0, 0)) never sets a height, so
+// before this method existed the list always rendered at height 0 — fine for
+// the self-sized modal-popup usage (SetWidth's own hardcoded listHeight
+// covers that), but wrong for mounting the picker inline in a fixed-height
+// pane region (Decision: Notes-pane composition, reckon-fnqs.8).
+func (np *NotePicker) SetHeight(h int) {
+	np.height = h
+	np.list.SetHeight(h)
+}
+
+// SetEmbedded sets whether the picker is mounted inline within a host pane
+// (true) or rendered as a self-contained modal popup (false, the default).
+// View() skips notePickerBoxStyle's own border/padding wrap when embedded,
+// so the picker doesn't double up against its host's own frame.
+func (np *NotePicker) SetEmbedded(embedded bool) {
+	np.embedded = embedded
+}
+
 // Update handles Bubble Tea messages
 func (np *NotePicker) Update(msg tea.Msg) (*NotePicker, tea.Cmd) {
 	if !np.visible {
@@ -270,6 +297,10 @@ func (np *NotePicker) View() string {
 	// Help text
 	helpText := "ENTER: select  ESC: cancel  /: filter"
 	content.WriteString(notePickerHelpStyle.Render(helpText))
+
+	if np.embedded {
+		return content.String()
+	}
 
 	// Wrap in box
 	return notePickerBoxStyle.Render(content.String())

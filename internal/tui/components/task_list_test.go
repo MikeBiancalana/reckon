@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/MikeBiancalana/reckon/internal/journal"
 )
 
 func ptr(s string) *string { return &s }
@@ -51,8 +49,8 @@ func TestParseDate(t *testing.T) {
 // TestFormatDateInfo verifies the exported date info formatter.
 func TestFormatDateInfo(t *testing.T) {
 	t.Run("no dates returns empty string", func(t *testing.T) {
-		task := journal.Task{ID: "1", Text: "Test", Status: journal.TaskOpen}
-		got := FormatDateInfo(task)
+		info := DateInfo{}
+		got := FormatDateInfo(info)
 		if got != "" {
 			t.Errorf("expected empty string, got %q", got)
 		}
@@ -60,13 +58,8 @@ func TestFormatDateInfo(t *testing.T) {
 
 	t.Run("scheduled date appears in output", func(t *testing.T) {
 		future := time.Now().AddDate(0, 0, 10).Format("2006-01-02")
-		task := journal.Task{
-			ID:            "1",
-			Text:          "Test",
-			Status:        journal.TaskOpen,
-			ScheduledDate: &future,
-		}
-		got := FormatDateInfo(task)
+		info := DateInfo{ScheduledDate: &future}
+		got := FormatDateInfo(info)
 		if got == "" {
 			t.Error("expected non-empty string for scheduled task")
 		}
@@ -74,13 +67,8 @@ func TestFormatDateInfo(t *testing.T) {
 
 	t.Run("overdue deadline produces overdue message", func(t *testing.T) {
 		past := time.Now().AddDate(0, 0, -5).Format("2006-01-02")
-		task := journal.Task{
-			ID:           "1",
-			Text:         "Test",
-			Status:       journal.TaskOpen,
-			DeadlineDate: &past,
-		}
-		got := FormatDateInfo(task)
+		info := DateInfo{DeadlineDate: &past}
+		got := FormatDateInfo(info)
 		if got == "" {
 			t.Error("expected non-empty string for overdue deadline")
 		}
@@ -122,8 +110,8 @@ func TestFormatDateInfoFormat(t *testing.T) {
 
 	t.Run("scheduled future uses calendar emoji prefix", func(t *testing.T) {
 		future := today.AddDate(0, 0, 10).Format("2006-01-02")
-		task := journal.Task{ID: "1", Status: journal.TaskOpen, ScheduledDate: &future}
-		got := FormatDateInfo(task)
+		info := DateInfo{ScheduledDate: &future}
+		got := FormatDateInfo(info)
 		if !strings.HasPrefix(got, "📅 ") {
 			t.Errorf("scheduled date should start with '📅 ', got %q", got)
 		}
@@ -131,8 +119,8 @@ func TestFormatDateInfoFormat(t *testing.T) {
 
 	t.Run("overdue deadline uses red emoji prefix", func(t *testing.T) {
 		past := today.AddDate(0, 0, -3).Format("2006-01-02")
-		task := journal.Task{ID: "1", Status: journal.TaskOpen, DeadlineDate: &past}
-		got := FormatDateInfo(task)
+		info := DateInfo{DeadlineDate: &past}
+		got := FormatDateInfo(info)
 		if !strings.HasPrefix(got, "🔴 overdue (due ") {
 			t.Errorf("overdue deadline should start with '🔴 overdue (due ', got %q", got)
 		}
@@ -143,8 +131,8 @@ func TestFormatDateInfoFormat(t *testing.T) {
 
 	t.Run("deadline today shows 'due today' with yellow emoji", func(t *testing.T) {
 		todayStr := today.Format("2006-01-02")
-		task := journal.Task{ID: "1", Status: journal.TaskOpen, DeadlineDate: &todayStr}
-		got := FormatDateInfo(task)
+		info := DateInfo{DeadlineDate: &todayStr}
+		got := FormatDateInfo(info)
 		if got != "due today 🟡" {
 			t.Errorf("deadline today should be %q, got %q", "due today 🟡", got)
 		}
@@ -152,8 +140,8 @@ func TestFormatDateInfoFormat(t *testing.T) {
 
 	t.Run("deadline tomorrow shows 'due tomorrow' with yellow emoji", func(t *testing.T) {
 		tomorrow := today.AddDate(0, 0, 1).Format("2006-01-02")
-		task := journal.Task{ID: "1", Status: journal.TaskOpen, DeadlineDate: &tomorrow}
-		got := FormatDateInfo(task)
+		info := DateInfo{DeadlineDate: &tomorrow}
+		got := FormatDateInfo(info)
 		if got != "due tomorrow 🟡" {
 			t.Errorf("deadline tomorrow should be %q, got %q", "due tomorrow 🟡", got)
 		}
@@ -161,8 +149,8 @@ func TestFormatDateInfoFormat(t *testing.T) {
 
 	t.Run("deadline in 2 days shows date with yellow emoji", func(t *testing.T) {
 		in2Days := today.AddDate(0, 0, 2).Format("2006-01-02")
-		task := journal.Task{ID: "1", Status: journal.TaskOpen, DeadlineDate: &in2Days}
-		got := FormatDateInfo(task)
+		info := DateInfo{DeadlineDate: &in2Days}
+		got := FormatDateInfo(info)
 		if !strings.HasPrefix(got, "due ") {
 			t.Errorf("deadline due soon should start with 'due ', got %q", got)
 		}
@@ -173,8 +161,8 @@ func TestFormatDateInfoFormat(t *testing.T) {
 
 	t.Run("deadline far future shows date without urgency emoji", func(t *testing.T) {
 		future := today.AddDate(0, 0, 10).Format("2006-01-02")
-		task := journal.Task{ID: "1", Status: journal.TaskOpen, DeadlineDate: &future}
-		got := FormatDateInfo(task)
+		info := DateInfo{DeadlineDate: &future}
+		got := FormatDateInfo(info)
 		if !strings.HasPrefix(got, "due ") {
 			t.Errorf("far future deadline should start with 'due ', got %q", got)
 		}
@@ -186,13 +174,11 @@ func TestFormatDateInfoFormat(t *testing.T) {
 	t.Run("both scheduled and deadline joined with two spaces", func(t *testing.T) {
 		scheduled := today.AddDate(0, 0, 5).Format("2006-01-02")
 		deadline := today.AddDate(0, 0, 10).Format("2006-01-02")
-		task := journal.Task{
-			ID:            "1",
-			Status:        journal.TaskOpen,
+		info := DateInfo{
 			ScheduledDate: &scheduled,
 			DeadlineDate:  &deadline,
 		}
-		got := FormatDateInfo(task)
+		got := FormatDateInfo(info)
 		if !strings.HasPrefix(got, "📅 ") {
 			t.Errorf("combined output should start with scheduled indicator, got %q", got)
 		}
@@ -204,13 +190,14 @@ func TestFormatDateInfoFormat(t *testing.T) {
 		}
 	})
 
-	t.Run("done task still formats dates (filtering is caller's responsibility)", func(t *testing.T) {
+	t.Run("dates format regardless of any caller-side status filtering", func(t *testing.T) {
 		future := today.AddDate(0, 0, 10).Format("2006-01-02")
-		task := journal.Task{ID: "1", Status: journal.TaskDone, ScheduledDate: &future}
-		got := FormatDateInfo(task)
+		info := DateInfo{ScheduledDate: &future}
+		got := FormatDateInfo(info)
 		// FormatDateInfo does not filter by status — model.go skips done tasks
+		// upstream of ever building a DateInfo for one.
 		if got == "" {
-			t.Error("FormatDateInfo should format dates regardless of task status")
+			t.Error("FormatDateInfo should format dates whenever a date is present")
 		}
 	})
 }
@@ -223,12 +210,8 @@ func TestGetDateStyle(t *testing.T) {
 
 	t.Run("overdue task style renders the input", func(t *testing.T) {
 		past := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-		task := journal.Task{
-			ID:           "1",
-			Status:       journal.TaskOpen,
-			DeadlineDate: &past,
-		}
-		got := GetDateStyle(task)
+		info := DateInfo{DeadlineDate: &past}
+		got := GetDateStyle(info)
 		rendered := got.Render(sentinel)
 		if rendered == "" {
 			t.Error("expected non-empty render from GetDateStyle for overdue task")
@@ -237,12 +220,8 @@ func TestGetDateStyle(t *testing.T) {
 
 	t.Run("deadline today style renders the input", func(t *testing.T) {
 		today := localToday().Format("2006-01-02")
-		task := journal.Task{
-			ID:           "1",
-			Status:       journal.TaskOpen,
-			DeadlineDate: &today,
-		}
-		got := GetDateStyle(task)
+		info := DateInfo{DeadlineDate: &today}
+		got := GetDateStyle(info)
 		rendered := got.Render(sentinel)
 		if rendered == "" {
 			t.Error("expected non-empty render from GetDateStyle for deadline today")
@@ -250,8 +229,8 @@ func TestGetDateStyle(t *testing.T) {
 	})
 
 	t.Run("no dates style renders the input", func(t *testing.T) {
-		task := journal.Task{ID: "1", Status: journal.TaskOpen}
-		got := GetDateStyle(task)
+		info := DateInfo{}
+		got := GetDateStyle(info)
 		rendered := got.Render(sentinel)
 		if rendered == "" {
 			t.Error("expected non-empty render from GetDateStyle with no dates")

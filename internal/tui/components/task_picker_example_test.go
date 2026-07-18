@@ -2,9 +2,7 @@ package components_test
 
 import (
 	"fmt"
-	"time"
 
-	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -12,28 +10,10 @@ import (
 // Example demonstrates how to use the TaskPicker component in a Bubble Tea program
 func Example() {
 	// Create some sample tasks
-	tasks := []journal.Task{
-		{
-			ID:        "task-1",
-			Text:      "Write comprehensive tests",
-			Status:    journal.TaskOpen,
-			Tags:      []string{"testing", "quality"},
-			CreatedAt: time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC),
-		},
-		{
-			ID:        "task-2",
-			Text:      "Implement fuzzy search",
-			Status:    journal.TaskOpen,
-			Tags:      []string{"feature", "ui"},
-			CreatedAt: time.Date(2026, 1, 21, 0, 0, 0, 0, time.UTC),
-		},
-		{
-			ID:        "task-3",
-			Text:      "Review pull requests",
-			Status:    journal.TaskOpen,
-			Tags:      []string{"review"},
-			CreatedAt: time.Date(2026, 1, 22, 0, 0, 0, 0, time.UTC),
-		},
+	tasks := []components.TaskRow{
+		{ID: "task-1", Title: "Write comprehensive tests"},
+		{ID: "task-2", Title: "Implement fuzzy search"},
+		{ID: "task-3", Title: "Review pull requests"},
 	}
 
 	// Create a model that uses the TaskPicker
@@ -100,8 +80,8 @@ func ExampleTaskPicker_withScheduleCommand() {
 	}
 
 	// Load tasks (in real code, this would come from the task service)
-	tasks := []journal.Task{
-		{ID: "task-1", Text: "Important task", Status: journal.TaskOpen},
+	tasks := []components.TaskRow{
+		{ID: "task-1", Title: "Important task"},
 	}
 
 	m.picker.Show(tasks)

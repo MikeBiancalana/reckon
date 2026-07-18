@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/MikeBiancalana/reckon/internal/journal"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -44,31 +43,32 @@ type TaskPickerSelectMsg struct {
 // TaskPickerCancelMsg is sent when the task picker is cancelled
 type TaskPickerCancelMsg struct{}
 
+// TaskRow is the journal-free row shape TaskPicker displays (Decision:
+// decouple vs delete, reckon-fnqs.8 — kept wired-but-unused pending a future
+// "link todo" flow; fnqs.6 owns retargeting it at index rows). Embeds
+// DateInfo (task_list.go, same package) so this picker's Description() can
+// show scheduled/deadline without importing internal/journal.
+type TaskRow struct {
+	ID    string
+	Title string
+	DateInfo
+}
+
 // taskPickerItem implements list.Item for the task picker
 type taskPickerItem struct {
-	task journal.Task
+	task TaskRow
 }
 
 func (i taskPickerItem) FilterValue() string {
-	return i.task.Text
+	return i.task.Title
 }
 
 func (i taskPickerItem) Title() string {
-	return i.task.Text
+	return i.task.Title
 }
 
 func (i taskPickerItem) Description() string {
 	var parts []string
-
-	// Add tags if present
-	if len(i.task.Tags) > 0 {
-		parts = append(parts, strings.Join(i.task.Tags, ", "))
-	}
-
-	// Add created date
-	if !i.task.CreatedAt.IsZero() {
-		parts = append(parts, "Created: "+i.task.CreatedAt.Format("2006-01-02"))
-	}
 
 	// Add schedule if present
 	if i.task.ScheduledDate != nil {
@@ -123,8 +123,8 @@ type TaskPicker struct {
 	list         list.Model
 	title        string
 	visible      bool
-	tasks        []journal.Task
-	selectedTask *journal.Task
+	tasks        []TaskRow
+	selectedTask *TaskRow
 	width        int
 }
 
@@ -170,7 +170,7 @@ func NewTaskPicker(title string) *TaskPicker {
 }
 
 // Show displays the task picker with the given tasks
-func (tp *TaskPicker) Show(tasks []journal.Task) tea.Cmd {
+func (tp *TaskPicker) Show(tasks []TaskRow) tea.Cmd {
 	tp.visible = true
 	tp.tasks = tasks
 	tp.selectedTask = nil
