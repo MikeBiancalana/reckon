@@ -33,6 +33,7 @@ import (
 
 	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/index"
+	"github.com/MikeBiancalana/reckon/internal/models"
 	"github.com/MikeBiancalana/reckon/internal/node"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
@@ -1133,5 +1134,29 @@ func TestNotesPaneCreateKeybinding(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("notes pane after n -> submit -> reload: notes = %+v, want the new note included", m3.notes.notes)
+	}
+}
+
+// TestNotesToRowsOmitsZeroCreatedAt: loadNoteDisplay builds *models.Note
+// without ever setting CreatedAt, so the notes pane's rows always carry a
+// zero time.Time. notesToRows must omit the "created" Props key in that
+// case rather than formatting the zero value as the literal "0001-01-01".
+func TestNotesToRowsOmitsZeroCreatedAt(t *testing.T) {
+	rows := notesToRows([]*models.Note{
+		{ID: "n1", Title: "No Timestamp", Slug: "no-timestamp"},
+	})
+	if len(rows) != 1 {
+		t.Fatalf("notesToRows returned %d rows, want 1", len(rows))
+	}
+	if created, ok := rows[0].Props["created"]; ok {
+		t.Errorf("notesToRows with zero CreatedAt set Props[created] = %q, want key absent", created)
+	}
+
+	withDate := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
+	rows = notesToRows([]*models.Note{
+		{ID: "n2", Title: "Has Timestamp", Slug: "has-timestamp", CreatedAt: withDate},
+	})
+	if got := rows[0].Props["created"]; got != "2026-07-20" {
+		t.Errorf("notesToRows with non-zero CreatedAt: Props[created] = %q, want %q", got, "2026-07-20")
 	}
 }

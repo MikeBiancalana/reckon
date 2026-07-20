@@ -122,15 +122,18 @@ type notesLinksLoadedMsg struct {
 func notesToRows(notes []*models.Note) []components.IndexRow {
 	rows := make([]components.IndexRow, len(notes))
 	for i, n := range notes {
+		props := map[string]string{
+			"slug": n.Slug,
+			"tags": strings.Join(n.Tags, ", "),
+		}
+		if !n.CreatedAt.IsZero() {
+			props["created"] = n.CreatedAt.Format("2006-01-02")
+		}
 		rows[i] = components.IndexRow{
 			ID:    n.ID,
 			Title: n.Title,
 			Type:  "note",
-			Props: map[string]string{
-				"slug":    n.Slug,
-				"tags":    strings.Join(n.Tags, ", "),
-				"created": n.CreatedAt.Format("2006-01-02"),
-			},
+			Props: props,
 		}
 	}
 	return rows
