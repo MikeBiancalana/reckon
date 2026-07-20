@@ -1,15 +1,15 @@
 {
   "ticket_id": "reckon-fnqs.6",
-  "phase": "implementer",
+  "phase": "done",
   "worktree": ".worktrees/reckon-fnqs.6",
   "subsystem": "tui",
   "attempts": {
     "planner": 1,
     "test_writer": 1,
-    "implementer": 0,
-    "simplify": 0,
-    "preflight": 0,
-    "reviewer": 0
+    "implementer": 1,
+    "simplify": 1,
+    "preflight": 1,
+    "reviewer": 1
   },
   "new_test_names": [
     "TestPrompt_ConformanceCompiles",
@@ -29,5 +29,5 @@
   ],
   "stall_count": 0,
   "last_test_output_hash": null,
-  "status": "in_progress"
+  "status": "ready_for_pr"
 }
