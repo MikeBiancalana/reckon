@@ -361,6 +361,56 @@ func TestDatePickerMultipleShowHideCycles(t *testing.T) {
 	}
 }
 
+// TestDatePicker_UpdateEnterSelfSignalsSubmit (acceptance-criteria.md §4
+// scenario 2): after the §2.4 fix, Update on KeyEnter with a valid date
+// self-signals submission — it returns a cmd whose msg the host can detect,
+// without any caller pre-intercepting the key (contrast with today's
+// tui_keyboard.go handleDateSubFlowKey, which never routes Enter through
+// Update at all).
+func TestDatePicker_UpdateEnterSelfSignalsSubmit(t *testing.T) {
+	dp := NewDatePicker("Test")
+	dp.Show()
+
+	d := futureDate()
+	dp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(d)})
+
+	_, cmd := dp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if cmd == nil {
+		t.Fatal("Expected Update to return a cmd signaling submission on valid Enter")
+	}
+
+	msg := cmd()
+	submitMsg, ok := msg.(DatePickerSubmitMsg)
+	if !ok {
+		t.Fatalf("Expected DatePickerSubmitMsg, got %T", msg)
+	}
+
+	if got := submitMsg.Date.Format("2006-01-02"); got != d {
+		t.Errorf("Expected submitted date %q, got %q", d, got)
+	}
+}
+
+// TestDatePicker_UpdateEscSelfSignalsCancel (acceptance-criteria.md §4
+// scenario 3): after the §2.4 fix, Update on KeyEsc self-signals
+// cancellation the same way Form/TextEditor/TaskPicker/NotePicker already
+// do via their own X CancelMsg.
+func TestDatePicker_UpdateEscSelfSignalsCancel(t *testing.T) {
+	dp := NewDatePicker("Test")
+	dp.Show()
+
+	_, cmd := dp.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if cmd == nil {
+		t.Fatal("Expected Update to return a cmd signaling cancellation on Esc")
+	}
+
+	msg := cmd()
+	if _, ok := msg.(DatePickerCancelMsg); !ok {
+		t.Fatalf("Expected DatePickerCancelMsg, got %T", msg)
+	}
+}
+
 func TestDatePickerUpdatePreview(t *testing.T) {
 	tests := []struct {
 		name          string
