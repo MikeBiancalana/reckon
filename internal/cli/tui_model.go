@@ -115,6 +115,27 @@ type notesLinksLoadedMsg struct {
 	backlinks []components.LinkDisplayItem
 }
 
+// notesToRows converts listNotes' models.Note rows into the
+// components.IndexRow shape NotePicker.Show takes. Only title and slug
+// survive with parity; tags/created are folded into Props without
+// formatting parity since NotePicker.Description() is display-only here.
+func notesToRows(notes []*models.Note) []components.IndexRow {
+	rows := make([]components.IndexRow, len(notes))
+	for i, n := range notes {
+		rows[i] = components.IndexRow{
+			ID:    n.ID,
+			Title: n.Title,
+			Type:  "note",
+			Props: map[string]string{
+				"slug":    n.Slug,
+				"tags":    strings.Join(n.Tags, ", "),
+				"created": n.CreatedAt.Format("2006-01-02"),
+			},
+		}
+	}
+	return rows
+}
+
 // mutationDoneMsg signals a verb call (addDurableTodo, dispatchTodayAct,
 // appendLogEntry, createNote) completed and the index was reconciled; the
 // model responds by re-firing the affected pane's load cmd.
@@ -171,7 +192,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case notesListLoadedMsg:
 		m.notes.notes = msg.notes
-		m.notes.picker.Show(msg.notes)
+		m.notes.picker.Show(notesToRows(msg.notes))
 		return m, nil
 
 	case components.NotePickerSelectMsg:

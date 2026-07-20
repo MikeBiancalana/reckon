@@ -121,21 +121,26 @@ func TestForm_TabNavigation(t *testing.T) {
 	assert.Equal(t, 0, form.focusIndex)
 
 	// Tab forward
-	form, _ = form.Update(tea.KeyMsg{Type: tea.KeyTab})
+	p, _ := form.Update(tea.KeyMsg{Type: tea.KeyTab})
+	form = p.(*Form)
 	assert.Equal(t, 1, form.focusIndex)
 
-	form, _ = form.Update(tea.KeyMsg{Type: tea.KeyTab})
+	p, _ = form.Update(tea.KeyMsg{Type: tea.KeyTab})
+	form = p.(*Form)
 	assert.Equal(t, 2, form.focusIndex)
 
 	// Wrap around to first field
-	form, _ = form.Update(tea.KeyMsg{Type: tea.KeyTab})
+	p, _ = form.Update(tea.KeyMsg{Type: tea.KeyTab})
+	form = p.(*Form)
 	assert.Equal(t, 0, form.focusIndex)
 
 	// Shift+Tab backward
-	form, _ = form.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	p, _ = form.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	form = p.(*Form)
 	assert.Equal(t, 2, form.focusIndex)
 
-	form, _ = form.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	p, _ = form.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	form = p.(*Form)
 	assert.Equal(t, 1, form.focusIndex)
 }
 
@@ -447,7 +452,8 @@ func TestForm_UpdateNotVisibleDoesNothing(t *testing.T) {
 	assert.False(t, form.IsVisible())
 
 	// Update should do nothing
-	updatedForm, cmd := form.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	p, cmd := form.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedForm := p.(*Form)
 
 	assert.Nil(t, cmd)
 	assert.False(t, updatedForm.IsVisible())

@@ -10,7 +10,7 @@ import (
 // Example demonstrates how to use the TaskPicker component in a Bubble Tea program
 func Example() {
 	// Create some sample tasks
-	tasks := []components.TaskRow{
+	tasks := []components.IndexRow{
 		{ID: "task-1", Title: "Write comprehensive tests"},
 		{ID: "task-2", Title: "Implement fuzzy search"},
 		{ID: "task-3", Title: "Review pull requests"},
@@ -80,7 +80,7 @@ func ExampleTaskPicker_withScheduleCommand() {
 	}
 
 	// Load tasks (in real code, this would come from the task service)
-	tasks := []components.TaskRow{
+	tasks := []components.IndexRow{
 		{ID: "task-1", Title: "Important task"},
 	}
 

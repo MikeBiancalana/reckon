@@ -29,6 +29,7 @@ var (
 	jsonFlag     bool
 	ndjsonFlag   bool
 	vaultFlag    string
+	noInputFlag  bool
 )
 
 // buildLoggerConfig creates a logger configuration from flags and environment variables.
@@ -95,6 +96,7 @@ func init() {
 	RootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
 	RootCmd.PersistentFlags().BoolVar(&ndjsonFlag, "ndjson", false, "Output as newline-delimited JSON")
 	RootCmd.PersistentFlags().StringVar(&vaultFlag, "vault", "", "Override vault directory (default: $RECKON_VAULT or ~/reckon)")
+	RootCmd.PersistentFlags().BoolVar(&noInputFlag, "no-input", false, "Never prompt interactively; error instead of showing a TUI prompt")
 
 	RootCmd.AddCommand(GetNoteCommand())
 	RootCmd.AddCommand(todayCmd)

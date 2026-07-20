@@ -180,8 +180,8 @@ func (m *tuiModel) handleNotesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.String() == "n" && !m.notes.picker.IsFiltering() {
 			return m, m.startCreateSubFlow(subFlowNewNote, components.ModeNote)
 		}
-		var cmd tea.Cmd
-		m.notes.picker, cmd = m.notes.picker.Update(msg)
+		p, cmd := m.notes.picker.Update(msg)
+		m.notes.picker = p.(*components.NotePicker)
 		return m, cmd
 	}
 
@@ -189,7 +189,7 @@ func (m *tuiModel) handleNotesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyEsc {
 		m.notes.mode = notesShowBrowse
 		m.notes.links.SetFocused(false)
-		m.notes.picker.Show(m.notes.notes)
+		m.notes.picker.Show(notesToRows(m.notes.notes))
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -288,8 +288,8 @@ func (m *tuiModel) handleDateSubFlowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelSubFlow()
 		return m, m.actuateCmd(ref, key, date.Format("2006-01-02"))
 	}
-	var cmd tea.Cmd
-	m.datePicker, cmd = m.datePicker.Update(msg)
+	p, cmd := m.datePicker.Update(msg)
+	m.datePicker = p.(*components.DatePicker)
 	return m, cmd
 }
 
