@@ -107,16 +107,18 @@ func TestRootCommandSurface(t *testing.T) {
 		names[cmd.Name()] = true
 	}
 
-	survivors := []string{"add", "adopt", "migrate", "index", "note", "query", "today", "todo"}
+	survivors := []string{"add", "adopt", "migrate", "index", "note", "query", "today", "todo", "tui"}
 	for _, verb := range survivors {
 		if !names[verb] {
 			t.Errorf("expected verb %q to be registered", verb)
 		}
 	}
 
+	// tui was revived (reckon-fnqs.8) as a porcelain over the index + verbs;
+	// it is no longer a dying verb (moved to survivors above).
 	dying := []string{
 		"log", "notes", "week", "rebuild", "review", "schedule", "task",
-		"win", "checklist", "tui", "import", "summary",
+		"win", "checklist", "import", "summary",
 	}
 	for _, verb := range dying {
 		if names[verb] {

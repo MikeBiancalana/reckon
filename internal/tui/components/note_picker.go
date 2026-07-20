@@ -120,6 +120,13 @@ type NotePicker struct {
 	notes        []*models.Note
 	selectedNote *models.Note
 	width        int
+	height       int
+
+	// embedded is true when the picker is mounted inline as part of a larger
+	// pane region rather than shown as a self-contained modal popup. View()
+	// skips notePickerBoxStyle's own border/padding wrap when true, so the
+	// picker doesn't double up against its host's own frame.
+	embedded bool
 }
 
 // notePickerFuzzyFilter implements fuzzy matching for note picker items
@@ -191,6 +198,15 @@ func (np *NotePicker) IsVisible() bool {
 	return np.visible
 }
 
+// IsFiltering reports whether the picker's internal list is mid-filter-entry
+// (the user has pressed "/" and is typing into the filter input). A host
+// composing this picker inline (e.g. the notes pane's browse mode) must
+// check this before treating a plain letter key as its own shortcut, or it
+// steals keystrokes the filter input should have received.
+func (np *NotePicker) IsFiltering() bool {
+	return np.list.FilterState() == list.Filtering
+}
+
 // GetSelectedNoteSlug returns the slug of the selected note, or empty string if none
 func (np *NotePicker) GetSelectedNoteSlug() string {
 	if np.selectedNote == nil {
@@ -208,6 +224,25 @@ func (np *NotePicker) SetWidth(width int) {
 		listWidth = 40
 	}
 	np.list.SetSize(listWidth, listHeight)
+}
+
+// SetHeight sets the height of the note picker's internal list. The
+// constructor (list.New(items, delegate, 0, 0)) never sets a height, so
+// before this method existed the list always rendered at height 0 — fine for
+// the self-sized modal-popup usage (SetWidth's own hardcoded listHeight
+// covers that), but wrong for mounting the picker inline in a fixed-height
+// pane region.
+func (np *NotePicker) SetHeight(h int) {
+	np.height = h
+	np.list.SetHeight(h)
+}
+
+// SetEmbedded sets whether the picker is mounted inline within a host pane
+// (true) or rendered as a self-contained modal popup (false, the default).
+// View() skips notePickerBoxStyle's own border/padding wrap when embedded,
+// so the picker doesn't double up against its host's own frame.
+func (np *NotePicker) SetEmbedded(embedded bool) {
+	np.embedded = embedded
 }
 
 // Update handles Bubble Tea messages
@@ -270,6 +305,10 @@ func (np *NotePicker) View() string {
 	// Help text
 	helpText := "ENTER: select  ESC: cancel  /: filter"
 	content.WriteString(notePickerHelpStyle.Render(helpText))
+
+	if np.embedded {
+		return content.String()
+	}
 
 	// Wrap in box
 	return notePickerBoxStyle.Render(content.String())

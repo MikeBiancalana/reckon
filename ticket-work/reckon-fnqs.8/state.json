@@ -1,0 +1,42 @@
+{
+  "ticket_id": "reckon-fnqs.8",
+  "phase": "implementer",
+  "worktree": ".worktrees/reckon-fnqs.8",
+  "subsystem": "cli/tui",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 2,
+    "implementer": 0,
+    "simplify": 0,
+    "preflight": 0,
+    "reviewer": 0
+  },
+  "new_test_names": [
+    "TestTodosPaneLoad",
+    "TestLoadLogEntries",
+    "TestLoadNotesPaneLinks",
+    "TestNotesComposition",
+    "TestAgendaPaneLoad",
+    "TestAddTodoFlow",
+    "TestAgendaActDone",
+    "TestAgendaActDoneRecurring",
+    "TestAgendaActDoneEmitsLogEntry",
+    "TestAddLogFlow",
+    "TestAgendaReadOnlyGuard",
+    "TestDurabilityAfterRebuild",
+    "TestResizeClampsDimensions",
+    "TestFocusCycle",
+    "TestEmptyVaultFriendlyEmptyStates",
+    "TestAgendaPaneLoad_SkipsMalformedDateWithWarning",
+    "TestLogPaneSetSizeTruncatesLongContent",
+    "TestErrMsgSurfacesCRLFRejection"
+  ],
+  "already_green_by_design": [
+    "TestMutationVisibleToFreshCLI",
+    "TestNoJournalOrServiceImports",
+    "TestNoJournalOrServiceImports_ParsesEveryFile"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": null,
+  "status": "in_progress"
+}
