@@ -44,7 +44,6 @@ func TestTaskPicker_Hide(t *testing.T) {
 	picker.Hide()
 
 	assert.False(t, picker.visible)
-	assert.Nil(t, picker.selectedTask)
 }
 
 func TestTaskPicker_IsVisible(t *testing.T) {

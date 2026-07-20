@@ -190,10 +190,11 @@ func (np *NotePicker) Show(rows []IndexRow) tea.Cmd {
 	return nil
 }
 
-// Hide hides the note picker
+// Hide hides the note picker. It does not touch selectedNote -- Show() is
+// the reset point for selection state, so Update can set selectedNote
+// around a Hide() call in either order.
 func (np *NotePicker) Hide() {
 	np.visible = false
-	np.selectedNote = nil
 }
 
 // IsVisible returns whether the note picker is visible
@@ -291,10 +292,8 @@ func (np *NotePicker) Update(msg tea.Msg) (Prompt[string], tea.Cmd) {
 				return np, nil
 			}
 
-			// Hide() clears selectedNote, so set it after -- Done()/
-			// GetSelectedNoteSlug() must observe the selection post-Update.
-			np.Hide()
 			np.selectedNote = &item.row
+			np.Hide()
 
 			return np, func() tea.Msg {
 				return NotePickerSelectMsg{

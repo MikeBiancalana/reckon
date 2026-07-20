@@ -177,10 +177,10 @@ func (tp *TaskPicker) Show(rows []IndexRow) tea.Cmd {
 	return nil
 }
 
-// Hide hides the task picker
+// Hide hides the task picker. It does not touch selectedTask -- Show() is
+// the reset point for selection state.
 func (tp *TaskPicker) Hide() {
 	tp.visible = false
-	tp.selectedTask = nil
 }
 
 // IsVisible returns whether the task picker is visible
@@ -248,10 +248,8 @@ func (tp *TaskPicker) Update(msg tea.Msg) (Prompt[string], tea.Cmd) {
 				return tp, nil
 			}
 
-			// Hide() clears selectedTask, so set it after -- Done()/
-			// GetSelectedTaskID() must observe the selection post-Update.
-			tp.Hide()
 			tp.selectedTask = &item.row
+			tp.Hide()
 
 			return tp, func() tea.Msg {
 				return TaskPickerSelectMsg{
