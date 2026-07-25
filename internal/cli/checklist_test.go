@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/MikeBiancalana/reckon/internal/checklist"
+	"github.com/MikeBiancalana/reckon/internal/tui/components"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -863,5 +864,276 @@ func TestChecklistHelp_DocumentsLimitation(t *testing.T) {
 	}
 	if !strings.Contains(lower, "vault") {
 		t.Errorf("help text does not mention the vault-native limitation: %q", out)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// run: resolveChecklistRun / makeToggleFunc / runItemsToChecklistItems
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestResolveChecklistRun_FreshThenResume calls resolveChecklistRun twice
+// against the same template: the first call has no active run to find, so it
+// must start one (resumed=false); the second call must find and return that
+// same run rather than starting a second one (resumed=true, same ID) -- this
+// is the one resolution path both `start` and `run` share.
+func TestResolveChecklistRun_FreshThenResume(t *testing.T) {
+	setupChecklistEnv(t)
+
+	if _, stderr, err := runChecklist(t, "create", "foo", "--item", "a", "--item", "b"); err != nil {
+		t.Fatalf("create foo: %v\nstderr: %s", err, stderr)
+	}
+	resetCLIFlags()
+
+	svc, db, err := openChecklistService()
+	if err != nil {
+		t.Fatalf("openChecklistService: %v", err)
+	}
+	defer db.Close()
+
+	run, resumed, err := resolveChecklistRun(svc, "foo")
+	if err != nil {
+		t.Fatalf("resolveChecklistRun (fresh): %v", err)
+	}
+	if resumed {
+		t.Error("resumed = true on the first resolution, want false (no active run existed)")
+	}
+	if run.Status != checklist.RunStatusActive {
+		t.Errorf("Status = %q, want active", run.Status)
+	}
+	firstRunID := run.ID
+
+	run2, resumed2, err := resolveChecklistRun(svc, "foo")
+	if err != nil {
+		t.Fatalf("resolveChecklistRun (resume): %v", err)
+	}
+	if !resumed2 {
+		t.Error("resumed = false on the second resolution, want true (an active run already existed)")
+	}
+	if run2.ID != firstRunID {
+		t.Errorf("run2.ID = %q, want %q (the same run resumed, not a new one)", run2.ID, firstRunID)
+	}
+}
+
+// TestMakeToggleFunc_PersistsLive calls the makeToggleFunc closure directly
+// (no tea.Program involved) and asserts the write is visible via
+// Service.GetRunStatus immediately -- simulating a concurrent `rk checklist
+// status` query -- and that toggling the same position again clears it.
+func TestMakeToggleFunc_PersistsLive(t *testing.T) {
+	setupChecklistEnv(t)
+
+	if _, stderr, err := runChecklist(t, "create", "foo", "--item", "a", "--item", "b"); err != nil {
+		t.Fatalf("create foo: %v\nstderr: %s", err, stderr)
+	}
+	resetCLIFlags()
+
+	svc, db, err := openChecklistService()
+	if err != nil {
+		t.Fatalf("openChecklistService: %v", err)
+	}
+	defer db.Close()
+
+	run, err := svc.StartRun("foo")
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	toggle := makeToggleFunc(svc, run.ID)
+
+	items, completed, err := toggle(0)
+	if err != nil {
+		t.Fatalf("toggle(0): %v", err)
+	}
+	if completed {
+		t.Error("completed = true, want false (item 1 is still unchecked)")
+	}
+	if len(items) != 2 || !items[0].Checked {
+		t.Fatalf("items = %+v, want item 0 checked", items)
+	}
+
+	status, err := svc.GetRunStatus(run.ID)
+	if err != nil {
+		t.Fatalf("GetRunStatus: %v", err)
+	}
+	if !status.Items[0].Checked {
+		t.Error("GetRunStatus reports item 0 unchecked, want checked immediately after toggle")
+	}
+	if status.Items[0].CheckedAt == nil {
+		t.Error("CheckedAt is nil, want set after checking an item")
+	}
+
+	items2, completed2, err := toggle(0)
+	if err != nil {
+		t.Fatalf("second toggle(0): %v", err)
+	}
+	if completed2 {
+		t.Error("completed = true, want false after toggling back off")
+	}
+	if items2[0].Checked {
+		t.Error("item 0 still checked, want unchecked after a second toggle")
+	}
+
+	status2, err := svc.GetRunStatus(run.ID)
+	if err != nil {
+		t.Fatalf("GetRunStatus (after second toggle): %v", err)
+	}
+	if status2.Items[0].CheckedAt != nil {
+		t.Error("CheckedAt still set, want cleared after un-checking the item")
+	}
+}
+
+// TestMakeToggleFunc_Completion checks the last remaining item through the
+// closure and asserts it reports completed=true, with GetRunStatus agreeing
+// the run transitioned to RunStatusCompleted.
+func TestMakeToggleFunc_Completion(t *testing.T) {
+	setupChecklistEnv(t)
+
+	if _, stderr, err := runChecklist(t, "create", "foo", "--item", "a", "--item", "b"); err != nil {
+		t.Fatalf("create foo: %v\nstderr: %s", err, stderr)
+	}
+	resetCLIFlags()
+
+	svc, db, err := openChecklistService()
+	if err != nil {
+		t.Fatalf("openChecklistService: %v", err)
+	}
+	defer db.Close()
+
+	run, err := svc.StartRun("foo")
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	toggle := makeToggleFunc(svc, run.ID)
+
+	if _, completed, err := toggle(0); err != nil || completed {
+		t.Fatalf("toggle(0): completed=%v err=%v, want completed=false (item 1 still unchecked)", completed, err)
+	}
+
+	items, completed, err := toggle(1)
+	if err != nil {
+		t.Fatalf("toggle(1) (last remaining item): %v", err)
+	}
+	if !completed {
+		t.Error("completed = false, want true after checking the last remaining item")
+	}
+	for i, item := range items {
+		if !item.Checked {
+			t.Errorf("items[%d] = %+v, want checked on a completed run", i, item)
+		}
+	}
+
+	status, err := svc.GetRunStatus(run.ID)
+	if err != nil {
+		t.Fatalf("GetRunStatus: %v", err)
+	}
+	if status.Status != checklist.RunStatusCompleted {
+		t.Errorf("Status = %q, want completed", status.Status)
+	}
+}
+
+// TestRunItemsToChecklistItems is a pure conversion test: Text/Checked map
+// across, Position/ID/RunID/CheckedAt are dropped, and slice order is
+// preserved (positions are implicit in index, not carried as a field).
+func TestRunItemsToChecklistItems(t *testing.T) {
+	runItems := []checklist.RunItem{
+		{Text: "first", Checked: true, Position: 0},
+		{Text: "second", Checked: false, Position: 1},
+		{Text: "third", Checked: true, Position: 2},
+	}
+
+	got := runItemsToChecklistItems(runItems)
+
+	want := []components.ChecklistItem{
+		{Text: "first", Checked: true},
+		{Text: "second", Checked: false},
+		{Text: "third", Checked: true},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// run: TTY guard / template-not-found
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestChecklistRun_GuardNonTTY: with isInteractive stubbed to report no TTY,
+// `run` on an existing template errors naming --no-input rather than opening
+// the TUI, and nothing resembling a TUI escape sequence reaches stdout.
+func TestChecklistRun_GuardNonTTY(t *testing.T) {
+	setupChecklistEnv(t)
+
+	prevInteractive := isInteractive
+	prevNoInput := noInputFlag
+	t.Cleanup(func() {
+		isInteractive = prevInteractive
+		noInputFlag = prevNoInput
+	})
+	isInteractive = func() bool { return false }
+
+	if _, stderr, err := runChecklist(t, "create", "foo", "--item", "a"); err != nil {
+		t.Fatalf("create foo: %v\nstderr: %s", err, stderr)
+	}
+	resetCLIFlags()
+
+	out, stderr, err := runChecklist(t, "run", "foo")
+	if err == nil {
+		t.Fatal("expected an error running the interactive TUI on a non-TTY, got nil")
+	}
+	combined := err.Error() + stderr
+	if !strings.Contains(combined, "--no-input") {
+		t.Errorf("expected the guard's --no-input error, got err=%v stderr=%q", err, stderr)
+	}
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("no TUI escape sequences should reach stdout when the guard fires, got %q", out)
+	}
+}
+
+// TestChecklistRun_GuardNoInputFlag: even with isInteractive stubbed to
+// report a real TTY, --no-input must still error -- the flag wins.
+func TestChecklistRun_GuardNoInputFlag(t *testing.T) {
+	setupChecklistEnv(t)
+
+	prevInteractive := isInteractive
+	prevNoInput := noInputFlag
+	t.Cleanup(func() {
+		isInteractive = prevInteractive
+		noInputFlag = prevNoInput
+	})
+	isInteractive = func() bool { return true }
+
+	if _, stderr, err := runChecklist(t, "create", "foo", "--item", "a"); err != nil {
+		t.Fatalf("create foo: %v\nstderr: %s", err, stderr)
+	}
+	resetCLIFlags()
+
+	_, stderr, err := runChecklist(t, "run", "foo", "--no-input")
+	if err == nil {
+		t.Fatal("expected --no-input to error even on a reported real TTY, got nil")
+	}
+	combined := err.Error() + stderr
+	if !strings.Contains(combined, "--no-input") {
+		t.Errorf("expected the guard's --no-input error, got err=%v stderr=%q", err, stderr)
+	}
+}
+
+// TestChecklistRun_TemplateNotFound: resolution fails before RunPrompt is
+// ever called, so the not-found error and message match the sibling verbs
+// exactly regardless of TTY state -- no isInteractive stubbing needed here.
+func TestChecklistRun_TemplateNotFound(t *testing.T) {
+	setupChecklistEnv(t)
+
+	_, stderr, err := runChecklist(t, "run", "nonexistent")
+	if err == nil {
+		t.Fatal("expected a not-found error running a template that doesn't exist, got nil")
+	}
+	combined := err.Error() + stderr
+	if !strings.Contains(combined, `checklist template "nonexistent" not found`) {
+		t.Errorf("expected the shared not-found error, got err=%v stderr=%q", err, stderr)
 	}
 }
