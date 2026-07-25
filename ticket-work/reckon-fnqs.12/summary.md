@@ -45,3 +45,22 @@ missing defer: 0
 closure capture: 0
 nil check: 0
 missing validation: 0
+
+## Manual Verification (real pty, not just unit tests):
+Built the binary and drove `rk checklist run` through a real pseudo-terminal
+(python `pty` module) against a scratch vault, since the reviewer flagged
+completion-banner scrollback survival as out of unit-test reach:
+- Fresh run: navigated with `j`, toggled with space; progress counter live-
+  updated `[0/3]` -> `[1/3]` -> `[2/3]` -> `[3/3]`; `✓ Complete!` banner
+  rendered and the program auto-exited cleanly (terminal mode reset
+  sequences present, no leftover raw mode).
+- Non-TTY invocation: guard fired with the expected `--no-input`/interactive
+  terminal error, no TUI drawn.
+- Resume: toggled one item then quit via `q` (no error); re-invoked the same
+  verb and the TUI reopened showing that item still checked -- confirms
+  live per-toggle persistence and resume both work end-to-end, not just
+  against the fake `ToggleFunc` in unit tests.
+- `checklist status <template>` correctly reports "no active run" once a run
+  auto-completes -- confirmed this is pre-existing `GetActiveRun` semantics
+  (checklist.go:508), not a regression from this ticket.
+Scratch binary and vault removed after verification; worktree left clean.
