@@ -152,6 +152,31 @@ func openChecklistService() (*checklist.Service, *storage.Database, error) {
 	return checklist.NewService(repo), db, nil
 }
 
+// setupChecklistRun resolves the requested output mode and opens the
+// checklist service; every subcommand RunE starts with this pair. The caller
+// must defer db.Close() (only reached once err is nil).
+func setupChecklistRun() (output.Mode, *checklist.Service, *storage.Database, error) {
+	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	svc, db, err := openChecklistService()
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	return mode, svc, db, nil
+}
+
+// printChecklistResult prints res unless mode is Pretty and --quiet was set;
+// mutation verbs (create/start/check/reset/abandon) treat their Pretty
+// confirmation as suppressible noise.
+func printChecklistResult(cmd *cobra.Command, mode output.Mode, res any) error {
+	if mode == output.Pretty && quietFlag {
+		return nil
+	}
+	return output.New(cmd.OutOrStdout(), mode).Print(res)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Result types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,12 +299,7 @@ func runChecklistCreateE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist create: at least one item required")
 	}
 
-	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
-	if err != nil {
-		return err
-	}
-
-	svc, db, err := openChecklistService()
+	mode, svc, db, err := setupChecklistRun()
 	if err != nil {
 		return err
 	}
@@ -290,13 +310,7 @@ func runChecklistCreateE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist create: %w", err)
 	}
 
-	res := checklistTemplateResult{Template: tpl}
-	if !(mode == output.Pretty && quietFlag) {
-		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
-			return err
-		}
-	}
-	return nil
+	return printChecklistResult(cmd, mode, checklistTemplateResult{Template: tpl})
 }
 
 // parseChecklistItemsFile reads path (relative to process cwd), splitting on
@@ -327,12 +341,7 @@ func runChecklistListE(cmd *cobra.Command, args []string) error {
 
 	includeCompleted := checklistAllFlag
 
-	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
-	if err != nil {
-		return err
-	}
-
-	svc, db, err := openChecklistService()
+	mode, svc, db, err := setupChecklistRun()
 	if err != nil {
 		return err
 	}
@@ -400,12 +409,7 @@ func runChecklistStartE(cmd *cobra.Command, args []string) error {
 
 	name := args[0]
 
-	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
-	if err != nil {
-		return err
-	}
-
-	svc, db, err := openChecklistService()
+	mode, svc, db, err := setupChecklistRun()
 	if err != nil {
 		return err
 	}
@@ -426,13 +430,7 @@ func runChecklistStartE(cmd *cobra.Command, args []string) error {
 		resumed = true
 	}
 
-	res := checklistRunResult{Run: run, resumed: resumed}
-	if !(mode == output.Pretty && quietFlag) {
-		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
-			return err
-		}
-	}
-	return nil
+	return printChecklistResult(cmd, mode, checklistRunResult{Run: run, resumed: resumed})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -448,12 +446,7 @@ func runChecklistCheckE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist check: position must be an integer, got %q", args[1])
 	}
 
-	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
-	if err != nil {
-		return err
-	}
-
-	svc, db, err := openChecklistService()
+	mode, svc, db, err := setupChecklistRun()
 	if err != nil {
 		return err
 	}
@@ -475,13 +468,7 @@ func runChecklistCheckE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist check: %w", err)
 	}
 
-	res := checklistRunResult{Run: updated}
-	if !(mode == output.Pretty && quietFlag) {
-		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
-			return err
-		}
-	}
-	return nil
+	return printChecklistResult(cmd, mode, checklistRunResult{Run: updated})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -493,12 +480,7 @@ func runChecklistStatusE(cmd *cobra.Command, args []string) error {
 
 	name := args[0]
 
-	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
-	if err != nil {
-		return err
-	}
-
-	svc, db, err := openChecklistService()
+	mode, svc, db, err := setupChecklistRun()
 	if err != nil {
 		return err
 	}
@@ -509,10 +491,9 @@ func runChecklistStatusE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist status: %w", err)
 	}
 
-	res := checklistRunResult{Run: run}
 	// status is a query verb: its data is the requested output, so it always
 	// prints regardless of --quiet.
-	return output.New(cmd.OutOrStdout(), mode).Print(res)
+	return output.New(cmd.OutOrStdout(), mode).Print(checklistRunResult{Run: run})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -524,12 +505,7 @@ func runChecklistResetE(cmd *cobra.Command, args []string) error {
 
 	name := args[0]
 
-	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
-	if err != nil {
-		return err
-	}
-
-	svc, db, err := openChecklistService()
+	mode, svc, db, err := setupChecklistRun()
 	if err != nil {
 		return err
 	}
@@ -540,13 +516,7 @@ func runChecklistResetE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist reset: %w", err)
 	}
 
-	res := checklistRunResult{Run: run}
-	if !(mode == output.Pretty && quietFlag) {
-		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
-			return err
-		}
-	}
-	return nil
+	return printChecklistResult(cmd, mode, checklistRunResult{Run: run})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -558,12 +528,7 @@ func runChecklistAbandonE(cmd *cobra.Command, args []string) error {
 
 	name := args[0]
 
-	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
-	if err != nil {
-		return err
-	}
-
-	svc, db, err := openChecklistService()
+	mode, svc, db, err := setupChecklistRun()
 	if err != nil {
 		return err
 	}
@@ -574,11 +539,5 @@ func runChecklistAbandonE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist abandon: %w", err)
 	}
 
-	res := checklistRunResult{Run: run}
-	if !(mode == output.Pretty && quietFlag) {
-		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
-			return err
-		}
-	}
-	return nil
+	return printChecklistResult(cmd, mode, checklistRunResult{Run: run})
 }
