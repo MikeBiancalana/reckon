@@ -56,7 +56,8 @@ func TestTextEditorSubmit(t *testing.T) {
 
 	// Simulate Ctrl+D (submit)
 	msg := tea.KeyMsg{Type: tea.KeyCtrlD}
-	updatedEditor, cmd := editor.Update(msg)
+	p, cmd := editor.Update(msg)
+	updatedEditor := p.(*TextEditor)
 
 	// Should hide after submit
 	assert.False(t, updatedEditor.IsVisible())
@@ -76,7 +77,8 @@ func TestTextEditorCancel(t *testing.T) {
 
 	// Simulate ESC (cancel)
 	msg := tea.KeyMsg{Type: tea.KeyEsc}
-	updatedEditor, cmd := editor.Update(msg)
+	p, cmd := editor.Update(msg)
+	updatedEditor := p.(*TextEditor)
 
 	// Should hide after cancel
 	assert.False(t, updatedEditor.IsVisible())
@@ -108,7 +110,8 @@ func TestTextEditorUpdateWhenHidden(t *testing.T) {
 
 	// Updates should be ignored when hidden
 	msg := tea.KeyMsg{Type: tea.KeyCtrlD}
-	updatedEditor, cmd := editor.Update(msg)
+	p, cmd := editor.Update(msg)
+	updatedEditor := p.(*TextEditor)
 
 	assert.False(t, updatedEditor.IsVisible())
 	assert.Nil(t, cmd)

@@ -30,6 +30,14 @@ var (
 				Foreground(lipgloss.Color("240"))
 )
 
+// DatePickerSubmitMsg is sent when a valid date is confirmed with Enter.
+type DatePickerSubmitMsg struct {
+	Date time.Time
+}
+
+// DatePickerCancelMsg is sent when the date picker is cancelled with Esc.
+type DatePickerCancelMsg struct{}
+
 // DatePicker is a TUI component for selecting dates
 type DatePicker struct {
 	textInput textinput.Model
@@ -38,6 +46,13 @@ type DatePicker struct {
 	error     string
 	preview   string
 	width     int
+
+	// submitted/canceled/result back Done()/Result(): result is captured
+	// at the moment of a valid Enter, before Hide() clears textInput, so
+	// Result() reflects the confirmed date even after the picker hides.
+	submitted bool
+	canceled  bool
+	result    time.Time
 }
 
 // NewDatePicker creates a new date picker component
@@ -60,6 +75,9 @@ func (dp *DatePicker) Show() tea.Cmd {
 	dp.visible = true
 	dp.error = ""
 	dp.preview = ""
+	dp.submitted = false
+	dp.canceled = false
+	dp.result = time.Time{}
 	dp.textInput.SetValue("")
 	return dp.textInput.Focus()
 }
@@ -88,8 +106,19 @@ func (dp *DatePicker) SetWidth(width int) {
 	dp.width = width
 }
 
+// Init satisfies Prompt[time.Time]. Priming (Show) already happened before
+// a DatePicker is handed to RunPrompt/Wizard, so there is nothing to do here.
+func (dp *DatePicker) Init() tea.Cmd { return nil }
+
+// Result returns the confirmed date. Only meaningful once Done() reports
+// finished.
+func (dp *DatePicker) Result() time.Time { return dp.result }
+
+// Done reports whether Update has reached a terminal state.
+func (dp *DatePicker) Done() (finished, canceled bool) { return dp.submitted, dp.canceled }
+
 // Update handles Bubble Tea messages
-func (dp *DatePicker) Update(msg tea.Msg) (*DatePicker, tea.Cmd) {
+func (dp *DatePicker) Update(msg tea.Msg) (Prompt[time.Time], tea.Cmd) {
 	if !dp.visible {
 		return dp, nil
 	}
@@ -99,7 +128,10 @@ func (dp *DatePicker) Update(msg tea.Msg) (*DatePicker, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyEsc:
 			dp.Hide()
-			return dp, nil
+			dp.canceled = true
+			return dp, func() tea.Msg {
+				return DatePickerCancelMsg{}
+			}
 		case tea.KeyEnter:
 			// Validate and return if valid
 			input := dp.textInput.Value()
@@ -109,14 +141,20 @@ func (dp *DatePicker) Update(msg tea.Msg) (*DatePicker, tea.Cmd) {
 			}
 
 			// Try to parse the date
-			_, err := ParseRelativeDate(input)
+			date, err := ParseRelativeDate(input)
 			if err != nil {
 				dp.error = "Invalid date: " + err.Error()
 				return dp, nil
 			}
 
-			// Valid date - will be handled by parent
-			return dp, nil
+			// Valid date: capture it before Hide() clears textInput, then
+			// self-signal submission.
+			dp.result = date
+			dp.submitted = true
+			dp.Hide()
+			return dp, func() tea.Msg {
+				return DatePickerSubmitMsg{Date: date}
+			}
 		}
 	}
 

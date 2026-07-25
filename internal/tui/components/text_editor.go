@@ -32,11 +32,13 @@ type TextEditorCancelMsg struct{}
 
 // TextEditor is a multiline text editor component
 type TextEditor struct {
-	textarea textarea.Model
-	title    string
-	visible  bool
-	width    int
-	height   int
+	textarea  textarea.Model
+	title     string
+	visible   bool
+	width     int
+	height    int
+	submitted bool
+	canceled  bool
 }
 
 // NewTextEditor creates a new text editor component
@@ -58,6 +60,8 @@ func NewTextEditor(title string) *TextEditor {
 // Show displays the text editor
 func (te *TextEditor) Show() tea.Cmd {
 	te.visible = true
+	te.submitted = false
+	te.canceled = false
 	te.textarea.SetValue("")
 	return te.textarea.Focus()
 }
@@ -103,8 +107,20 @@ func (te *TextEditor) SetText(text string) {
 	te.textarea.SetValue(text)
 }
 
+// Init satisfies Prompt[string]. Priming (Show/SetText) already happened
+// before a TextEditor is handed to RunPrompt/Wizard, so there is nothing to
+// do here.
+func (te *TextEditor) Init() tea.Cmd { return nil }
+
+// Result returns the current text. Only meaningful once Done() reports
+// finished.
+func (te *TextEditor) Result() string { return te.GetText() }
+
+// Done reports whether Update has reached a terminal state.
+func (te *TextEditor) Done() (finished, canceled bool) { return te.submitted, te.canceled }
+
 // Update handles Bubble Tea messages
-func (te *TextEditor) Update(msg tea.Msg) (*TextEditor, tea.Cmd) {
+func (te *TextEditor) Update(msg tea.Msg) (Prompt[string], tea.Cmd) {
 	if !te.visible {
 		return te, nil
 	}
@@ -114,6 +130,7 @@ func (te *TextEditor) Update(msg tea.Msg) (*TextEditor, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyEsc:
 			te.Hide()
+			te.canceled = true
 			return te, func() tea.Msg {
 				return TextEditorCancelMsg{}
 			}
@@ -121,6 +138,7 @@ func (te *TextEditor) Update(msg tea.Msg) (*TextEditor, tea.Cmd) {
 		case tea.KeyCtrlD:
 			// Ctrl+D submits the text
 			text := strings.TrimSpace(te.textarea.Value())
+			te.submitted = true
 			te.Hide()
 			return te, func() tea.Msg {
 				return TextEditorSubmitMsg{Text: text}

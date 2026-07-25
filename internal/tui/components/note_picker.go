@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/MikeBiancalana/reckon/internal/models"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -46,32 +45,34 @@ type NotePickerCancelMsg struct{}
 
 // notePickerItem implements list.Item for the note picker
 type notePickerItem struct {
-	note *models.Note
+	row IndexRow
 }
 
 func (i notePickerItem) FilterValue() string {
 	// Allow filtering by both title and slug
-	return i.note.Title + " " + i.note.Slug
+	return i.row.Title + " " + i.row.Props["slug"]
 }
 
 func (i notePickerItem) Title() string {
-	return i.note.Title
+	return i.row.Title
 }
 
 func (i notePickerItem) Description() string {
 	var parts []string
 
 	// Add slug
-	parts = append(parts, "slug: "+i.note.Slug)
+	if slug := i.row.Props["slug"]; slug != "" {
+		parts = append(parts, "slug: "+slug)
+	}
 
 	// Add tags if present
-	if len(i.note.Tags) > 0 {
-		parts = append(parts, "tags: "+strings.Join(i.note.Tags, ", "))
+	if tags := i.row.Props["tags"]; tags != "" {
+		parts = append(parts, "tags: "+tags)
 	}
 
 	// Add created date
-	if !i.note.CreatedAt.IsZero() {
-		parts = append(parts, "created: "+i.note.CreatedAt.Format("2006-01-02"))
+	if created := i.row.Props["created"]; created != "" {
+		parts = append(parts, "created: "+created)
 	}
 
 	return strings.Join(parts, " | ")
@@ -117,8 +118,9 @@ type NotePicker struct {
 	list         list.Model
 	title        string
 	visible      bool
-	notes        []*models.Note
-	selectedNote *models.Note
+	notes        []IndexRow
+	selectedNote *IndexRow
+	canceled     bool
 	width        int
 	height       int
 
@@ -170,16 +172,17 @@ func NewNotePicker(title string) *NotePicker {
 	}
 }
 
-// Show displays the note picker with the given notes
-func (np *NotePicker) Show(notes []*models.Note) tea.Cmd {
+// Show displays the note picker with the given rows
+func (np *NotePicker) Show(rows []IndexRow) tea.Cmd {
 	np.visible = true
-	np.notes = notes
+	np.notes = rows
 	np.selectedNote = nil
+	np.canceled = false
 
-	// Convert notes to list items
-	items := make([]list.Item, len(notes))
-	for i, note := range notes {
-		items[i] = notePickerItem{note: note}
+	// Convert rows to list items
+	items := make([]list.Item, len(rows))
+	for i, row := range rows {
+		items[i] = notePickerItem{row: row}
 	}
 
 	np.list.SetItems(items)
@@ -187,10 +190,11 @@ func (np *NotePicker) Show(notes []*models.Note) tea.Cmd {
 	return nil
 }
 
-// Hide hides the note picker
+// Hide hides the note picker. It does not touch selectedNote -- Show() is
+// the reset point for selection state, so Update can set selectedNote
+// around a Hide() call in either order.
 func (np *NotePicker) Hide() {
 	np.visible = false
-	np.selectedNote = nil
 }
 
 // IsVisible returns whether the note picker is visible
@@ -207,12 +211,14 @@ func (np *NotePicker) IsFiltering() bool {
 	return np.list.FilterState() == list.Filtering
 }
 
-// GetSelectedNoteSlug returns the slug of the selected note, or empty string if none
+// GetSelectedNoteSlug returns the slug of the selected note, or empty string
+// if none. The slug is read from Props["slug"], not ID -- IndexRow.ID has no
+// fixed relationship to a note's slug.
 func (np *NotePicker) GetSelectedNoteSlug() string {
 	if np.selectedNote == nil {
 		return ""
 	}
-	return np.selectedNote.Slug
+	return np.selectedNote.Props["slug"]
 }
 
 // SetWidth sets the width of the note picker
@@ -245,8 +251,21 @@ func (np *NotePicker) SetEmbedded(embedded bool) {
 	np.embedded = embedded
 }
 
+// Init satisfies Prompt[string]. Priming (Show) already happened before a
+// NotePicker is handed to RunPrompt/Wizard, so there is nothing to do here.
+func (np *NotePicker) Init() tea.Cmd { return nil }
+
+// Result returns the selected note's slug. Only meaningful once Done()
+// reports finished.
+func (np *NotePicker) Result() string { return np.GetSelectedNoteSlug() }
+
+// Done reports whether Update has reached a terminal state.
+func (np *NotePicker) Done() (finished, canceled bool) {
+	return np.selectedNote != nil, np.canceled
+}
+
 // Update handles Bubble Tea messages
-func (np *NotePicker) Update(msg tea.Msg) (*NotePicker, tea.Cmd) {
+func (np *NotePicker) Update(msg tea.Msg) (Prompt[string], tea.Cmd) {
 	if !np.visible {
 		return np, nil
 	}
@@ -256,6 +275,7 @@ func (np *NotePicker) Update(msg tea.Msg) (*NotePicker, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyEsc:
 			np.Hide()
+			np.canceled = true
 			return np, func() tea.Msg {
 				return NotePickerCancelMsg{}
 			}
@@ -272,12 +292,12 @@ func (np *NotePicker) Update(msg tea.Msg) (*NotePicker, tea.Cmd) {
 				return np, nil
 			}
 
-			np.selectedNote = item.note
+			np.selectedNote = &item.row
 			np.Hide()
 
 			return np, func() tea.Msg {
 				return NotePickerSelectMsg{
-					NoteSlug: item.note.Slug,
+					NoteSlug: item.row.Props["slug"],
 				}
 			}
 		}

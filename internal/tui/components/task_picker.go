@@ -43,41 +43,30 @@ type TaskPickerSelectMsg struct {
 // TaskPickerCancelMsg is sent when the task picker is cancelled
 type TaskPickerCancelMsg struct{}
 
-// TaskRow is the journal-free row shape TaskPicker displays. Kept
-// wired-but-unused pending a future "link todo" flow that retargets this
-// picker at index rows. Embeds DateInfo (task_list.go, same package) so
-// this picker's Description() can show scheduled/deadline without importing
-// internal/journal.
-type TaskRow struct {
-	ID    string
-	Title string
-	DateInfo
-}
-
 // taskPickerItem implements list.Item for the task picker
 type taskPickerItem struct {
-	task TaskRow
+	row IndexRow
 }
 
 func (i taskPickerItem) FilterValue() string {
-	return i.task.Title
+	return i.row.Title
 }
 
 func (i taskPickerItem) Title() string {
-	return i.task.Title
+	return i.row.Title
 }
 
 func (i taskPickerItem) Description() string {
 	var parts []string
 
 	// Add schedule if present
-	if i.task.ScheduledDate != nil {
-		parts = append(parts, "Scheduled: "+*i.task.ScheduledDate)
+	if v := i.row.Props["scheduled"]; v != "" {
+		parts = append(parts, "Scheduled: "+v)
 	}
 
 	// Add deadline if present
-	if i.task.DeadlineDate != nil {
-		parts = append(parts, "Deadline: "+*i.task.DeadlineDate)
+	if v := i.row.Props["deadline"]; v != "" {
+		parts = append(parts, "Deadline: "+v)
 	}
 
 	return strings.Join(parts, " | ")
@@ -123,8 +112,9 @@ type TaskPicker struct {
 	list         list.Model
 	title        string
 	visible      bool
-	tasks        []TaskRow
-	selectedTask *TaskRow
+	tasks        []IndexRow
+	selectedTask *IndexRow
+	canceled     bool
 	width        int
 }
 
@@ -169,16 +159,17 @@ func NewTaskPicker(title string) *TaskPicker {
 	}
 }
 
-// Show displays the task picker with the given tasks
-func (tp *TaskPicker) Show(tasks []TaskRow) tea.Cmd {
+// Show displays the task picker with the given rows
+func (tp *TaskPicker) Show(rows []IndexRow) tea.Cmd {
 	tp.visible = true
-	tp.tasks = tasks
+	tp.tasks = rows
 	tp.selectedTask = nil
+	tp.canceled = false
 
-	// Convert tasks to list items
-	items := make([]list.Item, len(tasks))
-	for i, task := range tasks {
-		items[i] = taskPickerItem{task: task}
+	// Convert rows to list items
+	items := make([]list.Item, len(rows))
+	for i, row := range rows {
+		items[i] = taskPickerItem{row: row}
 	}
 
 	tp.list.SetItems(items)
@@ -186,10 +177,10 @@ func (tp *TaskPicker) Show(tasks []TaskRow) tea.Cmd {
 	return nil
 }
 
-// Hide hides the task picker
+// Hide hides the task picker. It does not touch selectedTask -- Show() is
+// the reset point for selection state.
 func (tp *TaskPicker) Hide() {
 	tp.visible = false
-	tp.selectedTask = nil
 }
 
 // IsVisible returns whether the task picker is visible
@@ -216,8 +207,21 @@ func (tp *TaskPicker) SetWidth(width int) {
 	tp.list.SetSize(listWidth, listHeight)
 }
 
+// Init satisfies Prompt[string]. Priming (Show) already happened before a
+// TaskPicker is handed to RunPrompt/Wizard, so there is nothing to do here.
+func (tp *TaskPicker) Init() tea.Cmd { return nil }
+
+// Result returns the selected task's ID. Only meaningful once Done()
+// reports finished.
+func (tp *TaskPicker) Result() string { return tp.GetSelectedTaskID() }
+
+// Done reports whether Update has reached a terminal state.
+func (tp *TaskPicker) Done() (finished, canceled bool) {
+	return tp.selectedTask != nil, tp.canceled
+}
+
 // Update handles Bubble Tea messages
-func (tp *TaskPicker) Update(msg tea.Msg) (*TaskPicker, tea.Cmd) {
+func (tp *TaskPicker) Update(msg tea.Msg) (Prompt[string], tea.Cmd) {
 	if !tp.visible {
 		return tp, nil
 	}
@@ -227,6 +231,7 @@ func (tp *TaskPicker) Update(msg tea.Msg) (*TaskPicker, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyEsc:
 			tp.Hide()
+			tp.canceled = true
 			return tp, func() tea.Msg {
 				return TaskPickerCancelMsg{}
 			}
@@ -243,12 +248,12 @@ func (tp *TaskPicker) Update(msg tea.Msg) (*TaskPicker, tea.Cmd) {
 				return tp, nil
 			}
 
-			tp.selectedTask = &item.task
+			tp.selectedTask = &item.row
 			tp.Hide()
 
 			return tp, func() tea.Msg {
 				return TaskPickerSelectMsg{
-					TaskID: item.task.ID,
+					TaskID: item.row.ID,
 				}
 			}
 		}

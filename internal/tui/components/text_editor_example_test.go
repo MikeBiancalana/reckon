@@ -22,7 +22,8 @@ func ExampleTextEditor_integration() {
 	editor.SetText("This is a note")
 
 	// Simulate submitting with Ctrl+D
-	editor, cmd := editor.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	p, cmd := editor.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	editor = p.(*components.TextEditor)
 
 	// The submit message is returned
 	msg := cmd()
@@ -51,7 +52,8 @@ func ExampleTextEditor_withTaskNote() {
 	editor.SetText("Implemented authentication feature")
 
 	// Simulate submitting
-	editor, cmd := editor.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	p, cmd := editor.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	editor = p.(*components.TextEditor)
 
 	// Handle the message
 	msg := cmd()

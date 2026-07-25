@@ -80,6 +80,7 @@ type Form struct {
 	errors      map[string]string
 	width       int
 	submitted   bool
+	canceled    bool
 	datePreview string // Preview for date fields
 }
 
@@ -113,6 +114,7 @@ func (f *Form) AddField(field FormField) *Form {
 func (f *Form) Show() tea.Cmd {
 	f.visible = true
 	f.submitted = false
+	f.canceled = false
 	f.errors = make(map[string]string)
 	f.datePreview = ""
 
@@ -180,8 +182,20 @@ func (f *Form) SetValues(values map[string]string) {
 	}
 }
 
+// Init satisfies Prompt[FormResult]. Priming (Show/SetValues) already
+// happened before a Form is handed to RunPrompt/Wizard, so there is nothing
+// to do here.
+func (f *Form) Init() tea.Cmd { return nil }
+
+// Result returns the submitted values. Only meaningful once Done() reports
+// finished.
+func (f *Form) Result() FormResult { return FormResult{Values: f.GetValues()} }
+
+// Done reports whether Update has reached a terminal state.
+func (f *Form) Done() (finished, canceled bool) { return f.submitted, f.canceled }
+
 // Update handles Bubble Tea messages
-func (f *Form) Update(msg tea.Msg) (*Form, tea.Cmd) {
+func (f *Form) Update(msg tea.Msg) (Prompt[FormResult], tea.Cmd) {
 	if !f.visible {
 		return f, nil
 	}
@@ -191,6 +205,7 @@ func (f *Form) Update(msg tea.Msg) (*Form, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyEsc:
 			f.Hide()
+			f.canceled = true
 			return f, func() tea.Msg {
 				return FormCancelMsg{}
 			}
