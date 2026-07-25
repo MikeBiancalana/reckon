@@ -62,17 +62,12 @@ func runItemsToChecklistItems(items []checklist.RunItem) []components.ChecklistI
 }
 
 // makeToggleFunc closes over svc and the immutable run ID (not the mutable
-// *Run) so there is no staleness across the session's toggles. It replays
-// runChecklistCheckE's CheckItem-then-GetRunStatus sequence, so `run` and
-// `check` write through the same path.
+// *Run) so there is no staleness across the session's toggles. It calls the
+// same checkAndRefetchRun helper runChecklistCheckE uses, so `run` and
+// `check` write through one path.
 func makeToggleFunc(svc *checklist.Service, runID string) components.ToggleFunc {
 	return func(position int) ([]components.ChecklistItem, bool, error) {
-		if err := svc.CheckItem(runID, position); err != nil {
-			return nil, false, err
-		}
-		// Re-fetch by run ID, not GetActiveRun: the toggle that completes
-		// the run would otherwise make GetActiveRun error not-found.
-		updated, err := svc.GetRunStatus(runID)
+		updated, err := checkAndRefetchRun(svc, runID, position)
 		if err != nil {
 			return nil, false, err
 		}

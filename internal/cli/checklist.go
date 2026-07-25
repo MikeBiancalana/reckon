@@ -471,18 +471,23 @@ func runChecklistCheckE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist check: %w", err)
 	}
 
-	if err := svc.CheckItem(run.ID, pos); err != nil {
-		return fmt.Errorf("checklist check: %w", err)
-	}
-
-	// Re-fetch by run ID (not GetActiveRun again): the final check on a run
-	// auto-completes it, and GetActiveRun would then error not-found.
-	updated, err := svc.GetRunStatus(run.ID)
+	updated, err := checkAndRefetchRun(svc, run.ID, pos)
 	if err != nil {
 		return fmt.Errorf("checklist check: %w", err)
 	}
 
 	return printChecklistResult(cmd, mode, checklistRunResult{Run: updated})
+}
+
+// checkAndRefetchRun toggles the item at pos and returns the run's refreshed
+// state. It re-fetches by run ID rather than GetActiveRun: a check that
+// completes the run would otherwise make GetActiveRun error not-found.
+// Shared by `check` and `run` so both write through one path.
+func checkAndRefetchRun(svc *checklist.Service, runID string, pos int) (*checklist.Run, error) {
+	if err := svc.CheckItem(runID, pos); err != nil {
+		return nil, err
+	}
+	return svc.GetRunStatus(runID)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

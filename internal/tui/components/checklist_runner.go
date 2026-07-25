@@ -74,9 +74,7 @@ func (r *ChecklistRunner) Done() (finished, canceled bool) {
 // after RunPrompt returns.
 func (r *ChecklistRunner) Err() error { return r.err }
 
-// Update handles keystrokes: q/esc/ctrl+c cancel; j/down and k/up move the
-// cursor with no wraparound; space/enter toggle the item under the cursor.
-// Navigation and toggle are no-ops on an empty checklist.
+// Update handles Bubble Tea messages.
 func (r *ChecklistRunner) Update(msg tea.Msg) (Prompt[[]ChecklistItem], tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
