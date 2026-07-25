@@ -40,7 +40,7 @@ func runChecklistRunE(cmd *cobra.Command, args []string) error {
 	runner.Show(runItemsToChecklistItems(run.Items), makeToggleFunc(svc, run.ID))
 
 	if _, _, err := components.RunPrompt[[]components.ChecklistItem](runner); err != nil {
-		return err
+		return fmt.Errorf("checklist run: %w", err)
 	}
 	if e := runner.Err(); e != nil {
 		return fmt.Errorf("checklist run: %w", e)
