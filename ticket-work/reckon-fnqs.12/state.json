@@ -1,15 +1,15 @@
 {
   "ticket_id": "reckon-fnqs.12",
-  "phase": "test_writer",
+  "phase": "dry_run_gate",
   "worktree": ".worktrees/reckon-fnqs.12",
   "subsystem": "tui/cli",
   "attempts": {
     "planner": 1,
     "test_writer": 1,
-    "implementer": 0,
-    "simplify": 0,
-    "preflight": 0,
-    "reviewer": 0
+    "implementer": 1,
+    "simplify": 1,
+    "preflight": 1,
+    "reviewer": 1
   },
   "new_test_names": [
     "TestChecklistRunner_ConformanceCompiles",
@@ -34,5 +34,5 @@
   ],
   "stall_count": 0,
   "last_test_output_hash": null,
-  "status": "in_progress"
+  "status": "ready_for_push"
 }
