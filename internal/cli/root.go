@@ -102,6 +102,7 @@ func init() {
 	RootCmd.AddCommand(todayCmd)
 	RootCmd.AddCommand(addCmd)
 	RootCmd.AddCommand(todoCmd)
+	RootCmd.AddCommand(checklistCmd)
 	RootCmd.AddCommand(queryCmd)
 	RootCmd.AddCommand(indexCmd)
 	RootCmd.AddCommand(adoptCmd)
