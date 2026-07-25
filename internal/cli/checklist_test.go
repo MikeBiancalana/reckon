@@ -363,6 +363,32 @@ func TestChecklistStart_Resume(t *testing.T) {
 	}
 }
 
+func TestChecklistStart_PrettyDistinguishesResume(t *testing.T) {
+	setupChecklistEnv(t)
+
+	if _, stderr, err := runChecklist(t, "create", "foo", "--item", "a"); err != nil {
+		t.Fatalf("create foo: %v\nstderr: %s", err, stderr)
+	}
+	resetCLIFlags()
+
+	freshOut, stderr, err := runChecklist(t, "start", "foo")
+	if err != nil {
+		t.Fatalf("start foo: %v\nstderr: %s", err, stderr)
+	}
+	if strings.Contains(freshOut, "resuming") {
+		t.Errorf("fresh start Pretty output unexpectedly mentions resuming: %q", freshOut)
+	}
+	resetCLIFlags()
+
+	resumeOut, stderr, err := runChecklist(t, "start", "foo")
+	if err != nil {
+		t.Fatalf("resuming start foo: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(resumeOut, "resuming existing run") {
+		t.Errorf("resumed start Pretty output = %q, want it to mention resuming an existing run", resumeOut)
+	}
+}
+
 func TestChecklistStart_UnknownTemplate(t *testing.T) {
 	setupChecklistEnv(t)
 

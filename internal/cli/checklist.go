@@ -190,11 +190,11 @@ func (r checklistTemplateResult) Pretty() string {
 }
 
 // checklistRunResult wraps a run for start/check/status/reset/abandon.
-// resumed is a Pretty-only discriminator: it stays unexported (and thus never
-// marshaled) so JSON output remains pure checklist.Run model fields.
+// resumed is a Pretty-only discriminator (unexported fields are never
+// marshaled, so JSON output stays pure checklist.Run model fields).
 type checklistRunResult struct {
 	*checklist.Run
-	resumed bool `json:"-"`
+	resumed bool
 }
 
 func (r checklistRunResult) Pretty() string {
@@ -205,6 +205,9 @@ func (r checklistRunResult) Pretty() string {
 		}
 	}
 	var b strings.Builder
+	if r.resumed {
+		b.WriteString("checklist: resuming existing run\n")
+	}
 	fmt.Fprintf(&b, "%s  [%d/%d]", r.TemplateName, checked, len(r.Items))
 	for _, it := range r.Items {
 		mark := " "
