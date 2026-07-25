@@ -64,3 +64,21 @@ completion-banner scrollback survival as out of unit-test reach:
   auto-completes -- confirmed this is pre-existing `GetActiveRun` semantics
   (checklist.go:508), not a regression from this ticket.
 Scratch binary and vault removed after verification; worktree left clean.
+
+**Incident (caught before this gate, resolved):** `RECKON_VAULT` does not
+scope the checklist DB -- it always lives at the fixed `~/.reckon/reckon.db`
+(config.go's `DataDir`/`DbName`), unrelated to the vault override. The pty
+smoke test above therefore wrote two real rows (templates "smoketest",
+"resumetest" + their runs/items) into the user's live, months-old
+`reckon.db` instead of an isolated store. Backed up the DB, abandoned the
+dangling active run via the normal `checklist abandon` CLI verb, confirmed
+by exact template ID which rows were mine (created today, distinct from the
+user's pre-existing "Test"/"morning" templates), got explicit user
+confirmation, then deleted exactly those two templates + their
+runs/run_items via scoped SQL. Verified `PRAGMA integrity_check` = ok and
+only "Test"/"morning" remain afterward. Backup file removed once cleanup was
+confirmed clean. Not a code defect -- `RECKON_VAULT` not covering the
+checklist store is pre-existing, out of this ticket's scope; noted here only
+because it's an important gotcha for the next person writing a checklist
+smoke test against this repo (use `RECKON_DATA_DIR` to isolate, not
+`RECKON_VAULT`).
