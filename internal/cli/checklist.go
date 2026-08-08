@@ -130,6 +130,7 @@ func init() {
 		checklistStatusCmd,
 		checklistResetCmd,
 		checklistAbandonCmd,
+		checklistRunCmd,
 	)
 }
 
@@ -418,22 +419,32 @@ func runChecklistStartE(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	if _, err := svc.GetTemplate(name); err != nil {
+	run, resumed, err := resolveChecklistRun(svc, name)
+	if err != nil {
 		return fmt.Errorf("checklist start: %w", err)
 	}
 
-	resumed := false
-	run, err := svc.GetActiveRun(name)
+	return printChecklistResult(cmd, mode, checklistRunResult{Run: run, resumed: resumed})
+}
+
+// resolveChecklistRun returns the active run for name, starting a fresh one
+// if none exists. Shared by `start` and `run` so both verbs resolve through
+// one path. Errors are returned raw (not wrapped) so each caller applies its
+// own message prefix.
+func resolveChecklistRun(svc *checklist.Service, name string) (run *checklist.Run, resumed bool, err error) {
+	if _, err := svc.GetTemplate(name); err != nil {
+		return nil, false, err
+	}
+
+	run, err = svc.GetActiveRun(name)
 	if err != nil {
 		run, err = svc.StartRun(name)
 		if err != nil {
-			return fmt.Errorf("checklist start: %w", err)
+			return nil, false, err
 		}
-	} else {
-		resumed = true
+		return run, false, nil
 	}
-
-	return printChecklistResult(cmd, mode, checklistRunResult{Run: run, resumed: resumed})
+	return run, true, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -460,18 +471,23 @@ func runChecklistCheckE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checklist check: %w", err)
 	}
 
-	if err := svc.CheckItem(run.ID, pos); err != nil {
-		return fmt.Errorf("checklist check: %w", err)
-	}
-
-	// Re-fetch by run ID (not GetActiveRun again): the final check on a run
-	// auto-completes it, and GetActiveRun would then error not-found.
-	updated, err := svc.GetRunStatus(run.ID)
+	updated, err := checkAndRefetchRun(svc, run.ID, pos)
 	if err != nil {
 		return fmt.Errorf("checklist check: %w", err)
 	}
 
 	return printChecklistResult(cmd, mode, checklistRunResult{Run: updated})
+}
+
+// checkAndRefetchRun toggles the item at pos and returns the run's refreshed
+// state. It re-fetches by run ID rather than GetActiveRun: a check that
+// completes the run would otherwise make GetActiveRun error not-found.
+// Shared by `check` and `run` so both write through one path.
+func checkAndRefetchRun(svc *checklist.Service, runID string, pos int) (*checklist.Run, error) {
+	if err := svc.CheckItem(runID, pos); err != nil {
+		return nil, err
+	}
+	return svc.GetRunStatus(runID)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

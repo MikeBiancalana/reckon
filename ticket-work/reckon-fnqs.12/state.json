@@ -1,0 +1,38 @@
+{
+  "ticket_id": "reckon-fnqs.12",
+  "phase": "dry_run_gate",
+  "worktree": ".worktrees/reckon-fnqs.12",
+  "subsystem": "tui/cli",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 1,
+    "implementer": 1,
+    "simplify": 1,
+    "preflight": 1,
+    "reviewer": 1
+  },
+  "new_test_names": [
+    "TestChecklistRunner_ConformanceCompiles",
+    "TestChecklistRunner_FreshRunNavigateAndToggle",
+    "TestChecklistRunner_CursorClampDown",
+    "TestChecklistRunner_CursorClampUp",
+    "TestChecklistRunner_ToggleOn",
+    "TestChecklistRunner_ToggleOff",
+    "TestChecklistRunner_AutoCompleteExits",
+    "TestChecklistRunner_QuitQ",
+    "TestChecklistRunner_QuitEsc",
+    "TestChecklistRunner_QuitCtrlC",
+    "TestChecklistRunner_EmptyChecklist",
+    "TestChecklistRunner_MidSessionError",
+    "TestResolveChecklistRun_FreshThenResume",
+    "TestMakeToggleFunc_PersistsLive",
+    "TestMakeToggleFunc_Completion",
+    "TestRunItemsToChecklistItems",
+    "TestChecklistRun_GuardNonTTY",
+    "TestChecklistRun_GuardNoInputFlag",
+    "TestChecklistRun_TemplateNotFound"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": null,
+  "status": "ready_for_push"
+}
