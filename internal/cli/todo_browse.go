@@ -21,7 +21,7 @@ func todoListWantsTUI(cmd *cobra.Command) bool {
 		return false
 	}
 	for _, name := range []string{"all", "state", "durable", "ephemeral"} {
-		if fl := cmd.Flags().Lookup(name); fl != nil && fl.Changed {
+		if cmd.Flags().Changed(name) {
 			return false
 		}
 	}
