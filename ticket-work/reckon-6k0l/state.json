@@ -1,0 +1,41 @@
+{
+  "ticket_id": "reckon-6k0l",
+  "phase": "implementer",
+  "worktree": ".worktrees/reckon-6k0l",
+  "subsystem": "cli+tui",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 1,
+    "implementer": 0,
+    "simplify": 0,
+    "preflight": 0,
+    "reviewer": 0
+  },
+  "new_test_names": [
+    "TestTodoBrowser_ConformanceCompiles",
+    "TestTodoBrowser_FreshNavigateAndMarkDone",
+    "TestTodoBrowser_ListShrinksAndCursorClamps",
+    "TestTodoBrowser_LastItemMarkDoneEmptyTransition",
+    "TestTodoBrowser_HeterogeneousCursorToRefDispatch",
+    "TestTodoBrowser_CursorClampDown",
+    "TestTodoBrowser_CursorClampUp",
+    "TestTodoBrowser_EmptyListNoOps",
+    "TestTodoBrowser_MidSessionError",
+    "TestTodoBrowser_QuitQ",
+    "TestTodoBrowser_QuitEsc",
+    "TestTodoBrowser_QuitCtrlC",
+    "TestTodoBrowser_EmptyTitleRendersFallback",
+    "TestTodoList_NonInteractive_ClassicPath",
+    "TestTodoList_Interactive_NoInputErrors",
+    "TestTodoList_Interactive_JSONFlagStaysClassic",
+    "TestTodoList_Interactive_OutputFlagsStayClassic",
+    "TestBuildTodoItems_MapsDurableAndEphemeral",
+    "TestMakeMarkDoneFunc_DurablePersists",
+    "TestMakeMarkDoneFunc_EphemeralPersists",
+    "TestMakeMarkDoneFunc_RecurringAdvancesWithoutDoneState",
+    "TestMakeMarkDoneFunc_EphemeralRefStabilityAcrossSequentialCalls"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": "",
+  "status": "in_progress"
+}
