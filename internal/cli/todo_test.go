@@ -92,7 +92,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MikeBiancalana/reckon/internal/config"
 	"github.com/MikeBiancalana/reckon/internal/node"
+	"github.com/MikeBiancalana/reckon/internal/tui/components"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1551,5 +1553,403 @@ func TestTodoList_InProgressVisibleByDefault(t *testing.T) {
 
 	if !containsID(res.Items, id) {
 		t.Errorf("in-progress item %q missing from default (no --all) list: %+v", id, res.Items)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// reckon-6k0l — `rk todo list` interactive mini-TUI: dispatch matrix,
+// buildTodoItems mapping, makeMarkDoneFunc persistence.
+//
+// internal/cli/todo_browse.go (runTodoBrowse/buildTodoItems/makeMarkDoneFunc)
+// and internal/tui/components/todo_browser.go (TodoItem/MarkDoneFunc/
+// TodoBrowser) do not exist yet, and todoListWantsTUI (todo.go) doesn't
+// either — the whole cli package fails to compile until Phase 4 adds them.
+// That is this ticket's expected TDD-red state, same convention as the rest
+// of this file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoList_NonInteractive_ClassicPath: with isInteractive stubbed false,
+// bare `list` (no flags) takes the classic text-output path unconditionally
+// -- this is the hard constraint protecting todo_test.go:733,757,790,892,
+// spelled out as its own named test rather than only relying on those four
+// staying green.
+func TestTodoList_NonInteractive_ClassicPath(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	prevInteractive := isInteractive
+	t.Cleanup(func() { isInteractive = prevInteractive })
+	isInteractive = func() bool { return false }
+
+	id := node.Mint()
+	writeTestNode(t, vault, "todos/"+id+".md", id, "todo", "Classic path task", "state: open")
+
+	out, stderr, err := runTodo(t, vault, "list")
+	if err != nil {
+		t.Fatalf("rk todo list: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(out, "Classic path task") {
+		t.Errorf("expected classic pretty output to include the todo, got %q", out)
+	}
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("non-interactive bare list must never emit TUI escape sequences, got %q", out)
+	}
+}
+
+// TestTodoList_Interactive_NoInputErrors: with isInteractive stubbed true (a
+// reported real TTY) and --no-input passed, bare `list` must still error --
+// the flag wins over a real terminal (mirrors TestChecklistRun_GuardNoInputFlag),
+// and the error must come from the shared guard, not hang or emit TUI escapes.
+func TestTodoList_Interactive_NoInputErrors(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	prevInteractive := isInteractive
+	prevNoInput := noInputFlag
+	t.Cleanup(func() {
+		isInteractive = prevInteractive
+		noInputFlag = prevNoInput
+	})
+	isInteractive = func() bool { return true }
+
+	id := node.Mint()
+	writeTestNode(t, vault, "todos/"+id+".md", id, "todo", "Guarded task", "state: open")
+
+	out, stderr, err := runTodo(t, vault, "list", "--no-input")
+	if err == nil {
+		t.Fatal("expected an error opening the TUI on a reported TTY with --no-input, got nil")
+	}
+	combined := strings.ToLower(err.Error() + stderr)
+	if !strings.Contains(combined, "--no-input") && !strings.Contains(combined, "terminal") {
+		t.Errorf("expected the guard's --no-input/terminal error, got err=%v stderr=%q", err, stderr)
+	}
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("no TUI escape sequences should reach stdout when the guard fires, got %q", out)
+	}
+}
+
+// TestTodoList_Interactive_JSONFlagStaysClassic: with isInteractive stubbed
+// true, --json must still produce today's classic JSON output -- todo list
+// already has a meaningful --json mode, so a caller passing it wants JSON,
+// not a TUI (unlike checklist run, which has no text-output mode to fall
+// back to).
+func TestTodoList_Interactive_JSONFlagStaysClassic(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	prevInteractive := isInteractive
+	t.Cleanup(func() { isInteractive = prevInteractive })
+	isInteractive = func() bool { return true }
+
+	id := node.Mint()
+	writeTestNode(t, vault, "todos/"+id+".md", id, "todo", "JSON path task", "state: open")
+
+	out, stderr, err := runTodo(t, vault, "list", "--json")
+	if err != nil {
+		t.Fatalf("rk todo list --json: %v\nstderr: %s", err, stderr)
+	}
+	var res todoListResult
+	mustDecodeJSON(t, out, &res)
+	if !containsID(res.Items, id) {
+		t.Errorf("expected the todo in classic JSON output, got %+v", res.Items)
+	}
+}
+
+// TestTodoList_Interactive_OutputFlagsStayClassic: every output-shaping flag
+// (--all/--state/--durable/--ephemeral/--json/--ndjson) must route to the
+// classic path even when isInteractive reports a real TTY -- none of these
+// invocations may reach the TUI, so none may emit TUI escape sequences.
+func TestTodoList_Interactive_OutputFlagsStayClassic(t *testing.T) {
+	prevInteractive := isInteractive
+	t.Cleanup(func() { isInteractive = prevInteractive })
+	isInteractive = func() bool { return true }
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"--all", []string{"list", "--all"}},
+		{"--state", []string{"list", "--state", "open"}},
+		{"--durable", []string{"list", "--durable"}},
+		{"--ephemeral", []string{"list", "--ephemeral"}},
+		{"--json", []string{"list", "--json"}},
+		{"--ndjson", []string{"list", "--ndjson"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			vault, _ := setupQueryVault(t)
+			t.Cleanup(resetCLIFlags)
+
+			id := node.Mint()
+			writeTestNode(t, vault, "todos/"+id+".md", id, "todo", "Flagged task", "state: open")
+
+			out, stderr, err := runTodo(t, vault, tc.args...)
+			if err != nil {
+				t.Fatalf("rk todo %v: %v\nstderr: %s", tc.args, err, stderr)
+			}
+			if strings.Contains(out, "\x1b[") {
+				t.Errorf("output-shaping flag %s must never open the TUI, got %q", tc.name, out)
+			}
+		})
+	}
+}
+
+// TestBuildTodoItems_MapsDurableAndEphemeral exercises buildTodoItems
+// directly (no RootCmd/TUI involved): durable-then-ephemeral concatenation
+// order, Kind/Ref/Title/Done field mapping, and the Title fallback chain for
+// a blank-body durable node and a blank-text ephemeral checkbox line (AC §3
+// "Todo with no title / malformed node").
+func TestBuildTodoItems_MapsDurableAndEphemeral(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	titledID := node.Mint()
+	writeTestNode(t, vault, "todos/"+titledID+".md", titledID, "todo", "Ship it.", "state: open")
+
+	blankID := node.Mint()
+	// deriveTitle returns "" for a body with no non-blank line; the fallback
+	// chain (Title -> Body -> ID) must still produce a non-empty Title.
+	writeTestNode(t, vault, "todos/"+blankID+".md", blankID, "todo", "", "state: open")
+
+	writeEphemeralContainer(t, vault, node.Mint(),
+		checklistLine(false, "call dentist"),
+		checklistLine(false, ""), // blank checkbox text: capture group 2 is ""
+	)
+
+	cfg, err := config.LoadWithOverrides(vault, "")
+	if err != nil {
+		t.Fatalf("config.LoadWithOverrides: %v", err)
+	}
+
+	items, err := buildTodoItems(cfg)
+	if err != nil {
+		t.Fatalf("buildTodoItems: %v", err)
+	}
+
+	var sawDurable, sawEphemeral bool
+	lastDurableIdx, firstEphemeralIdx := -1, -1
+	for i, it := range items {
+		switch it.Kind {
+		case "durable":
+			sawDurable = true
+			lastDurableIdx = i
+		case "ephemeral":
+			sawEphemeral = true
+			if firstEphemeralIdx == -1 {
+				firstEphemeralIdx = i
+			}
+		default:
+			t.Errorf("unexpected Kind %q in item %+v", it.Kind, it)
+		}
+		if it.Title == "" {
+			t.Errorf("item %+v rendered with an empty Title", it)
+		}
+		if it.Done {
+			t.Errorf("item %+v is Done=true, want false (buildTodoItems lists open-only)", it)
+		}
+	}
+	if !sawDurable || !sawEphemeral {
+		t.Fatalf("expected both kinds present, got %+v", items)
+	}
+	if firstEphemeralIdx < lastDurableIdx {
+		t.Errorf("ephemeral item at index %d precedes a durable item at index %d, want durable-then-ephemeral order", firstEphemeralIdx, lastDurableIdx)
+	}
+
+	var titled, blank *components.TodoItem
+	for i := range items {
+		if items[i].Kind != "durable" {
+			continue
+		}
+		switch items[i].Ref {
+		case titledID:
+			titled = &items[i]
+		case blankID:
+			blank = &items[i]
+		}
+	}
+	if titled == nil {
+		t.Fatalf("titled durable item %q missing from %+v", titledID, items)
+	}
+	if titled.Title != "Ship it." {
+		t.Errorf("Title = %q, want %q", titled.Title, "Ship it.")
+	}
+	if blank == nil {
+		t.Fatalf("blank-body durable item %q missing from %+v", blankID, items)
+	}
+	if blank.Title == "" || blank.Title == titled.Title {
+		t.Errorf("blank-body durable item Title = %q, want a non-empty fallback distinct from a real title", blank.Title)
+	}
+
+	var blankEphemeral *components.TodoItem
+	for i := range items {
+		if items[i].Kind == "ephemeral" && items[i].Title != "call dentist" {
+			blankEphemeral = &items[i]
+		}
+	}
+	if blankEphemeral == nil {
+		t.Fatalf("blank-text ephemeral item missing from %+v", items)
+	}
+	if blankEphemeral.Title == "" {
+		t.Errorf("blank-text ephemeral item rendered with an empty Title, want a fallback")
+	}
+}
+
+// TestMakeMarkDoneFunc_DurablePersists calls the makeMarkDoneFunc closure
+// directly (no TUI/RootCmd involved) for a durable ref and asserts the
+// on-disk node's state: prop flips to done, through the same
+// doneDurableTodo path `rk todo done` uses.
+func TestMakeMarkDoneFunc_DurablePersists(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	id := node.Mint()
+	writeTestNode(t, vault, "todos/"+id+".md", id, "todo", "Ship v1", "state: open")
+
+	items := []components.TodoItem{{Kind: "durable", Ref: id, Title: "Ship v1"}}
+	markDone := makeMarkDoneFunc(vault, items)
+
+	remaining, err := markDone(0)
+	if err != nil {
+		t.Fatalf("markDone(0): %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("remaining = %+v, want empty (the only item was just completed)", remaining)
+	}
+
+	n, err := node.Parse([]byte(mustReadFile(t, filepath.Join(vault, "todos", id+".md"))))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Props["state"] != "done" {
+		t.Errorf("Props[state] = %q, want done", n.Props["state"])
+	}
+}
+
+// TestMakeMarkDoneFunc_EphemeralPersists calls the closure for an ephemeral
+// ref and asserts the targeted checkbox line flips [ ] -> [x] in
+// todos/inbox.md, leaving the sibling line untouched.
+func TestMakeMarkDoneFunc_EphemeralPersists(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	writeEphemeralContainer(t, vault, node.Mint(),
+		checklistLine(false, "first item"),
+		checklistLine(false, "second item"),
+	)
+	containerPath := filepath.Join(vault, "todos", "inbox.md")
+
+	items := []components.TodoItem{
+		{Kind: "ephemeral", Ref: "1", Title: "first item"},
+		{Kind: "ephemeral", Ref: "2", Title: "second item"},
+	}
+	markDone := makeMarkDoneFunc(vault, items)
+
+	remaining, err := markDone(0)
+	if err != nil {
+		t.Fatalf("markDone(0): %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].Ref != "2" {
+		t.Errorf("remaining = %+v, want just the second item (Ref 2)", remaining)
+	}
+
+	after := mustReadFile(t, containerPath)
+	if !strings.Contains(after, "- [x] first item") {
+		t.Errorf("item 1 not flipped to checked: %q", after)
+	}
+	if !strings.Contains(after, "- [ ] second item") {
+		t.Errorf("item 2 unexpectedly changed: %q", after)
+	}
+}
+
+// TestMakeMarkDoneFunc_RecurringAdvancesWithoutDoneState calls the closure
+// for a repeat: durable todo and asserts the recurrence branch ran:
+// scheduled: advances, state: stays "open" (never "done" -- the cursor
+// advance is the completion signal), and the item is removed from the
+// returned session slice so a second mark-done can't double-advance it
+// within the same session (plan.md's "recurring double-advance hazard").
+func TestMakeMarkDoneFunc_RecurringAdvancesWithoutDoneState(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-05")
+
+	id := node.Mint()
+	writeRecurringTodo(t, vault, id, "2026-07-05", "+7d", "Water plants")
+
+	items := []components.TodoItem{{Kind: "durable", Ref: id, Title: "Water plants"}}
+	markDone := makeMarkDoneFunc(vault, items)
+
+	remaining, err := markDone(0)
+	if err != nil {
+		t.Fatalf("markDone(0): %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("remaining = %+v, want the recurring item removed from this session's view", remaining)
+	}
+
+	n, err := node.Parse([]byte(mustReadFile(t, filepath.Join(vault, "todos", id+".md"))))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Props["state"] != "open" {
+		t.Errorf("Props[state] = %q, want open (a recurring rule's state is never flipped to done)", n.Props["state"])
+	}
+	if n.Props["scheduled"] != "2026-07-12" {
+		t.Errorf("Props[scheduled] = %q, want advanced to 2026-07-12", n.Props["scheduled"])
+	}
+}
+
+// TestMakeMarkDoneFunc_EphemeralRefStabilityAcrossSequentialCalls proves two
+// sequential markDone calls against different ephemeral items in the same
+// container each hit their own intended file line -- flipChecklistLine's
+// single-byte-in-place splice means captured Refs never shift after the
+// first write, so the closure's local session mutation (no mid-session
+// re-query) stays correct across the whole session.
+func TestMakeMarkDoneFunc_EphemeralRefStabilityAcrossSequentialCalls(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	writeEphemeralContainer(t, vault, node.Mint(),
+		checklistLine(true, "already done"), // line 1, pre-checked
+		checklistLine(false, "second item"), // line 2
+		checklistLine(false, "third item"),  // line 3
+	)
+	containerPath := filepath.Join(vault, "todos", "inbox.md")
+
+	items := []components.TodoItem{
+		{Kind: "ephemeral", Ref: "2", Title: "second item"},
+		{Kind: "ephemeral", Ref: "3", Title: "third item"},
+	}
+	markDone := makeMarkDoneFunc(vault, items)
+
+	remaining, err := markDone(0) // acts on Ref "2"
+	if err != nil {
+		t.Fatalf("markDone(0): %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].Ref != "3" {
+		t.Fatalf("remaining after first markDone = %+v, want just Ref 3", remaining)
+	}
+
+	afterFirst := mustReadFile(t, containerPath)
+	if !strings.Contains(afterFirst, "- [x] second item") {
+		t.Errorf("line 2 not flipped after first call: %q", afterFirst)
+	}
+	if !strings.Contains(afterFirst, "- [ ] third item") {
+		t.Errorf("line 3 unexpectedly changed after first call: %q", afterFirst)
+	}
+
+	remaining2, err := markDone(0) // session shifted: position 0 is now Ref "3"
+	if err != nil {
+		t.Fatalf("markDone(0) (second call): %v", err)
+	}
+	if len(remaining2) != 0 {
+		t.Errorf("remaining after second markDone = %+v, want empty", remaining2)
+	}
+
+	afterSecond := mustReadFile(t, containerPath)
+	if !strings.Contains(afterSecond, "- [x] third item") {
+		t.Errorf("line 3 not flipped after second call: %q", afterSecond)
+	}
+	if !strings.Contains(afterSecond, "- [x] second item") {
+		t.Errorf("line 2 (from the first call) unexpectedly reverted: %q", afterSecond)
 	}
 }
