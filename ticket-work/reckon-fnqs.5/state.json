@@ -1,15 +1,15 @@
 {
   "ticket_id": "reckon-fnqs.5",
-  "phase": "implementer",
+  "phase": "dry_run_gate",
   "worktree": ".worktrees/reckon-fnqs.5",
   "subsystem": "cli",
   "attempts": {
     "planner": 1,
     "test_writer": 1,
-    "implementer": 0,
-    "simplify": 0,
-    "preflight": 0,
-    "reviewer": 0
+    "implementer": 1,
+    "simplify": 1,
+    "preflight": 1,
+    "reviewer": 1
   },
   "new_test_names": [
     "TestTodoAdd_MessageFlag_JoinsParagraphs",
@@ -45,6 +45,6 @@
   ],
   "stall_count": 0,
   "last_test_output_hash": null,
-  "status": "in_progress",
-  "notes": "Phase 3 red state is a package-wide COMPILE failure (undefined: runEditor), not per-test runtime failures -- expected and verified: all 3 undefined-symbol errors point at runEditor only (todo_test.go stubRunEditor), confirmed via a temporary shim that the rest of the package compiles clean. Phase 4 must define runEditor (and assembleBody, isStdinDash, todoMessageFlag, todoEditFlag, addMessageFlag, addEditFlag) in a new internal/cli/body_entry.go per plan.md before per-test PASS/FAIL status is obtainable."
+  "status": "ready_for_push",
+  "notes": "Phase 3 red state was a package-wide COMPILE failure (undefined: runEditor), resolved in Phase 4. All 29 named tests PASS, go test ./... green module-wide. Simplify (Phase 5): no changes needed, diff already clean. Preflight (Phase 6): PASS. Review (Phase 7): APPROVE, zero blocking issues, three non-blocking recommendations noted in review.md (R1 no test asserts empty scratch buffer, R2 $EDITOR with args unsupported, R3 E17 has no regression guard). Feedback loop (Phase 8): all pattern-frequency counts zero, no doc updates triggered. Awaiting user go-ahead to push."
 }
