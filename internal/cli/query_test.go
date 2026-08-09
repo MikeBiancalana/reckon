@@ -106,6 +106,10 @@ func resetCLIFlags() {
 	RootCmd.SetArgs(nil)
 	RootCmd.SetOut(nil)
 	RootCmd.SetErr(nil)
+	// An injected stdin reader (RootCmd.SetIn, used by runTodoWithStdin/
+	// runAddWithStdin) must not leak into the next test's Execute call
+	// within the same test binary run.
+	RootCmd.SetIn(nil)
 }
 
 // buildIndex runs `rk index --vault <vault>` through RootCmd and fatals on any
