@@ -44,6 +44,8 @@ var (
 	todoDependsFlag       string
 	todoRepeatFlag        string
 	todoAuthorFlag        string
+	todoMessageFlag       []string
+	todoEditFlag          bool
 	todoListAllFlag       bool
 	todoListStateFlag     string
 	todoListDurableFlag   bool
@@ -62,12 +64,14 @@ func resetTodoFlags(cmd *cobra.Command) {
 	todoDependsFlag = ""
 	todoRepeatFlag = ""
 	todoAuthorFlag = ""
+	todoMessageFlag = nil
+	todoEditFlag = false
 	todoListAllFlag = false
 	todoListStateFlag = ""
 	todoListDurableFlag = false
 	todoListEphemeralFlag = false
 	todoDoneEphemeralFlag = false
-	for _, name := range []string{"ephemeral", "scheduled", "deadline", "depends", "repeat", "author", "all", "state", "durable"} {
+	for _, name := range []string{"ephemeral", "scheduled", "deadline", "depends", "repeat", "author", "message", "edit", "all", "state", "durable"} {
 		if fl := cmd.Flags().Lookup(name); fl != nil {
 			fl.Changed = false
 		}
@@ -89,7 +93,7 @@ var todoAddCmd = &cobra.Command{
 	Use:          "add <text...>",
 	Short:        "Create a new todo (durable by default, or --ephemeral)",
 	SilenceUsage: true,
-	Args:         cobra.MinimumNArgs(1),
+	Args:         cobra.ArbitraryArgs,
 	RunE:         runTodoAddE,
 }
 
@@ -117,6 +121,8 @@ func init() {
 	af.StringVar(&todoDependsFlag, "depends", "", "ULID/alias this todo depends on (durable only)")
 	af.StringVar(&todoRepeatFlag, "repeat", "", "Org-style repeater cookie (+Nd, ++Nd, .+Nd; durable only, requires --scheduled)")
 	af.StringVar(&todoAuthorFlag, "author", "", "Author to record (default: $RECKON_AUTHOR, $USER, or \"local\")")
+	af.StringArrayVarP(&todoMessageFlag, "message", "m", nil, "Body paragraph (repeatable; first is the subject)")
+	af.BoolVar(&todoEditFlag, "edit", false, "Compose the body in $EDITOR")
 
 	lf := todoListCmd.Flags()
 	lf.BoolVar(&todoListAllFlag, "all", false, "Include done/checked items")
@@ -275,7 +281,15 @@ func runTodoAddE(cmd *cobra.Command, args []string) error {
 	depends := todoDependsFlag
 	repeat := todoRepeatFlag
 	author := resolveAuthor(todoAuthorFlag)
-	body := strings.TrimSpace(strings.Join(args, " "))
+
+	if ephemeral && (len(todoMessageFlag) > 0 || todoEditFlag || isStdinDash(args)) {
+		return fmt.Errorf("todo add: --ephemeral does not support -m/--edit/stdin '-' (ephemeral items are single-line)")
+	}
+
+	body, err := assembleBody(cmd, args, todoMessageFlag, todoEditFlag, true)
+	if err != nil {
+		return fmt.Errorf("todo add: %w", err)
+	}
 	if body == "" {
 		return fmt.Errorf("todo add: empty body text")
 	}

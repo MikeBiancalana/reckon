@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
@@ -22,8 +21,10 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 var (
-	addAuthorFlag string
-	addAtFlag     string
+	addAuthorFlag  string
+	addAtFlag      string
+	addMessageFlag []string
+	addEditFlag    bool
 )
 
 // addCmd is the graduated `rk add` capture command (v1-T4, reckon-uv09):
@@ -37,7 +38,7 @@ var addCmd = &cobra.Command{
 	Short:        "Capture a timestamped log entry into the vault",
 	Long:         "Append a timestamped, authored entry to today's (or --date's) log day file under log/<date>.md.",
 	SilenceUsage: true,
-	Args:         cobra.MinimumNArgs(1),
+	Args:         cobra.ArbitraryArgs,
 	RunE:         runAddE,
 }
 
@@ -45,6 +46,8 @@ func init() {
 	f := addCmd.Flags()
 	f.StringVar(&addAuthorFlag, "author", "", "Author to record (default: $RECKON_AUTHOR, $USER, or \"local\")")
 	f.StringVar(&addAtFlag, "at", "", "Entry time HH:MM, 24-hour (default: current UTC time)")
+	f.StringArrayVarP(&addMessageFlag, "message", "m", nil, "Body paragraph (repeatable)")
+	f.BoolVar(&addEditFlag, "edit", false, "Compose the body in $EDITOR")
 }
 
 // resetAddFlags restores add flag variables to their defaults and clears the
@@ -52,7 +55,9 @@ func init() {
 func resetAddFlags(cmd *cobra.Command) {
 	addAuthorFlag = ""
 	addAtFlag = ""
-	for _, name := range []string{"author", "at"} {
+	addMessageFlag = nil
+	addEditFlag = false
+	for _, name := range []string{"author", "at", "message", "edit"} {
 		if fl := cmd.Flags().Lookup(name); fl != nil {
 			fl.Changed = false
 		}
@@ -87,7 +92,10 @@ func runAddE(cmd *cobra.Command, args []string) error {
 	if embeddedHeaderRe.MatchString(author) {
 		return fmt.Errorf(`add: author must not contain a line starting with "## " (would be mis-split as a new entry)`)
 	}
-	body := strings.TrimSpace(strings.Join(args, " "))
+	body, err := assembleBody(cmd, args, addMessageFlag, addEditFlag, false)
+	if err != nil {
+		return fmt.Errorf("add: %w", err)
+	}
 	if body == "" {
 		return fmt.Errorf("add: empty body text")
 	}
