@@ -86,6 +86,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -113,6 +114,25 @@ func runTodo(t *testing.T, vault string, args ...string) (stdout, stderr string,
 	var outBuf, errBuf bytes.Buffer
 	RootCmd.SetOut(&outBuf)
 	RootCmd.SetErr(&errBuf)
+	full := append([]string{"todo", "--vault", vault}, args...)
+	RootCmd.SetArgs(full)
+	err = RootCmd.Execute()
+	return outBuf.String(), errBuf.String(), err
+}
+
+// runTodoWithStdin is runTodo's stdin-capable sibling: wires stdin via
+// RootCmd.SetIn(strings.NewReader(stdin)) before Execute, for the `-`
+// sentinel and conflict tests. Deliberately a separate function rather than
+// a variadic-stdin change to runTodo's own signature, so every existing
+// runTodo call site is unaffected. Relies on resetCLIFlags's
+// RootCmd.SetIn(nil) (t.Cleanup) to avoid leaking the injected reader into a
+// later Execute call.
+func runTodoWithStdin(t *testing.T, vault, stdin string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	var outBuf, errBuf bytes.Buffer
+	RootCmd.SetOut(&outBuf)
+	RootCmd.SetErr(&errBuf)
+	RootCmd.SetIn(strings.NewReader(stdin))
 	full := append([]string{"todo", "--vault", vault}, args...)
 	RootCmd.SetArgs(full)
 	err = RootCmd.Execute()
@@ -1952,4 +1972,520 @@ func TestMakeMarkDoneFunc_EphemeralRefStabilityAcrossSequentialCalls(t *testing.
 	if !strings.Contains(afterSecond, "- [x] second item") {
 		t.Errorf("line 2 (from the first call) unexpectedly reverted: %q", afterSecond)
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-line body entry paths (-m/--edit/stdin-`-`) for `rk todo add`.
+//
+// RED-state note: every test below drives the new entry mechanisms purely
+// through the CLI surface (argv: "-m", "--edit", "-") rather than referencing
+// the new package-level symbols (assembleBody, isStdinDash, todoMessageFlag,
+// todoEditFlag) directly, so this file does not gain a compile dependency on
+// them. The ONE exception is runEditor (body_entry.go, not yet created):
+// there is no CLI-level way to intercept the $EDITOR subprocess, so edit-flag
+// tests stub the package-level runEditor func var directly. Until
+// internal/cli/body_entry.go defines runEditor, this file (and so the whole
+// cli package) fails to COMPILE — the expected TDD-red state, same
+// convention as this file's own header comment.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// verifyTodoBodyAndSubject re-reads the just-created todo file at
+// vault/res.Path, asserts its parsed body equals wantBody exactly, and that a
+// fresh `rk todo list` renders wantSubject (and only wantSubject, not any
+// later paragraph) — mirrors TestTodoAdd_DurableHappyPath's create-path
+// verification.
+func verifyTodoBodyAndSubject(t *testing.T, vault string, res todoAddResult, wantBody, wantSubject string) {
+	t.Helper()
+	raw := mustReadFile(t, filepath.Join(vault, res.Path))
+	n, err := node.Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse created file: %v", err)
+	}
+	if n.Body != wantBody {
+		t.Errorf("Body = %q, want %q", n.Body, wantBody)
+	}
+
+	resetCLIFlags()
+	listOut, listStderr, err := runTodo(t, vault, "list")
+	if err != nil {
+		t.Fatalf("rk todo list: %v\nstderr: %s", err, listStderr)
+	}
+	if !strings.Contains(listOut, wantSubject) {
+		t.Errorf("list output missing subject %q: %q", wantSubject, listOut)
+	}
+}
+
+// noTodoFilesWritten asserts todos/*.md contains no files at all — used by
+// the error-path tests below to confirm a rejected invocation wrote nothing.
+func noTodoFilesWritten(t *testing.T, vault string) {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(vault, "todos", "*.md"))
+	if err != nil {
+		t.Fatalf("glob todos dir: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Errorf("expected no todo files written, got %v", matches)
+	}
+}
+
+// stubRunEditor replaces the package-level runEditor seam (body_entry.go)
+// for the duration of the calling test, restoring the previous value via
+// t.Cleanup. This is the only new symbol any test in this file references
+// directly (see section header comment).
+func stubRunEditor(t *testing.T, fn func(editor, path string) error) {
+	t.Helper()
+	prev := runEditor
+	t.Cleanup(func() { runEditor = prev })
+	runEditor = fn
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// -m / --message (AC1, AC5, E1-E3c)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoAdd_MessageFlag_JoinsParagraphs (AC1): each -m becomes a paragraph,
+// joined with a blank line; `rk todo list` shows only the first ("subject").
+func TestTodoAdd_MessageFlag_JoinsParagraphs(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runTodo(t, vault, "add", "-m", "Ship it.", "-m", "More detail.", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add -m -m: %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "Ship it.\n\nMore detail.\n", "Ship it.")
+
+	resetCLIFlags()
+	listOut, _, err := runTodo(t, vault, "list")
+	if err != nil {
+		t.Fatalf("rk todo list: %v", err)
+	}
+	if strings.Contains(listOut, "More detail.") {
+		t.Errorf("pretty list leaked the second paragraph: %q", listOut)
+	}
+}
+
+// TestTodoAdd_MessageFlag_TrimsEachMessage: each -m value is individually
+// trimmed before joining.
+func TestTodoAdd_MessageFlag_TrimsEachMessage(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runTodo(t, vault, "add", "-m", "  Ship it.  ", "-m", "  detail  ", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add -m -m: %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "Ship it.\n\ndetail\n", "Ship it.")
+}
+
+// TestTodoAdd_MessageFlag_EmptySubjectErrors (E1): a lone empty -m errors; no
+// file is written.
+func TestTodoAdd_MessageFlag_EmptySubjectErrors(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runTodo(t, vault, "add", "-m", ""); err == nil {
+		t.Fatal("expected an error for an empty -m subject, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_MessageFlag_WhitespaceOnlySubjectErrors (E2): a whitespace-only
+// -m subject trims to "" and errors identically to E1.
+func TestTodoAdd_MessageFlag_WhitespaceOnlySubjectErrors(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runTodo(t, vault, "add", "-m", "   "); err == nil {
+		t.Fatal("expected an error for a whitespace-only -m subject, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_MessageFlag_TrailingEmptyMessageAbsorbed (E3): a trailing empty
+// -m is fully absorbed by the final whole-string trim — byte-identical to a
+// lone -m with the same subject.
+func TestTodoAdd_MessageFlag_TrailingEmptyMessageAbsorbed(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runTodo(t, vault, "add", "-m", "Ship it.", "-m", "", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add -m 'Ship it.' -m '': %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "Ship it.\n", "Ship it.")
+}
+
+// TestTodoAdd_MessageFlag_InteriorEmptyMessagePreservesBlankRun (E3b): a
+// non-trailing empty -m is NOT absorbed — its blank contribution survives as
+// an untouched interior blank-paragraph run.
+func TestTodoAdd_MessageFlag_InteriorEmptyMessagePreservesBlankRun(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runTodo(t, vault, "add", "-m", "S", "-m", "", "-m", "p2", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add -m 'S' -m '' -m 'p2': %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "S\n\n\n\np2\n", "S")
+}
+
+// TestTodoAdd_MessageFlag_SingleMessageValidSubjectOnly (E3c): a lone -m with
+// no positional args and no second -m is a valid subject-only body.
+func TestTodoAdd_MessageFlag_SingleMessageValidSubjectOnly(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runTodo(t, vault, "add", "-m", "Buy milk", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add -m 'Buy milk': %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "Buy milk\n", "Buy milk")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// --edit (AC3, AC5, E4-E6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoAdd_EditFlag_UsesSavedContent (AC3): the editor seam's saved content
+// (whole-buffer trimmed) becomes the body; `rk todo list` shows only the
+// first line.
+func TestTodoAdd_EditFlag_UsesSavedContent(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	t.Setenv("EDITOR", "stub")
+
+	stubRunEditor(t, func(editor, path string) error {
+		return os.WriteFile(path, []byte("Fix the leak\n\nRoot cause: ...\n"), 0o644)
+	})
+
+	out, stderr, err := runTodo(t, vault, "add", "--edit", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add --edit: %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "Fix the leak\n\nRoot cause: ...\n", "Fix the leak")
+}
+
+// TestTodoAdd_EditFlag_EmptySaveErrors (E4): the editor seam leaves the
+// scratch file empty (unsaved/untouched) — same rejection as an empty -m
+// subject; no file written.
+func TestTodoAdd_EditFlag_EmptySaveErrors(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	t.Setenv("EDITOR", "stub")
+
+	stubRunEditor(t, func(editor, path string) error {
+		return nil // leaves the (empty) scratch file untouched
+	})
+
+	if _, _, err := runTodo(t, vault, "add", "--edit"); err == nil {
+		t.Fatal("expected an error for an empty saved editor buffer, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_EditFlag_EditorNonzeroExitAborts (E5): a nonzero editor exit
+// aborts distinctly from the empty-buffer case; no file written.
+func TestTodoAdd_EditFlag_EditorNonzeroExitAborts(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	t.Setenv("EDITOR", "stub")
+
+	stubRunEditor(t, func(editor, path string) error {
+		// Simulate a nonzero $EDITOR exit before ever writing the scratch
+		// file — content, if any, must not be read on this path.
+		return errors.New("exit status 1")
+	})
+
+	_, _, err := runTodo(t, vault, "add", "--edit")
+	if err == nil {
+		t.Fatal("expected an error for a nonzero editor exit, got nil")
+	}
+	// Distinct from the empty-body guard's message (todo.go:280, "empty body
+	// text") — an implementation that let a nonzero editor exit silently
+	// fall through to the empty-buffer path would still return non-nil here,
+	// but with the wrong message; this catches that misrouting (E5 vs E4).
+	if strings.Contains(err.Error(), "empty body") {
+		t.Errorf("editor-nonzero-exit error reused the empty-body message, want a distinct error: %v", err)
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_EditFlag_EditorUnsetErrors (E6): $EDITOR unset errors before
+// the runEditor seam is ever invoked — the stub fails the test if called.
+func TestTodoAdd_EditFlag_EditorUnsetErrors(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	t.Setenv("EDITOR", "")
+
+	stubRunEditor(t, func(editor, path string) error {
+		t.Fatal("runEditor invoked despite $EDITOR being unset")
+		return nil
+	})
+
+	if _, _, err := runTodo(t, vault, "add", "--edit"); err == nil {
+		t.Fatal("expected an error for --edit with $EDITOR unset, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_EditFlag_NoCommentStripping: a saved buffer starting with a "#"
+// line is NOT stripped as a git-style comment — it is real markdown content
+// and becomes the (verbatim) subject.
+func TestTodoAdd_EditFlag_NoCommentStripping(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	t.Setenv("EDITOR", "stub")
+
+	stubRunEditor(t, func(editor, path string) error {
+		return os.WriteFile(path, []byte("# Real Heading\n\nBody text.\n"), 0o644)
+	})
+
+	out, stderr, err := runTodo(t, vault, "add", "--edit", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add --edit: %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "# Real Heading\n\nBody text.\n", "# Real Heading")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// stdin `-` (AC4, AC5, E4, E12)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoAdd_StdinDash_ReadsFullBody (AC4): args exactly ["-"] reads the
+// whole body from stdin, whole-buffer trimmed.
+func TestTodoAdd_StdinDash_ReadsFullBody(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runTodoWithStdin(t, vault, "Subject line\n\nDetail.\n", "add", "-", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add -: %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "Subject line\n\nDetail.\n", "Subject line")
+}
+
+// TestTodoAdd_StdinDash_EmptyErrors (E4-equivalent): stdin yielding "" with
+// args ["-"] errors identically to an empty editor buffer.
+func TestTodoAdd_StdinDash_EmptyErrors(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runTodoWithStdin(t, vault, "", "add", "-"); err == nil {
+		t.Fatal("expected an error for empty stdin, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_StdinDash_MultipleArgsDoesNotTriggerSentinel (E12): args
+// ["-", "extra"] (2+ args) never triggers the stdin sentinel — "-" is treated
+// as ordinary positional text, and the injected stdin content (which would
+// blow up any assertion if it leaked into the body) must never be read.
+func TestTodoAdd_StdinDash_MultipleArgsDoesNotTriggerSentinel(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runTodoWithStdin(t, vault, "STDIN_MUST_NOT_BE_READ", "add", "-", "extra", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add - extra: %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "- extra\n", "- extra")
+
+	raw := mustReadFile(t, filepath.Join(vault, res.Path))
+	if strings.Contains(raw, "STDIN_MUST_NOT_BE_READ") {
+		t.Errorf("stdin content leaked into the body despite 2+ positional args: %q", raw)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mutual exclusion (E7-E9, E11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoAdd_ConflictingSources_MessageAndPositional (E11): positional text
+// plus -m errors.
+func TestTodoAdd_ConflictingSources_MessageAndPositional(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runTodo(t, vault, "add", "text", "-m", "x"); err == nil {
+		t.Fatal("expected an error combining positional text with -m, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_ConflictingSources_MessageAndEdit (E9): -m plus --edit errors
+// (deliberate divergence from git's augment-in-editor behavior); the editor
+// seam must never be invoked.
+func TestTodoAdd_ConflictingSources_MessageAndEdit(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	stubRunEditor(t, func(editor, path string) error {
+		t.Fatal("runEditor invoked despite a conflicting -m + --edit invocation")
+		return nil
+	})
+
+	if _, _, err := runTodo(t, vault, "add", "-m", "x", "--edit"); err == nil {
+		t.Fatal("expected an error combining -m with --edit, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_ConflictingSources_StdinAndMessage (E7): stdin `-` plus -m
+// errors; the injected stdin content must never be consulted.
+func TestTodoAdd_ConflictingSources_StdinAndMessage(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runTodoWithStdin(t, vault, "ignored", "add", "-", "-m", "x"); err == nil {
+		t.Fatal("expected an error combining stdin - with -m, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_ConflictingSources_StdinAndEdit (E8): stdin `-` plus --edit
+// errors; the editor seam must never be invoked.
+func TestTodoAdd_ConflictingSources_StdinAndEdit(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	stubRunEditor(t, func(editor, path string) error {
+		t.Fatal("runEditor invoked despite a conflicting stdin - + --edit invocation")
+		return nil
+	})
+
+	if _, _, err := runTodoWithStdin(t, vault, "ignored", "add", "-", "--edit"); err == nil {
+		t.Fatal("expected an error combining stdin - with --edit, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// No source at all (E16 — MinimumNArgs(1) -> ArbitraryArgs regression guard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoAdd_NoSourceAtAllErrors (E16): zero positional args and none of
+// -m/--edit/stdin-`-` set still errors — the runtime "at least one source"
+// check in RunE must pick up the slack ArbitraryArgs leaves behind.
+func TestTodoAdd_NoSourceAtAllErrors(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runTodo(t, vault, "add"); err == nil {
+		t.Fatal("expected an error for `rk todo add` with no body source at all, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// --ephemeral blanket rejection (E13-E15)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoAdd_Ephemeral_RejectsMessageFlag (E13): --ephemeral + -m (even one)
+// errors.
+func TestTodoAdd_Ephemeral_RejectsMessageFlag(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runTodo(t, vault, "add", "--ephemeral", "-m", "x"); err == nil {
+		t.Fatal("expected an error for --ephemeral + -m, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_Ephemeral_RejectsEditFlag (E14): --ephemeral + --edit errors
+// before ever spawning an editor (the ephemeral guard runs before
+// assembleBody).
+func TestTodoAdd_Ephemeral_RejectsEditFlag(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	stubRunEditor(t, func(editor, path string) error {
+		t.Fatal("runEditor invoked despite --ephemeral + --edit")
+		return nil
+	})
+
+	if _, _, err := runTodo(t, vault, "add", "--ephemeral", "--edit"); err == nil {
+		t.Fatal("expected an error for --ephemeral + --edit, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// TestTodoAdd_Ephemeral_RejectsStdinDash (E15): --ephemeral + stdin `-`
+// errors.
+func TestTodoAdd_Ephemeral_RejectsStdinDash(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runTodoWithStdin(t, vault, "ignored", "add", "-", "--ephemeral"); err == nil {
+		t.Fatal("expected an error for --ephemeral + stdin -, got nil")
+	}
+	noTodoFilesWritten(t, vault)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC6 regression guard + E10
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTodoAdd_PositionalArgsUnaffected (AC6): plain positional args, no new
+// flags, behave exactly as pre-ticket (space-joined, single-line-shaped
+// body) — the ArbitraryArgs relaxation and the new dispatch logic in
+// assembleBody must not change this path's output.
+func TestTodoAdd_PositionalArgsUnaffected(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	out, stderr, err := runTodo(t, vault, "add", "foo", "bar", "--json")
+	if err != nil {
+		t.Fatalf("rk todo add foo bar: %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, "foo bar\n", "foo bar")
+}
+
+// TestTodoAdd_LongSubjectNotTruncated (E10): a 5000-char -m subject is
+// accepted and stored verbatim, no truncation.
+func TestTodoAdd_LongSubjectNotTruncated(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	long := strings.Repeat("x", 5000)
+
+	out, stderr, err := runTodo(t, vault, "add", "-m", long, "--json")
+	if err != nil {
+		t.Fatalf("rk todo add -m <5000 chars>: %v\nstderr: %s", err, stderr)
+	}
+	var res todoAddResult
+	mustDecodeJSON(t, out, &res)
+
+	verifyTodoBodyAndSubject(t, vault, res, long+"\n", long)
 }

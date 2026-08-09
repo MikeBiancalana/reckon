@@ -86,6 +86,25 @@ func runAdd(t *testing.T, vault string, args ...string) (stdout, stderr string, 
 	return outBuf.String(), errBuf.String(), err
 }
 
+// runAddWithStdin is runAdd's stdin-capable sibling, mirroring
+// todo_test.go's runTodoWithStdin: wires stdin via
+// RootCmd.SetIn(strings.NewReader(stdin)) before Execute, for the `-`
+// sentinel test. A separate function rather than a signature change to
+// runAdd, so every existing runAdd call site is unaffected. Relies on
+// resetCLIFlags's RootCmd.SetIn(nil) (t.Cleanup) to avoid leaking the
+// injected reader into a later Execute call.
+func runAddWithStdin(t *testing.T, vault, stdin string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	var outBuf, errBuf bytes.Buffer
+	RootCmd.SetOut(&outBuf)
+	RootCmd.SetErr(&errBuf)
+	RootCmd.SetIn(strings.NewReader(stdin))
+	full := append([]string{"add", "--vault", vault}, args...)
+	RootCmd.SetArgs(full)
+	err = RootCmd.Execute()
+	return outBuf.String(), errBuf.String(), err
+}
+
 // utcToday is the day rk add defaults to when --date is NOT given
 // (effectiveLogDate in add.go): the current UTC calendar date -- NOT
 // getEffectiveDate()'s own local-clock default. Tests below that omit
@@ -745,5 +764,123 @@ func TestAddCmd_DateFlagTargetsPastDay(t *testing.T) {
 	// the backfilled day, not a fixed/zero value.
 	if !strings.HasPrefix(res.Time, date+"T") || !strings.HasSuffix(res.Time, ":00Z") {
 		t.Errorf("Time = %q, want the form %sT<HH:MM>:00Z (current wall-clock HH:MM, no --at given)", res.Time, date)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-line body entry paths (-m/--edit/stdin-`-`) for `rk add`. Sparse
+// coverage here is intentional: one representative conflict case suffices
+// for add_test.go, the full matrix lives in todo_test.go. No subject/title
+// assertions — `rk add`'s log-entry bodies have no title semantics.
+//
+// RED-state note: as in todo_test.go, every test here drives the new
+// mechanisms through CLI argv rather than referencing the new package-level
+// symbols directly. The one exception, stubRunEditor (which stubs the
+// package-level runEditor func var), is defined in todo_test.go and reused
+// here (same package) rather than redefined. Until
+// internal/cli/body_entry.go defines runEditor, the whole cli package fails
+// to COMPILE — the expected TDD-red state.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestAdd_MessageFlag_JoinsParagraphs (AC2): each -m becomes a paragraph,
+// joined with a blank line; no subject/title semantics apply to `rk add`.
+func TestAdd_MessageFlag_JoinsParagraphs(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	today := utcToday()
+
+	if _, stderr, err := runAdd(t, vault, "-m", "S", "-m", "p1"); err != nil {
+		t.Fatalf("rk add -m -m: %v\nstderr: %s", err, stderr)
+	}
+
+	entries := parseLogDayFile(t, vault, today)[1:]
+	if len(entries) != 1 {
+		t.Fatalf("want exactly 1 log-entry, got %d", len(entries))
+	}
+	if got := strings.TrimSpace(entries[0].Body); got != "S\n\np1" {
+		t.Errorf("Body = %q, want %q", got, "S\n\np1")
+	}
+}
+
+// TestAdd_MessageFlag_EmbeddedHeaderGuardAppliesPostAssembly (E18): the
+// existing embeddedHeaderRe "no '## '-prefixed line" guard applies to the
+// assembled multi-`-m` body, not just an argv-joined one.
+func TestAdd_MessageFlag_EmbeddedHeaderGuardAppliesPostAssembly(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	if _, _, err := runAdd(t, vault, "-m", "S", "-m", "## fake header"); err == nil {
+		t.Fatal("expected an error for an assembled body containing a '## ' line, got nil")
+	}
+	if _, err := os.Stat(filepath.Join(vault, "log")); !os.IsNotExist(err) {
+		t.Errorf("log/ dir must not be created for a rejected body, stat err = %v", err)
+	}
+}
+
+// TestAdd_EditFlag_UsesSavedContent (AC3): mirrors
+// TestTodoAdd_EditFlag_UsesSavedContent for `rk add`, no subject assertion.
+func TestAdd_EditFlag_UsesSavedContent(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	t.Setenv("EDITOR", "stub")
+
+	today := utcToday()
+
+	stubRunEditor(t, func(editor, path string) error {
+		return os.WriteFile(path, []byte("Fix the leak\n\nRoot cause: ...\n"), 0o644)
+	})
+
+	if _, stderr, err := runAdd(t, vault, "--edit"); err != nil {
+		t.Fatalf("rk add --edit: %v\nstderr: %s", err, stderr)
+	}
+
+	entries := parseLogDayFile(t, vault, today)[1:]
+	if len(entries) != 1 {
+		t.Fatalf("want exactly 1 log-entry, got %d", len(entries))
+	}
+	if got := strings.TrimSpace(entries[0].Body); got != "Fix the leak\n\nRoot cause: ..." {
+		t.Errorf("Body = %q, want %q", got, "Fix the leak\n\nRoot cause: ...")
+	}
+}
+
+// TestAdd_StdinDash_ReadsFullBody (AC4): mirrors
+// TestTodoAdd_StdinDash_ReadsFullBody for `rk add`.
+func TestAdd_StdinDash_ReadsFullBody(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	today := utcToday()
+
+	if _, stderr, err := runAddWithStdin(t, vault, "Subject line\n\nDetail.\n", "-"); err != nil {
+		t.Fatalf("rk add -: %v\nstderr: %s", err, stderr)
+	}
+
+	entries := parseLogDayFile(t, vault, today)[1:]
+	if len(entries) != 1 {
+		t.Fatalf("want exactly 1 log-entry, got %d", len(entries))
+	}
+	if got := strings.TrimSpace(entries[0].Body); got != "Subject line\n\nDetail." {
+		t.Errorf("Body = %q, want %q", got, "Subject line\n\nDetail.")
+	}
+}
+
+// TestAdd_ConflictingSources_MessageAndEdit (E9 analog): one representative
+// conflict case for `rk add` — the full conflict matrix lives in
+// todo_test.go. The editor seam must never be invoked.
+func TestAdd_ConflictingSources_MessageAndEdit(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+
+	stubRunEditor(t, func(editor, path string) error {
+		t.Fatal("runEditor invoked despite a conflicting -m + --edit invocation")
+		return nil
+	})
+
+	if _, _, err := runAdd(t, vault, "-m", "x", "--edit"); err == nil {
+		t.Fatal("expected an error combining -m with --edit, got nil")
+	}
+	if _, err := os.Stat(filepath.Join(vault, "log")); !os.IsNotExist(err) {
+		t.Errorf("log/ dir must not be created for a rejected combination, stat err = %v", err)
 	}
 }
