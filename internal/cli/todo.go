@@ -438,6 +438,10 @@ func addEphemeralTodo(todosDir, author, text string) (todoAddResult, error) {
 func runTodoListE(cmd *cobra.Command, args []string) error {
 	defer resetTodoFlags(cmd)
 
+	if todoListWantsTUI(cmd) {
+		return runTodoBrowse(cmd)
+	}
+
 	all := todoListAllFlag
 	stateFilter := strings.TrimSpace(todoListStateFlag)
 	durableOnly := todoListDurableFlag
