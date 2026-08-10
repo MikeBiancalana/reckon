@@ -477,8 +477,14 @@ wired by Gilbert). Rules the trial runs under, settled with Gilbert on Mike's ap
   unresolvable by `[[name]]` (the indexer resolves `dst_key` against ULIDs and frontmatter-minted
   aliases only — never filename stems or titles; `internal/index/reconcile.go` `resolveEdges`).
   A bulk import needs a normalization pass: `type:` + `aliases: [<old-slug>]` per file. Symptom
-  when skipped: unresolved-edge counts near total (433/438 in the trial vault pre-fix). Also note
-  alias matching is exact-case today (bead reckon-acol tracks the A#6 case-insensitivity gap).
+  when skipped: unresolved-edge counts near total (433/438 in the trial vault pre-fix). Three
+  refinements from running the pass (2026-08-10, Gilbert): **mint both the page form and the
+  mangled form as aliases by default** (`PAS/PAS Systems` *and* `PAS___PAS Systems` — years of
+  agent-authored links use the raw file-name form); **write alias values unquoted** — the
+  frontmatter dialect is literal, quotes become part of the alias and resolution fails silently
+  (bead reckon-fmqt); and alias matching is exact-case today (bead reckon-acol tracks the A#6
+  case-insensitivity gap). Post-pass verification: unresolved 433→232, every survivor a genuinely
+  dead target (links that dangled in Logseq too — correct forward-reference behavior).
 
 ### 4.7 Risks / open questions
 
