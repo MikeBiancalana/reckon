@@ -14,24 +14,12 @@ import (
 
 // noteCreateWantsTUI reports whether a bare `rk note create` invocation
 // should open the interactive wizard instead of the classic flag-driven
-// path: only on a real TTY, only with no positional args, and only when
-// none of the note-create input flags (--slug/--type/--author/--stage/
-// --description/--dir/--tag/--alias/--body) has been Changed. --no-input is
-// deliberately NOT consulted here -- see todoAddWantsTUI's doc comment for
-// the identical rationale.
+// path. See wantsWizardTUI (todo_add_wizard.go) for the shared shape and
+// the --no-input rationale; the flags below are note-create's own input
+// flags (--slug/--type/--author/--stage/--description/--dir/--tag/--alias/
+// --body).
 func noteCreateWantsTUI(cmd *cobra.Command, args []string) bool {
-	if !isInteractive() {
-		return false
-	}
-	if len(args) > 0 {
-		return false
-	}
-	for _, name := range []string{"slug", "type", "author", "stage", "description", "dir", "tag", "alias", "body"} {
-		if cmd.Flags().Changed(name) {
-			return false
-		}
-	}
-	return true
+	return wantsWizardTUI(cmd, args, []string{"slug", "type", "author", "stage", "description", "dir", "tag", "alias", "body"})
 }
 
 // runNoteCreateWizard drives the note-create wizard (title -> body ->
@@ -125,47 +113,11 @@ func wizardNoteParams(results map[string]any) noteCreateParams {
 	}
 }
 
-// normalizeNoteCreateParams performs the load-bearing transforms shared by
-// the flag path (runNoteCreateE) and the wizard conversion path: slug =
-// slugify(title) when p.Slug is unset, validateSlug, Type default "note",
-// stage validation (when non-empty), and body trailing-newline normalization
-// (body += "\n" if body != "" && !strings.HasSuffix(body, "\n")).
-func normalizeNoteCreateParams(p noteCreateParams) (noteCreateParams, error) {
-	slugSrc := strings.TrimSpace(p.Slug)
-	if slugSrc == "" {
-		slugSrc = p.Title
-	}
-	slug := slugify(slugSrc)
-	if err := validateSlug(slug); err != nil {
-		return noteCreateParams{}, fmt.Errorf("note create: %w", err)
-	}
-	p.Slug = slug
-
-	typ := strings.TrimSpace(p.Type)
-	if typ == "" {
-		typ = "note"
-	}
-	p.Type = typ
-
-	stage := strings.TrimSpace(p.Stage)
-	if stage != "" {
-		if err := validateStage(stage); err != nil {
-			return noteCreateParams{}, fmt.Errorf("note create: %w", err)
-		}
-	}
-	p.Stage = stage
-
-	if p.Body != "" && !strings.HasSuffix(p.Body, "\n") {
-		p.Body += "\n"
-	}
-
-	return p, nil
-}
-
 // buildNoteLinkRows opens the index, reconciles it, lists existing notes
 // (mirrors buildTodoItems's shape; query is "SELECT id, loc FROM nodes WHERE
-// type='note'", note_v1.go:742), and maps them to []components.IndexRow with
-// Props["slug"] set (mirrors NotePicker's own row convention).
+// type='note'", matching note_v1.go's own note-listing query), and maps
+// them to []components.IndexRow with Props["slug"] set (mirrors NotePicker's
+// own row convention).
 func buildNoteLinkRows(cfg *config.Config) ([]components.IndexRow, error) {
 	ix, err := index.Open(cfg)
 	if err != nil {

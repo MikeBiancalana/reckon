@@ -114,12 +114,9 @@ func assembleBody(cmd *cobra.Command, args, messages []string, edit, requireSubj
 }
 
 // joinSubjectBody applies the wizard-only subject/body convergence formula:
-// a two-value counterpart to assembleBody's -m path, used by todo-add's and
-// note-create's wizard conversion functions ONLY -- assembleBody itself
-// (and its N-message join, body_entry.go:72-76) is untouched.
-//
-// The formula to replicate exactly: strings.TrimSpace(subject), then, if
-// strings.TrimSpace(body) is non-empty, append "\n\n"+that trimmed body.
+// a two-value counterpart to assembleBody's -m path, used by todo-add's
+// wizard conversion ONLY -- assembleBody itself (and its N-message join)
+// is untouched.
 func joinSubjectBody(subject, body string) string {
 	result := strings.TrimSpace(subject)
 	if trimmedBody := strings.TrimSpace(body); trimmedBody != "" {

@@ -175,6 +175,19 @@ type todoListItem struct {
 	Title     string `json:"title,omitempty"`     // durable only: derived first non-empty body line
 }
 
+// displayTitle returns it.Title, falling back to it.Body then it.ID when
+// blank -- every human-facing listing of a durable todo needs a non-empty
+// label even when no title line was derivable.
+func (it todoListItem) displayTitle() string {
+	if it.Title != "" {
+		return it.Title
+	}
+	if it.Body != "" {
+		return it.Body
+	}
+	return it.ID
+}
+
 // todoListResult wraps `rk todo list`'s items so --json emits a single object
 // ({"items": []} on empty), not a bare top-level array.
 type todoListResult struct {

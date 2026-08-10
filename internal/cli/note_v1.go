@@ -288,6 +288,43 @@ func runNoteCreateE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// normalizeNoteCreateParams performs the load-bearing transforms shared by
+// the flag path (above) and the wizard conversion path (note_create_wizard.go):
+// slug = slugify(title) when p.Slug is unset, validateSlug, Type default
+// "note", stage validation (when non-empty), and body trailing-newline
+// normalization (body += "\n" if body != "" && !strings.HasSuffix(body, "\n")).
+func normalizeNoteCreateParams(p noteCreateParams) (noteCreateParams, error) {
+	slugSrc := strings.TrimSpace(p.Slug)
+	if slugSrc == "" {
+		slugSrc = p.Title
+	}
+	slug := slugify(slugSrc)
+	if err := validateSlug(slug); err != nil {
+		return noteCreateParams{}, fmt.Errorf("note create: %w", err)
+	}
+	p.Slug = slug
+
+	typ := strings.TrimSpace(p.Type)
+	if typ == "" {
+		typ = "note"
+	}
+	p.Type = typ
+
+	stage := strings.TrimSpace(p.Stage)
+	if stage != "" {
+		if err := validateStage(stage); err != nil {
+			return noteCreateParams{}, fmt.Errorf("note create: %w", err)
+		}
+	}
+	p.Stage = stage
+
+	if p.Body != "" && !strings.HasSuffix(p.Body, "\n") {
+		p.Body += "\n"
+	}
+
+	return p, nil
+}
+
 // noteCreateParams bundles runNoteCreateE's resolved flag values for
 // createNote. Fields are already validated/normalized by the caller (slug
 // slugified+validated, stage validated, author resolved, body newline-

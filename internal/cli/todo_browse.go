@@ -85,17 +85,10 @@ func buildTodoItems(cfg *config.Config) ([]components.TodoItem, error) {
 
 	items := make([]components.TodoItem, 0, len(durItems)+len(ephItems))
 	for _, it := range durItems {
-		title := it.Title
-		if title == "" {
-			title = it.Body
-		}
-		if title == "" {
-			title = it.ID
-		}
 		items = append(items, components.TodoItem{
 			Kind:  "durable",
 			Ref:   it.ID,
-			Title: title,
+			Title: it.displayTitle(),
 			Done:  it.State == "done",
 		})
 	}

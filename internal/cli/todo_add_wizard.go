@@ -12,30 +12,39 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// todoAddWantsTUI reports whether a bare `rk todo add` invocation should
-// open the interactive wizard instead of the classic flag-driven path:
-// only on a real TTY, only with no positional args, and only when none of
-// the input-affecting flags (mirrors resetTodoFlags's own list, todo.go:74)
-// has been Changed. --ephemeral is deliberately included in that list --
-// the wizard always produces a durable todo; --ephemeral routes classic
-// unconditionally, same as every other listed flag. --no-input is
-// deliberately NOT consulted here -- it must still reach
-// components.PromptGuard (via RunPrompt, inside runTodoAddWizard) so a real
-// TTY with --no-input errors instead of silently falling back to classic
-// (mirrors todoListWantsTUI, todo_browse.go:16-18).
-func todoAddWantsTUI(cmd *cobra.Command, args []string) bool {
+// wantsWizardTUI is the shared shape behind todoAddWantsTUI, noteCreateWantsTUI,
+// and addWantsTUI: a bare invocation wants the wizard only on a real TTY,
+// only with no positional args, and only when none of the verb's own
+// input-affecting flags has been Changed. Each verb's wrapper supplies its
+// own flag list and keeps its own doc comment -- the flag list is the part
+// that carries verb-specific rationale (which flags force classic and why),
+// so it stays inline at each call site rather than folded into this helper.
+// --no-input is deliberately never consulted here in any wrapper -- it must
+// still reach components.PromptGuard (via RunPrompt, inside the wizard
+// driver) so a real TTY with --no-input errors instead of silently falling
+// back to classic (mirrors todoListWantsTUI, todo_browse.go).
+func wantsWizardTUI(cmd *cobra.Command, args []string, inputFlags []string) bool {
 	if !isInteractive() {
 		return false
 	}
 	if len(args) > 0 {
 		return false
 	}
-	for _, name := range []string{"ephemeral", "scheduled", "deadline", "depends", "repeat", "author", "message", "edit"} {
+	for _, name := range inputFlags {
 		if cmd.Flags().Changed(name) {
 			return false
 		}
 	}
 	return true
+}
+
+// todoAddWantsTUI reports whether a bare `rk todo add` invocation should
+// open the interactive wizard instead of the classic flag-driven path. The
+// flag list mirrors resetTodoFlags's own list; --ephemeral is deliberately
+// included -- the wizard always produces a durable todo, so --ephemeral
+// routes classic unconditionally, same as every other listed flag.
+func todoAddWantsTUI(cmd *cobra.Command, args []string) bool {
+	return wantsWizardTUI(cmd, args, []string{"ephemeral", "scheduled", "deadline", "depends", "repeat", "author", "message", "edit"})
 }
 
 // runTodoAddWizard drives the todo-add wizard (subject -> body -> dates
@@ -162,7 +171,7 @@ func normalizeWizardDate(s string) (string, error) {
 }
 
 // buildDependsRows opens the index, reconciles it, lists open durable todos
-// (mirrors buildTodoItems/listDurableTodos, todo_browse.go:66), and maps
+// (mirrors buildTodoItems/listDurableTodos in todo_browse.go), and maps
 // them to []components.IndexRow with Props "scheduled"/"deadline" -- then
 // prepends a synthetic IndexRow{ID: "", Title: "(no dependency)"} row so
 // TaskPicker can represent "no dependency" as an ordinary selectable row
@@ -186,16 +195,9 @@ func buildDependsRows(cfg *config.Config) ([]components.IndexRow, error) {
 	rows := make([]components.IndexRow, 0, len(items)+1)
 	rows = append(rows, components.IndexRow{ID: "", Title: "(no dependency)"})
 	for _, it := range items {
-		title := it.Title
-		if title == "" {
-			title = it.Body
-		}
-		if title == "" {
-			title = it.ID
-		}
 		rows = append(rows, components.IndexRow{
 			ID:    it.ID,
-			Title: title,
+			Title: it.displayTitle(),
 			Props: map[string]string{"scheduled": it.Scheduled, "deadline": it.Deadline},
 		})
 	}

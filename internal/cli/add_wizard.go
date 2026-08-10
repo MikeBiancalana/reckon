@@ -13,28 +13,15 @@ import (
 )
 
 // addWantsTUI reports whether a bare `rk add` invocation should open the
-// interactive quick-capture prompt instead of the classic flag-driven path:
-// only on a real TTY, only with no positional args, and only when none of
-// the add input flags has been Changed -- resetAddFlags's own list
-// (--author/--at/-m/--edit, add.go:60) plus --date, the global persistent
-// flag effectiveLogDate reads (--date isn't one of resetAddFlags's own
-// flags, since it isn't registered on addCmd itself, but effectiveLogDate()
-// still consults it, so a caller who set it wants the classic path).
-// --no-input is deliberately NOT consulted here -- see todoAddWantsTUI's doc
-// comment for the identical rationale.
+// interactive quick-capture prompt instead of the classic flag-driven path.
+// See wantsWizardTUI (todo_add_wizard.go) for the shared shape and the
+// --no-input rationale. The flag list is resetAddFlags's own list
+// (--author/--at/-m/--edit) plus --date, the global persistent flag
+// effectiveLogDate reads (--date isn't one of resetAddFlags's own flags,
+// since it isn't registered on addCmd itself, but effectiveLogDate() still
+// consults it, so a caller who set it wants the classic path).
 func addWantsTUI(cmd *cobra.Command, args []string) bool {
-	if !isInteractive() {
-		return false
-	}
-	if len(args) > 0 {
-		return false
-	}
-	for _, name := range []string{"author", "at", "message", "edit", "date"} {
-		if cmd.Flags().Changed(name) {
-			return false
-		}
-	}
-	return true
+	return wantsWizardTUI(cmd, args, []string{"author", "at", "message", "edit", "date"})
 }
 
 // runAddWizard drives a single TextPrompt (Required=false) through
@@ -107,8 +94,7 @@ func runAddWizard(cmd *cobra.Command) error {
 
 // wizardAddBody applies rk add's quick-capture convergence formula: the
 // captured line, trimmed -- mirrors the positional-args branch of
-// assembleBody (requireSubject=false, body_entry.go:65-66), with no
-// subject/body split.
+// assembleBody (requireSubject=false), with no subject/body split.
 func wizardAddBody(capture string) string {
 	return strings.TrimSpace(capture)
 }
