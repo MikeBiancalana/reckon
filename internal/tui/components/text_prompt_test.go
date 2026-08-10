@@ -67,7 +67,7 @@ func TestTextPrompt_RequiredBlocksEmptySubmit(t *testing.T) {
 // (rk add's quick-capture case), Enter on an empty input submits
 // immediately with Result()=="" -- no component-level block, letting the
 // caller's own empty-body guard (runAddE's existing check) handle it
-// downstream (acceptance-criteria.md §3.5).
+// downstream.
 func TestTextPrompt_NonRequiredAllowsEmptySubmit(t *testing.T) {
 	tp := NewTextPrompt("Quick capture", false)
 	tp.Show()

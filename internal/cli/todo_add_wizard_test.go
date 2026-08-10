@@ -1,16 +1,8 @@
-// Package cli — TDD red tests for reckon-fnqs.7's `rk todo add` wizard path
-// (ticket-work/reckon-fnqs.7/plan.md is the authoritative spec; see its
-// "Wizard step -> key -> type contract" and "Test scenarios" sections).
-//
-// todo_add_wizard.go's real bodies (todoAddWantsTUI, wizardTodoAddArgs,
-// normalizeWizardDate, buildDependsRows, runTodoAddWizard) are all
-// not-yet-implemented stubs at this stage (Phase 4's job) -- every test
-// below is expected to fail (assertion failure or timeout), not to error at
-// compile time. todo.go's own RunE is deliberately NOT modified yet, so the
-// classic flag-driven path (already fully implemented) is exercised
-// unchanged by this file's "stays classic" scenarios, which is why some of
-// the table below is a green regression-anchor rather than red -- each such
-// test says so in its own doc comment.
+// Tests for `rk todo add`'s wizard dispatch: todoAddWantsTUI's predicate
+// logic, the wizard-result-map conversion functions (wizardTodoAddArgs,
+// normalizeWizardDate, buildDependsRows), and convergence between the
+// classic flag-driven path and the wizard path (both must produce the same
+// addDurableTodo call / on-disk file).
 package cli
 
 import (
@@ -68,10 +60,9 @@ func normalizeVolatileFrontmatter(raw string) string {
 // runWizardForTest drives a Wizard.Run-shaped call in a goroutine bounded by
 // a generous timeout, mirroring internal/tui/components/prompt_test.go's
 // runPromptForTest (unexported there, so it can't be imported -- this is the
-// cli-package-local twin). Without this bound, a component still in its
-// not-implemented-stub state (e.g. TextPrompt.Update, which currently
-// returns itself unchanged forever) would hang go test's input loop
-// indefinitely instead of failing fast.
+// cli-package-local twin). Without this bound, a component whose Update
+// never reaches a terminal state on a given scripted key sequence would
+// hang go test's input loop indefinitely instead of failing fast.
 func runWizardForTest(t *testing.T, fn func() (map[string]any, bool, error)) (map[string]any, bool, error) {
 	t.Helper()
 
@@ -90,19 +81,17 @@ func runWizardForTest(t *testing.T, fn func() (map[string]any, bool, error)) (ma
 	case r := <-done:
 		return r.val, r.ok, r.err
 	case <-time.After(5 * time.Second):
-		t.Fatal("wizard run did not complete within timeout (expected pre-Phase-4: a stubbed component's Update never reaches a terminal state)")
+		t.Fatal("wizard run did not complete within timeout")
 		return nil, false, nil
 	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dispatch predicate (T1/T2-predicate/T3-predicate/T14-predicate; plan.md's
-// "Dispatch predicate flag sets" for todo add).
+// Dispatch predicate: todoAddWantsTUI's flag-set gating.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestTodoAddWantsTUI_TrueOnBareInteractive (T1): bare invocation (no args,
-// no flags) on a reported real TTY must route to the wizard. Genuinely RED:
-// todoAddWantsTUI's stub body unconditionally returns false.
+// TestTodoAddWantsTUI_TrueOnBareInteractive: bare invocation (no args, no
+// flags) on a reported real TTY must route to the wizard.
 func TestTodoAddWantsTUI_TrueOnBareInteractive(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() {
@@ -116,9 +105,8 @@ func TestTodoAddWantsTUI_TrueOnBareInteractive(t *testing.T) {
 	}
 }
 
-// TestTodoAddWantsTUI_FalseWhenArgsPresent (T2-predicate): any positional
-// arg routes classic regardless of TTY. Passes vacuously against the
-// always-false stub; stays correct once implemented.
+// TestTodoAddWantsTUI_FalseWhenArgsPresent: any positional arg routes
+// classic regardless of TTY.
 func TestTodoAddWantsTUI_FalseWhenArgsPresent(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -129,9 +117,8 @@ func TestTodoAddWantsTUI_FalseWhenArgsPresent(t *testing.T) {
 	}
 }
 
-// TestTodoAddWantsTUI_FalseWhenNonInteractive (T3-predicate): a reported
-// non-TTY routes classic even with zero args. Passes vacuously against the
-// always-false stub; stays correct once implemented.
+// TestTodoAddWantsTUI_FalseWhenNonInteractive: a reported non-TTY routes
+// classic even with zero args.
 func TestTodoAddWantsTUI_FalseWhenNonInteractive(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -142,12 +129,10 @@ func TestTodoAddWantsTUI_FalseWhenNonInteractive(t *testing.T) {
 	}
 }
 
-// TestTodoAddWantsTUI_FalseWhenInputFlagChanged (T14-predicate + plan.md's
-// full flag set): each of resetTodoFlags's own input-affecting flag names,
-// individually Changed, routes classic even on a reported TTY with zero
-// args -- --ephemeral included (AC 1.1.4: the wizard always produces a
-// durable todo). Passes vacuously against the always-false stub; stays
-// correct once implemented.
+// TestTodoAddWantsTUI_FalseWhenInputFlagChanged: each of resetTodoFlags's
+// own input-affecting flag names, individually Changed, routes classic even
+// on a reported TTY with zero args -- --ephemeral included, since the
+// wizard always produces a durable todo.
 func TestTodoAddWantsTUI_FalseWhenInputFlagChanged(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -175,15 +160,11 @@ func TestTodoAddWantsTUI_FalseWhenInputFlagChanged(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLI dispatch integration (T2/T3/T4/T14; RootCmd.Execute level). todo.go's
-// RunE is unmodified, so T2/T3/T14 exercise already-shipped classic
-// behavior (green regression-anchors); T4 targets the FINAL desired
-// behavior once dispatch is wired and is genuinely RED today.
+// CLI dispatch integration, at the RootCmd.Execute level.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestTodoAdd_ArgPresentStaysClassicNoANSI (T2): green regression-anchor --
-// todo.go doesn't call todoAddWantsTUI yet, so this is already true today
-// and stays true after wiring (an arg always routes classic).
+// TestTodoAdd_ArgPresentStaysClassicNoANSI: an arg always routes classic,
+// never opening the TUI.
 func TestTodoAdd_ArgPresentStaysClassicNoANSI(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -201,10 +182,8 @@ func TestTodoAdd_ArgPresentStaysClassicNoANSI(t *testing.T) {
 	}
 }
 
-// TestTodoAdd_NonInteractiveBareErrorsEmptyBody (T3): green regression-anchor
-// pinning acceptance-criteria.md §3.1's decision -- bare + non-TTY falls
-// into the classic body's existing "empty body text" error, unchanged, both
-// before and after this ticket's wiring lands.
+// TestTodoAdd_NonInteractiveBareErrorsEmptyBody: bare + non-TTY falls into
+// the classic body's existing "empty body text" error, not a wizard.
 func TestTodoAdd_NonInteractiveBareErrorsEmptyBody(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -222,13 +201,9 @@ func TestTodoAdd_NonInteractiveBareErrorsEmptyBody(t *testing.T) {
 	}
 }
 
-// TestTodoAdd_InteractiveNoInputReachesPromptGuard (T4): the FINAL desired
-// behavior once dispatch is wired -- a reported TTY with --no-input must
-// still error via components.PromptGuard's message, proving the guard
-// (inside RunPrompt/Wizard.Run) is reached rather than bypassed
-// (acceptance-criteria.md §2.4). Genuinely RED today: todo.go never calls
-// todoAddWantsTUI/runTodoAddWizard, so bare + --no-input currently falls
-// straight into the classic "empty body text" error instead.
+// TestTodoAdd_InteractiveNoInputReachesPromptGuard: a reported TTY with
+// --no-input must error via components.PromptGuard's message, proving the
+// guard (inside RunPrompt/Wizard.Run) is reached rather than bypassed.
 func TestTodoAdd_InteractiveNoInputReachesPromptGuard(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -251,9 +226,8 @@ func TestTodoAdd_InteractiveNoInputReachesPromptGuard(t *testing.T) {
 	}
 }
 
-// TestTodoAdd_EphemeralFlagStaysClassic (T14): green regression-anchor --
-// --ephemeral already routes to addEphemeralTodo today and must keep doing
-// so post-wiring (AC 1.1.4: the wizard never produces an ephemeral todo).
+// TestTodoAdd_EphemeralFlagStaysClassic: --ephemeral routes to
+// addEphemeralTodo -- the wizard never produces an ephemeral todo.
 func TestTodoAdd_EphemeralFlagStaysClassic(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -274,12 +248,13 @@ func TestTodoAdd_EphemeralFlagStaysClassic(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pure conversion: wizardTodoAddArgs (T11/T12), normalizeWizardDate (T17).
+// Pure conversion: wizardTodoAddArgs, normalizeWizardDate.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestWizardTodoAddArgs_SubjectAndBodyJoin (T11): the synthetic result map
-// uses plan.md's actual 4-key/FormResult-valued "dates" shape (gap G4 --
-// NOT the acceptance-criteria doc's superseded 5-flat-string-key map).
+// TestWizardTodoAddArgs_SubjectAndBodyJoin: the synthetic result map uses
+// the wizard's actual 4-key result shape, with "dates" as a FormResult
+// (scheduled+deadline collapsed into one Form step, not two flat string
+// keys).
 func TestWizardTodoAddArgs_SubjectAndBodyJoin(t *testing.T) {
 	results := map[string]any{
 		"subject": "Buy milk",
@@ -300,8 +275,8 @@ func TestWizardTodoAddArgs_SubjectAndBodyJoin(t *testing.T) {
 	}
 }
 
-// TestWizardTodoAddArgs_EmptyBodyNoSeparator (T12): an empty body step
-// leaves the subject alone -- no dangling "\n\n" separator.
+// TestWizardTodoAddArgs_EmptyBodyNoSeparator: an empty body step leaves the
+// subject alone -- no dangling "\n\n" separator.
 func TestWizardTodoAddArgs_EmptyBodyNoSeparator(t *testing.T) {
 	results := map[string]any{
 		"subject": "Buy milk",
@@ -319,12 +294,11 @@ func TestWizardTodoAddArgs_EmptyBodyNoSeparator(t *testing.T) {
 	}
 }
 
-// TestJoinSubjectBody_MatchesAssembleBodyMessageJoin (T13): joinSubjectBody
+// TestJoinSubjectBody_MatchesAssembleBodyMessageJoin: joinSubjectBody
 // (wizard-only, subject+body given as two separate strings) must produce
 // the exact same bytes as assembleBody's -m path (subject+body given as two
-// -m values) for the same logical content -- the convergence proof
-// acceptance-criteria.md §4 T13 requires, since no PTY end-to-end test is
-// possible.
+// -m values) for the same logical content -- the convergence proof needed
+// since no PTY end-to-end test is possible.
 func TestJoinSubjectBody_MatchesAssembleBodyMessageJoin(t *testing.T) {
 	got := joinSubjectBody("Buy milk", "at the store")
 
@@ -349,19 +323,19 @@ func TestNormalizeWizardDate_BlankStaysBlank(t *testing.T) {
 	}
 }
 
-// TestNormalizeWizardDate_ValidInputFormatsAsDateOnly (T17): a populated
-// date input must format as a bare "2006-01-02" string (no time-of-day
-// component) -- proves the formatting obligation acceptance-criteria.md §2.7
-// pins, distinct from T11/T12's empty-field case.
+// TestNormalizeWizardDate_ValidInputFormatsAsDateOnly: a populated date
+// input must format as a bare "2006-01-02" string (no time-of-day
+// component), distinct from the empty-field case above.
 //
 // This intentionally does NOT assert a specific calendar day under a
-// simulated non-UTC clock: plan.md flags the relative-date TZ boundary edge
-// (risk R2, acceptance-criteria.md §3.6) as an [OPEN] implementer decision
-// with two valid resolutions, so pinning one here would encode a stance the
-// plan explicitly declined to take. The input itself is computed relative
-// to "now" (not a hardcoded literal), mirroring
-// internal/tui/components/date_picker_test.go's futureDate() convention, so
-// this test is not a time bomb.
+// simulated non-UTC clock: ParseRelativeDate resolves relative dates in
+// local time before normalizeWizardDate reformats via .UTC(), which can
+// shift the calendar day near a local-midnight boundary in positive-UTC-offset
+// zones -- an open, documented risk with more than one valid resolution, so
+// pinning a specific day here would encode a stance not yet decided. The
+// input itself is computed relative to "now" (not a hardcoded literal),
+// mirroring internal/tui/components/date_picker_test.go's futureDate()
+// convention, so this test is not a time bomb.
 func TestNormalizeWizardDate_ValidInputFormatsAsDateOnly(t *testing.T) {
 	input := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
 
@@ -378,16 +352,14 @@ func TestNormalizeWizardDate_ValidInputFormatsAsDateOnly(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// buildDependsRows (gap G3: "(no dependency)" row selection yields empty
-// depends).
+// buildDependsRows: "(no dependency)" row selection yields empty depends.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestBuildDependsRows_PrependsNoDependencyRow (G3): the row source for the
+// TestBuildDependsRows_PrependsNoDependencyRow: the row source for the
 // depends TaskPicker step must prepend a synthetic
 // IndexRow{ID:"", Title:"(no dependency)"} ahead of the real open durable
-// todos (plan.md "Design decisions" 3) -- selecting it is how the wizard
-// user finishes with no dependency, without any new component-level skip
-// affordance.
+// todos -- selecting it is how the wizard user finishes with no dependency,
+// without any new component-level skip affordance.
 func TestBuildDependsRows_PrependsNoDependencyRow(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -416,11 +388,11 @@ func TestBuildDependsRows_PrependsNoDependencyRow(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Convergence (T18): flag path vs. wizard-conversion-fed addDurableTodo.
+// Convergence: flag path vs. wizard-conversion-fed addDurableTodo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestTodoAddWizard_FileConvergence_FlagVsWizard (T18): the classic
-// flag-driven path and the wizard conversion path, given the same logical
+// TestTodoAddWizard_FileConvergence_FlagVsWizard: the classic flag-driven
+// path and the wizard conversion path, given the same logical
 // subject/body/scheduled/deadline, must produce byte-identical
 // todos/<ULID>.md files modulo the id:/time: lines (which are inherently
 // unique per write -- see normalizeVolatileFrontmatter's doc comment).
@@ -475,29 +447,22 @@ func TestTodoAddWizard_FileConvergence_FlagVsWizard(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Component composition (T8, rewritten per plan.md gap G4).
+// Component composition.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestTodoAddWizard_FullFlowResultShape (T8, rewritten for the
-// Form-collapsed dates step -- gap G4): composes the actual 4-step chain
-// runTodoAddWizard will eventually drive (TextPrompt subject ->
-// TextEditor body -> Form dates[scheduled,deadline] -> TaskPicker depends)
-// via components.NewWizard/Step directly, mirroring
+// TestTodoAddWizard_FullFlowResultShape composes the actual 4-step chain
+// runTodoAddWizard drives (TextPrompt subject -> TextEditor body -> Form
+// dates[scheduled,deadline] -> TaskPicker depends) via
+// components.NewWizard/Step directly, mirroring
 // internal/tui/components/wizard_test.go's own ad hoc compositions, and
-// asserts the resulting map carries exactly the 4 keys the contract table
-// names -- "dates" typed as components.FormResult, NOT two flat
-// "scheduled"/"deadline" string keys (the acceptance-criteria doc's
-// superseded shape).
-//
-// TextPrompt.Update is still a not-implemented stub (never reaches a
-// terminal state), so the subject step never submits and this currently
-// fails via runWizardForTest's 5s timeout rather than completing -- a
-// legitimate, if slow, red result.
+// asserts the resulting map carries exactly the 4 keys the contract names --
+// "dates" typed as components.FormResult, not two flat "scheduled"/
+// "deadline" string keys.
 func TestTodoAddWizard_FullFlowResultShape(t *testing.T) {
-	// This test exercises component composition, not the TTY guard (T4's
-	// concern) -- stub isInteractive true so components.PromptGuard (wired
-	// from this package's own interactive.go init()) doesn't short-circuit
-	// RunPrompt before the Wizard ever mounts its first step.
+	// This test exercises component composition, not the TTY guard -- stub
+	// isInteractive true so components.PromptGuard (wired from this
+	// package's own interactive.go init()) doesn't short-circuit RunPrompt
+	// before the Wizard ever mounts its first step.
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
 	isInteractive = func() bool { return true }

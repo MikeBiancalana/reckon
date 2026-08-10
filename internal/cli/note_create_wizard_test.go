@@ -1,14 +1,8 @@
-// Package cli — TDD red tests for reckon-fnqs.7's `rk note create` wizard
-// path (ticket-work/reckon-fnqs.7/plan.md is the authoritative spec).
-//
-// note_create_wizard.go's real bodies (noteCreateWantsTUI, wizardNoteParams,
-// normalizeNoteCreateParams, buildNoteLinkRows, runNoteCreateWizard) are all
-// not-yet-implemented stubs at this stage (Phase 4's job). note_v1.go's
-// noteCreateCmd.Args is deliberately still cobra.MinimumNArgs(1) (the AC
-// 1.2.1 loosening to cobra.ArbitraryArgs is Phase 4's dispatch-wiring work,
-// out of scope for this stub phase) -- some scenarios below are red BECAUSE
-// of that unloosened Args validator, not despite it; each says so in its own
-// doc comment.
+// Tests for `rk note create`'s wizard dispatch: noteCreateWantsTUI's
+// predicate logic, the wizard-result-map conversion functions
+// (wizardNoteParams, normalizeNoteCreateParams, buildNoteLinkRows), and
+// convergence between the classic flag-driven path and the wizard path
+// (both must produce the same createNote call / on-disk file).
 package cli
 
 import (
@@ -20,13 +14,11 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dispatch predicate (gap G1: no positive dispatch test for
-// note-create-bare-TTY existed before this file).
+// Dispatch predicate: noteCreateWantsTUI's flag-set gating.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestNoteCreateWantsTUI_TrueOnBareInteractive (G1): bare invocation on a
-// reported real TTY must route to the wizard. Genuinely RED:
-// noteCreateWantsTUI's stub body unconditionally returns false.
+// TestNoteCreateWantsTUI_TrueOnBareInteractive: bare invocation on a
+// reported real TTY must route to the wizard.
 func TestNoteCreateWantsTUI_TrueOnBareInteractive(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() {
@@ -41,8 +33,7 @@ func TestNoteCreateWantsTUI_TrueOnBareInteractive(t *testing.T) {
 }
 
 // TestNoteCreateWantsTUI_FalseWhenArgsPresent: any positional arg (the
-// title) routes classic regardless of TTY. Passes vacuously against the
-// always-false stub; stays correct once implemented.
+// title) routes classic regardless of TTY.
 func TestNoteCreateWantsTUI_FalseWhenArgsPresent(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -54,8 +45,7 @@ func TestNoteCreateWantsTUI_FalseWhenArgsPresent(t *testing.T) {
 }
 
 // TestNoteCreateWantsTUI_FalseWhenNonInteractive: a reported non-TTY routes
-// classic even with zero args. Passes vacuously against the always-false
-// stub; stays correct once implemented.
+// classic even with zero args.
 func TestNoteCreateWantsTUI_FalseWhenNonInteractive(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -66,11 +56,9 @@ func TestNoteCreateWantsTUI_FalseWhenNonInteractive(t *testing.T) {
 	}
 }
 
-// TestNoteCreateWantsTUI_FalseWhenInputFlagChanged (plan.md's dispatch
-// predicate flag set for note create): each note-create input flag,
-// individually Changed, routes classic even on a reported TTY with zero
-// args. Passes vacuously against the always-false stub; stays correct once
-// implemented.
+// TestNoteCreateWantsTUI_FalseWhenInputFlagChanged: each note-create input
+// flag, individually Changed, routes classic even on a reported TTY with
+// zero args.
 func TestNoteCreateWantsTUI_FalseWhenInputFlagChanged(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -99,17 +87,14 @@ func TestNoteCreateWantsTUI_FalseWhenInputFlagChanged(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLI dispatch integration (T5/T6; RootCmd.Execute level).
+// CLI dispatch integration, at the RootCmd.Execute level.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestNoteCreate_BareNonInteractive_NewEmptyTitleErrorNotYetReachable (T5):
-// the FINAL desired behavior is a new, non-interactivity-flavored
-// "note create: title must not be empty" guard once Args is loosened to
-// cobra.ArbitraryArgs (acceptance-criteria.md §3.1). Genuinely RED today for
-// a DIFFERENT reason than the other red tests in this file: noteCreateCmd's
-// Args is still cobra.MinimumNArgs(1), so bare invocation is rejected by
-// cobra's own arg-count validator before RunE ever runs, with a generic
-// "requires at least 1 arg(s)" message -- not yet the AC-mandated one.
+// TestNoteCreate_BareNonInteractive_NewEmptyTitleErrorNotYetReachable: bare
+// invocation on a non-TTY must hit a new, non-interactivity-flavored
+// "note create: title must not be empty" guard -- distinct from cobra's own
+// generic arg-count message, since Args is loosened to cobra.ArbitraryArgs
+// specifically so this runtime guard (not cobra) rejects the empty title.
 func TestNoteCreate_BareNonInteractive_NewEmptyTitleErrorNotYetReachable(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -128,12 +113,10 @@ func TestNoteCreate_BareNonInteractive_NewEmptyTitleErrorNotYetReachable(t *test
 	}
 }
 
-// TestNoteCreate_TagFlagNoPositionalTitle_Errors (T6): green regression-
-// anchor -- --tag with no positional title already errors today (cobra's
-// MinimumNArgs) and must keep erroring post-Args-loosening (via the new
-// runtime guard instead), matching AC 1.2.4's "behavior-preserving"
-// requirement. Deliberately does not pin the exact message, since the
-// underlying mechanism changes between now and Phase 4's wiring.
+// TestNoteCreate_TagFlagNoPositionalTitle_Errors: --tag with no positional
+// title errors, via the new empty-title runtime guard now that cobra's own
+// MinimumNArgs validator no longer rejects it first. Deliberately does not
+// pin the exact message, since the enforcing mechanism changed.
 func TestNoteCreate_TagFlagNoPositionalTitle_Errors(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -153,8 +136,7 @@ func TestNoteCreate_TagFlagNoPositionalTitle_Errors(t *testing.T) {
 
 // TestWizardNoteParams_TitleBodyAndLinksTokens: the raw (pre-normalize)
 // conversion appends one "[[slug]]" token per selected link to the body,
-// alongside carrying Title through and resolving a non-empty Author
-// (plan.md's "rk note create" contract row).
+// alongside carrying Title through and resolving a non-empty Author.
 func TestWizardNoteParams_TitleBodyAndLinksTokens(t *testing.T) {
 	results := map[string]any{
 		"title": "PAS Entity Model",
@@ -179,9 +161,9 @@ func TestWizardNoteParams_TitleBodyAndLinksTokens(t *testing.T) {
 }
 
 // TestNormalizeNoteCreateParams_SlugifiesTypeDefaultsAndBodyNewline: the
-// load-bearing transforms note_v1.go:240-259 performs (slugify(title) when
-// Slug unset, Type default "note", body trailing-newline normalization) must
-// be reproduced by this shared helper (plan.md "Design decisions" 5).
+// load-bearing transforms both runNoteCreateE and the wizard path share
+// (slugify(title) when Slug unset, Type default "note", body
+// trailing-newline normalization) must be reproduced by this shared helper.
 func TestNormalizeNoteCreateParams_SlugifiesTypeDefaultsAndBodyNewline(t *testing.T) {
 	raw := noteCreateParams{
 		Title: "My Title",
@@ -241,15 +223,14 @@ func TestBuildNoteLinkRows_ReturnsExistingNotesWithSlugProp(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Convergence (T19): flag path vs. wizard-conversion-fed createNote.
+// Convergence: flag path vs. wizard-conversion-fed createNote.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestNoteCreateWizard_FileConvergence_FlagVsWizard (T19): the classic
+// TestNoteCreateWizard_FileConvergence_FlagVsWizard: the classic
 // flag-driven path and the wizard conversion path, given the same logical
 // title/body, must produce byte-identical notes/<slug>.md files modulo the
 // id:/time: lines -- proving the wizard path reuses slugify(title) and the
-// trailing-newline normalization, not raw values (acceptance-criteria.md
-// §2.8). Carries no links, matching plan.md's own note on this scenario.
+// trailing-newline normalization, not raw values. Carries no links.
 func TestNoteCreateWizard_FileConvergence_FlagVsWizard(t *testing.T) {
 	// Flag path: real classic RunE, real file.
 	flagVault, _ := setupQueryVault(t)

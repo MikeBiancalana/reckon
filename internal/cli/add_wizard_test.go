@@ -1,15 +1,8 @@
-// Package cli — TDD red tests for reckon-fnqs.7's `rk add` quick-capture
-// wizard path (ticket-work/reckon-fnqs.7/plan.md is the authoritative
-// spec). Unlike todo add/note create, `rk add`'s wizard is a single
-// TextPrompt driven through components.RunPrompt directly -- NOT a Wizard
-// (acceptance-criteria.md §1.3.1) -- so there is no map[string]any result
-// map or Wizard-composition test analogous to the other two verbs' T8.
-//
-// add_wizard.go's real bodies (addWantsTUI, wizardAddBody, runAddWizard) are
-// all not-yet-implemented stubs at this stage (Phase 4's job). add.go's own
-// RunE is deliberately NOT modified yet, so the classic flag-driven path
-// (already fully implemented) is exercised unchanged by this file's "stays
-// classic" scenarios.
+// Tests for `rk add`'s quick-capture wizard dispatch. Unlike todo add/note
+// create, `rk add`'s wizard is a single TextPrompt driven through
+// components.RunPrompt directly -- not a Wizard -- so there is no
+// map[string]any result map or Wizard-composition test analogous to the
+// other two verbs.
 package cli
 
 import (
@@ -20,13 +13,11 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dispatch predicate (gap G1: no positive dispatch test for
-// add-bare-TTY existed before this file).
+// Dispatch predicate: addWantsTUI's flag-set gating.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestAddWantsTUI_TrueOnBareInteractive (G1): bare invocation on a reported
-// real TTY must route to the wizard. Genuinely RED: addWantsTUI's stub body
-// unconditionally returns false.
+// TestAddWantsTUI_TrueOnBareInteractive: bare invocation on a reported real
+// TTY must route to the wizard.
 func TestAddWantsTUI_TrueOnBareInteractive(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() {
@@ -41,8 +32,7 @@ func TestAddWantsTUI_TrueOnBareInteractive(t *testing.T) {
 }
 
 // TestAddWantsTUI_FalseWhenArgsPresent: any positional arg routes classic
-// regardless of TTY. Passes vacuously against the always-false stub; stays
-// correct once implemented.
+// regardless of TTY.
 func TestAddWantsTUI_FalseWhenArgsPresent(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -54,8 +44,7 @@ func TestAddWantsTUI_FalseWhenArgsPresent(t *testing.T) {
 }
 
 // TestAddWantsTUI_FalseWhenNonInteractive: a reported non-TTY routes classic
-// even with zero args. Passes vacuously against the always-false stub;
-// stays correct once implemented.
+// even with zero args.
 func TestAddWantsTUI_FalseWhenNonInteractive(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -66,11 +55,10 @@ func TestAddWantsTUI_FalseWhenNonInteractive(t *testing.T) {
 	}
 }
 
-// TestAddWantsTUI_FalseWhenInputFlagChanged (plan.md's dispatch predicate
-// flag set for add: author/at/message/edit, mirrors resetAddFlags's own
-// list, add.go:60): each, individually Changed, routes classic even on a
-// reported TTY with zero args. Passes vacuously against the always-false
-// stub; stays correct once implemented.
+// TestAddWantsTUI_FalseWhenInputFlagChanged: each of resetAddFlags's own
+// input-affecting flag names (author/at/message/edit, add.go:60),
+// individually Changed, routes classic even on a reported TTY with zero
+// args.
 func TestAddWantsTUI_FalseWhenInputFlagChanged(t *testing.T) {
 	prevInteractive := isInteractive
 	t.Cleanup(func() { isInteractive = prevInteractive })
@@ -94,15 +82,11 @@ func TestAddWantsTUI_FalseWhenInputFlagChanged(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLI dispatch integration (T4-analog/T7; RootCmd.Execute level). add.go's
-// RunE is unmodified, so T7 exercises already-shipped classic behavior
-// (green regression-anchor); the --no-input scenario targets the FINAL
-// desired behavior once dispatch is wired and is genuinely RED today.
+// CLI dispatch integration, at the RootCmd.Execute level.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestAddCmd_AtFlagStaysClassicNoANSI (T7): green regression-anchor --
-// add.go doesn't call addWantsTUI yet, so this is already true today and
-// stays true after wiring (--at always routes classic).
+// TestAddCmd_AtFlagStaysClassicNoANSI: --at always routes classic, never
+// opening the TUI.
 func TestAddCmd_AtFlagStaysClassicNoANSI(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -120,12 +104,9 @@ func TestAddCmd_AtFlagStaysClassicNoANSI(t *testing.T) {
 	}
 }
 
-// TestAddCmd_InteractiveNoInputReachesPromptGuard (T4-analog): the FINAL
-// desired behavior once dispatch is wired -- a reported TTY with
-// --no-input must still error via components.PromptGuard's message.
-// Genuinely RED today: add.go never calls addWantsTUI/runAddWizard, so bare
-// + --no-input currently falls straight into the classic "empty body text"
-// error instead.
+// TestAddCmd_InteractiveNoInputReachesPromptGuard: a reported TTY with
+// --no-input must error via components.PromptGuard's message, proving the
+// guard is reached rather than bypassed.
 func TestAddCmd_InteractiveNoInputReachesPromptGuard(t *testing.T) {
 	vault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
@@ -149,12 +130,12 @@ func TestAddCmd_InteractiveNoInputReachesPromptGuard(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pure conversion: wizardAddBody (T16).
+// Pure conversion: wizardAddBody.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestWizardAddBody_TrimsWhitespace (T16): the captured line is trimmed,
-// matching requireSubject=false's convergence formula (no subject/body
-// split for this verb, codebase-analysis.md §5).
+// TestWizardAddBody_TrimsWhitespace: the captured line is trimmed, matching
+// requireSubject=false's convergence formula (no subject/body split for
+// this verb).
 func TestWizardAddBody_TrimsWhitespace(t *testing.T) {
 	got := wizardAddBody("  quick note  ")
 	if got != "quick note" {
@@ -163,14 +144,14 @@ func TestWizardAddBody_TrimsWhitespace(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Convergence (T20): flag path vs. wizard-conversion-fed appendLogEntry.
+// Convergence: flag path vs. wizard-conversion-fed appendLogEntry.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestAddWizard_FileConvergence_FlagVsWizard (T20): the classic flag-driven
-// path and the wizard conversion path, given the same logical capture text,
-// must produce entries with identical Body/Author fields -- per plan.md's
-// own note, timestamp-dependent fields (id/time, which mint independently
-// per invocation) are deliberately not compared.
+// TestAddWizard_FileConvergence_FlagVsWizard: the classic flag-driven path
+// and the wizard conversion path, given the same logical capture text, must
+// produce entries with identical Body/Author fields -- timestamp-dependent
+// fields (id/time, which mint independently per invocation) are
+// deliberately not compared.
 func TestAddWizard_FileConvergence_FlagVsWizard(t *testing.T) {
 	flagVault, _ := setupQueryVault(t)
 	t.Cleanup(resetCLIFlags)
