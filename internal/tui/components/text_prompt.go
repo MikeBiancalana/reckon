@@ -92,12 +92,6 @@ func (tp *TextPrompt) IsVisible() bool {
 	return tp.visible
 }
 
-// SetValue pre-fills the input (e.g. a Wizard step factory re-priming from a
-// prior result map entry on Esc-back).
-func (tp *TextPrompt) SetValue(v string) {
-	tp.textInput.SetValue(v)
-}
-
 // Init satisfies Prompt[string]. Priming (Show) already happened before a
 // TextPrompt is handed to RunPrompt/Wizard, so there is nothing to do here.
 func (tp *TextPrompt) Init() tea.Cmd { return nil }

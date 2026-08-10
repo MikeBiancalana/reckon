@@ -290,10 +290,21 @@ func runNoteCreateE(cmd *cobra.Command, args []string) error {
 
 // normalizeNoteCreateParams performs the load-bearing transforms shared by
 // the flag path (above) and the wizard conversion path (note_create_wizard.go):
-// slug = slugify(title) when p.Slug is unset, validateSlug, Type default
-// "note", stage validation (when non-empty), and body trailing-newline
+// stage validation (when non-empty), slug = slugify(title) when p.Slug is
+// unset, validateSlug, Type default "note", and body trailing-newline
 // normalization (body += "\n" if body != "" && !strings.HasSuffix(body, "\n")).
+// Stage is validated before slug -- matching the flag path's original
+// validation order, so a request with both an invalid --stage and an
+// invalid --slug/title surfaces the same error it always did.
 func normalizeNoteCreateParams(p noteCreateParams) (noteCreateParams, error) {
+	stage := strings.TrimSpace(p.Stage)
+	if stage != "" {
+		if err := validateStage(stage); err != nil {
+			return noteCreateParams{}, fmt.Errorf("note create: %w", err)
+		}
+	}
+	p.Stage = stage
+
 	slugSrc := strings.TrimSpace(p.Slug)
 	if slugSrc == "" {
 		slugSrc = p.Title
@@ -309,14 +320,6 @@ func normalizeNoteCreateParams(p noteCreateParams) (noteCreateParams, error) {
 		typ = "note"
 	}
 	p.Type = typ
-
-	stage := strings.TrimSpace(p.Stage)
-	if stage != "" {
-		if err := validateStage(stage); err != nil {
-			return noteCreateParams{}, fmt.Errorf("note create: %w", err)
-		}
-	}
-	p.Stage = stage
 
 	if p.Body != "" && !strings.HasSuffix(p.Body, "\n") {
 		p.Body += "\n"
