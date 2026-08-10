@@ -450,6 +450,36 @@ transcripts themselves are natural `sources/` citizens (immutable, high-volume, 
 6. **T9 (reckon's own DB-primary data → text-truth)** proceeds independently per its bead.
 7. **Later:** `rk export --okf`, ingest/lint porcelains, MEMORY.md bridge, T10 MCP.
 
+#### 4.6.1 Dual-run phase design (added 2026-08-10 — trial went live; step 5's one-liner made concrete)
+
+The side-by-side trial started 2026-08-10 (vault at `~/reckon`, pages imported, dual-write briefs
+wired by Gilbert). Rules the trial runs under, settled with Gilbert on Mike's approval:
+
+- **One source-of-record per type, direction fixed.** Logseq = SoR for journal narrative during the
+  trial; reckon = trial copy. Dual-write = append to both, **read from the SoR**; reckon reads are
+  evaluation-only until cutover. Never sync backwards — reckon→Logseq reconciliation is a sync
+  engine nobody ordered.
+- **Never dual-master task state** (the important ruling). Append-only journal entries are safe to
+  write twice; *mutable task state* duplicated across two systems is the original disease this
+  design treats. Tasks live in reckon alone from day one of the trial; if Logseq must display
+  them, it renders from reckon (the §4.10 render-target pattern). Live-carry migration creates
+  reckon todos as the only master.
+- **Provenance on every dual-write**: `RECKON_AUTHOR`/`--author` stamps the writing persona
+  (Gilbert, Lycurgus, Callimachus) — free, and makes trial data real rather than synthetic.
+- **Measurement, not vibes**: a small deterministic divergence check (day's Logseq entries vs
+  `rk query` day nodes — count + spot content) runs daily. Zero lost writes is the hard criterion.
+- **Exit criteria defined before the trial accretes, both directions**: ~2 clean weeks + Mike
+  voluntarily reading rk surfaces → cutover; divergence or capture-friction → rollback with a
+  written why. Indefinite dual-write is the named failure mode — double capture cost decays
+  discipline, which is how Logseq decayed the first time.
+- **Import lesson (learned day one)**: `rk adopt` stamps `id:` only (by design, M2) — imported
+  pages carry **no `type`, no `aliases`**, so they're invisible to type-scoped verbs and
+  unresolvable by `[[name]]` (the indexer resolves `dst_key` against ULIDs and frontmatter-minted
+  aliases only — never filename stems or titles; `internal/index/reconcile.go` `resolveEdges`).
+  A bulk import needs a normalization pass: `type:` + `aliases: [<old-slug>]` per file. Symptom
+  when skipped: unresolved-edge counts near total (433/438 in the trial vault pre-fix). Also note
+  alias matching is exact-case today (bead reckon-acol tracks the A#6 case-insensitivity gap).
+
 ### 4.7 Risks / open questions
 
 - ~~T8 format detail~~ — **settled 2026-07-09** (§4.2): reckon fields only in the vault; OKF
