@@ -180,6 +180,38 @@ ULID-dedup, time-sortable ULIDs, SQLite graph instead of context-stuffing — th
 validates the hybrid). Skipped deliberately: PARA, Johnny.Decimal, MemGPT-style memory layers —
 duplicate reckon machinery or add taxonomy against the simplicity constraint.
 
+### 1.5 Excavation: Jim's brain-template (added 2026-08-10)
+
+[`SecondNature-com/brain-template`](https://github.com/SecondNature-com/brain-template) — Jim's
+production chief-of-staff brain (the OKF-backed Karpathy brain from this brief's thread 2),
+generalized into a template. Surveyed in full; four adoptions, the rest filtered.
+
+**Adopted:**
+1. **`inbox/` drop zone + ingest drain** — the one real gap it fills (bead **reckon-inbx**; spec
+   folded into §4.3). Gitignored/unindexed staging for arbitrary files and links; a drain skill
+   does extract → raw capture → distill → route → archive. Rationale in his words, exactly this
+   proposal's philosophy: "friction at capture time kills the capture habit, and arbitrary dropped
+   files must never block a commit or leak into the graph before distillation."
+2. **`people/` as a typed area** — private narrative CRM (`type: person`, file per human,
+   cross-linked from meetings/work). Zero code: a dir + type + schema-file line. PA workflows
+   (meeting prep) consume it immediately.
+3. **`about-me/` ground-truth layer** — role/goals/principles/working-style that agents read
+   before drafting in the owner's voice. This is the shape the deferred MEMORY.md bridge (§4.5)
+   should land as: typed in-vault profile pages, portable and agent-agnostic.
+4. **Shared type vocabulary as interop** — his explicit correlation play (brains sharing the
+   vocabulary can be graphed/filtered together) is §4.9 circles approached from the content-model
+   end. Where domains overlap (`person`, `decision`, `source`, `pattern`, `playbook`), align type
+   names with his vocabulary — the cheap half of any future exchange. Note: his brain is a
+   conformant OKF bundle, so reckon can index it read-only today, circle-style, with zero work on
+   his side.
+
+**Filtered, with reasons:** `open-loops.md`/`decisions.md` as hand-tended single files = task
+state as bullets in a page, the disease reckon's todo lifecycle cures (his daily brief vs the
+§4.10 derived board, same asymmetry); no identity layer (path-as-identity, no ULIDs, no index/
+query surface — grep + generated index.md is the whole retrieval story); per-page `timestamp:`
+(the §4.2 no-stored-updated ruling stands). His conformance checker is a subset of the ADR-bundle
+lint already in use here.
+
 ---
 
 ## Part 2 — Fit analysis
@@ -388,7 +420,17 @@ Per the determinism-boundary law — deterministic verbs in core, judgment in po
 - **`rk-ingest`** (agent porcelain): source in `sources/` → summary + entity/concept notes via
   `rk note`, ripple-updates existing notes, links auto-extracted and indexed. The schema file
   (vault-level agent instructions) governs taxonomy and new-page-vs-edit — Karpathy's "most important
-  file," co-evolved.
+  file," co-evolved. **Concretized 2026-08-10 from the brain-template excavation (§1.5, bead
+  reckon-inbx)**: add an **`inbox/`** staging dir — gitignored, index-excluded, zero-structure
+  drop zone for files and pasted links; the ingest drain does extract (per-filetype table) → raw
+  capture into `sources/` with provenance → wiki distillation → route strays (person facts, todos)
+  → archive originals out of the repo → digest report. Design rules carried over verbatim-in-
+  spirit: **crawl gate** (a pasted URL never silently becomes a site crawl — cap scope by asking);
+  **fan-out-but-one-writer** (subagents return distillation *candidates*; a single mind holding
+  the whole batch and the existing wiki does all writes — kills the fifty-orphan-pages failure);
+  **merge-don't-multiply** (search for existing coverage before creating; update over duplicate);
+  **conflicts stated, never silently overwritten** (both claims, dated, with which evidence
+  favors). Core touch is one ignore-glob; everything else is porcelain + schema-file content.
 - **`rk lint`** (deterministic core, mostly exists): one verb aggregating what reconcile already
   computes (#142) — unresolved edges, alias collisions, duplicate ULIDs, orphan notes (no inbound
   edges), stale seedlings (`stage='seedling'`, oldest first) — all index queries. **`rk-lint-deep`**
@@ -416,7 +458,7 @@ closures (`did` edge) but never *holds* task state — the exact inversion of th
 | `/pa` (Gilbert), `/wrap-up`, `/weekly-retro` | same data via `rk query` (NDJSON, token-scoped) — agents stop grepping raw journals |
 | `/log-day` | largely obsolete (capture is frictionless); residual = `rk log AT=` backfill |
 | Lycurgus write-gate | retire on the log path — substrate is lossless; compression is read-time (`rk-brief` seam, T11, only if the flat-log read fails per Godfrey's test) |
-| `MEMORY.md` auto-memory | **Phase-2 candidate**: memories are `type: memory` notes (one fact per file already matches file-per-note; `[[name]]` linking already matches). Bridge: keep `MEMORY.md` as a generated index over `rk query --view memories`. Defer until notes prove out — harness coupling, low pain today |
+| `MEMORY.md` auto-memory | **Phase-2 candidate**: memories are `type: memory` notes (one fact per file already matches file-per-note; `[[name]]` linking already matches). Bridge: keep `MEMORY.md` as a generated index over `rk query --view memories`. Defer until notes prove out — harness coupling, low pain today. Landing shape per §1.5: an `about-me/`-style typed profile area (role/goals/principles/working-style) agents read before drafting in Mike's voice |
 | `PA/observations` page | migrates with pages → `notes/PA/observations.md` |
 
 **Record-as-you-go agent capture (added 2026-07-09).** Requirement: everything Mike does with an
@@ -563,7 +605,10 @@ Properties, each structural rather than enforced:
   backlinks just work. The real collision hazard is **aliases**, not ULIDs — settled design below.
 - **OKF interop rides free** — a circle repo is already nearly an OKF bundle (typed markdown +
   frontmatter + generated `index.md`); non-reckon consumers (a Karpathy brain, `kiso`) read it
-  directly. The circle repo *is* the shared-KB artifact.
+  directly. The circle repo *is* the shared-KB artifact. Content-model half (added 2026-08-10,
+  §1.5): where domains overlap, align type names with the brain-template shared vocabulary
+  (`person`, `decision`, `source`, `pattern`, `playbook`) — two brains correlating requires shared
+  types as much as a shared substrate, and Jim's bundle is indexable read-only today.
 
 Verb surface (porcelain over git + already-planned machinery; start as an **`rk-circle` PATH
 extension**, graduate into core when proven — the extension point exists for exactly this):
