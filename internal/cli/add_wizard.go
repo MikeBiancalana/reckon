@@ -15,10 +15,13 @@ import (
 // addWantsTUI reports whether a bare `rk add` invocation should open the
 // interactive quick-capture prompt instead of the classic flag-driven path:
 // only on a real TTY, only with no positional args, and only when none of
-// the add input flags (--author/--at/-m/--edit, mirrors resetAddFlags's own
-// list, add.go:60) has been Changed. --no-input is deliberately NOT
-// consulted here -- see todoAddWantsTUI's doc comment for the identical
-// rationale.
+// the add input flags has been Changed -- resetAddFlags's own list
+// (--author/--at/-m/--edit, add.go:60) plus --date, the global persistent
+// flag effectiveLogDate reads (--date isn't one of resetAddFlags's own
+// flags, since it isn't registered on addCmd itself, but effectiveLogDate()
+// still consults it, so a caller who set it wants the classic path).
+// --no-input is deliberately NOT consulted here -- see todoAddWantsTUI's doc
+// comment for the identical rationale.
 func addWantsTUI(cmd *cobra.Command, args []string) bool {
 	if !isInteractive() {
 		return false
@@ -26,7 +29,7 @@ func addWantsTUI(cmd *cobra.Command, args []string) bool {
 	if len(args) > 0 {
 		return false
 	}
-	for _, name := range []string{"author", "at", "message", "edit"} {
+	for _, name := range []string{"author", "at", "message", "edit", "date"} {
 		if cmd.Flags().Changed(name) {
 			return false
 		}
