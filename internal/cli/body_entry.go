@@ -120,9 +120,10 @@ func assembleBody(cmd *cobra.Command, args, messages []string, edit, requireSubj
 //
 // The formula to replicate exactly: strings.TrimSpace(subject), then, if
 // strings.TrimSpace(body) is non-empty, append "\n\n"+that trimmed body.
-//
-// NOT YET IMPLEMENTED: returns "" unconditionally so callers compile without
-// this stub prematurely passing any convergence test.
 func joinSubjectBody(subject, body string) string {
-	return ""
+	result := strings.TrimSpace(subject)
+	if trimmedBody := strings.TrimSpace(body); trimmedBody != "" {
+		result += "\n\n" + trimmedBody
+	}
+	return result
 }

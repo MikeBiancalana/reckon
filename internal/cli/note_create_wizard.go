@@ -2,8 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/MikeBiancalana/reckon/internal/config"
+	"github.com/MikeBiancalana/reckon/internal/index"
+	"github.com/MikeBiancalana/reckon/internal/output"
 	"github.com/MikeBiancalana/reckon/internal/tui/components"
 	"github.com/spf13/cobra"
 )
@@ -15,23 +19,86 @@ import (
 // --description/--dir/--tag/--alias/--body) has been Changed. --no-input is
 // deliberately NOT consulted here -- see todoAddWantsTUI's doc comment for
 // the identical rationale.
-//
-// NOT YET IMPLEMENTED: returns false unconditionally.
 func noteCreateWantsTUI(cmd *cobra.Command, args []string) bool {
-	return false
+	if !isInteractive() {
+		return false
+	}
+	if len(args) > 0 {
+		return false
+	}
+	for _, name := range []string{"slug", "type", "author", "stage", "description", "dir", "tag", "alias", "body"} {
+		if cmd.Flags().Changed(name) {
+			return false
+		}
+	}
+	return true
 }
 
 // runNoteCreateWizard drives the note-create wizard (title -> body ->
-// links [MultiNotePicker over existing notes]) and, on completion, appends
-// "[[slug]]" tokens (one per selected link, own paragraph) to the body,
-// builds a raw noteCreateParams{Title, Body, Author: resolveAuthor("")},
-// normalizes it via normalizeNoteCreateParams, and calls createNote -- the
-// same function the classic flag path calls.
-//
-// NOT YET IMPLEMENTED: not wired from note_v1.go's RunE yet, and this stub
-// does not construct or run a real Wizard.
+// links [MultiNotePicker over existing notes]) and, on completion, converts
+// the result through wizardNoteParams -> normalizeNoteCreateParams -> the
+// same createNote the classic flag path calls. The links row source is
+// queried before the wizard opens (mirrors runTodoAddWizard/buildDependsRows)
+// so an index failure surfaces as a normal RunE error, not mid-flow.
 func runNoteCreateWizard(cmd *cobra.Command) error {
-	return fmt.Errorf("note create: interactive wizard not implemented")
+	cfg, err := config.LoadWithOverrides(vaultFlag, "")
+	if err != nil {
+		return fmt.Errorf("note create: load config: %w", err)
+	}
+
+	linkRows, err := buildNoteLinkRows(cfg)
+	if err != nil {
+		return err
+	}
+
+	w := components.NewWizard(
+		components.Step("title", func(prior map[string]any) components.Prompt[string] {
+			tp := components.NewTextPrompt("Title", true)
+			tp.Show()
+			return tp
+		}),
+		components.Step("body", func(prior map[string]any) components.Prompt[string] {
+			te := components.NewTextEditor("Body")
+			te.Show()
+			return te
+		}),
+		components.Step("links", func(prior map[string]any) components.Prompt[[]string] {
+			mp := components.NewMultiNotePicker("Link notes")
+			mp.Show(linkRows)
+			return mp
+		}),
+	)
+
+	results, ok, err := w.Run()
+	if err != nil {
+		return fmt.Errorf("note create: %w", err)
+	}
+	if !ok {
+		return nil
+	}
+
+	params, err := normalizeNoteCreateParams(wizardNoteParams(results))
+	if err != nil {
+		return err
+	}
+
+	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
+	if err != nil {
+		return fmt.Errorf("note create: %w", err)
+	}
+
+	notesDir := filepath.Join(cfg.VaultDir, "notes")
+	res, err := createNote(notesDir, params)
+	if err != nil {
+		return err
+	}
+
+	if !(mode == output.Pretty && quietFlag) {
+		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
+			return fmt.Errorf("print result: %w", err)
+		}
+	}
+	return nil
 }
 
 // wizardNoteParams converts a completed note-create Wizard's shared result
@@ -39,26 +106,59 @@ func runNoteCreateWizard(cmd *cobra.Command) error {
 // Stage/etc are still unset; normalizeNoteCreateParams fills those in):
 // Body is results["body"].(string) with one "[[slug]]" paragraph appended
 // per results["links"].([]string) entry; Title is results["title"].(string).
-//
-// NOT YET IMPLEMENTED: returns a zero-value noteCreateParams unconditionally.
 func wizardNoteParams(results map[string]any) noteCreateParams {
-	return noteCreateParams{}
+	title, _ := results["title"].(string)
+	body, _ := results["body"].(string)
+	links, _ := results["links"].([]string)
+
+	for _, slug := range links {
+		if body != "" {
+			body += "\n\n"
+		}
+		body += "[[" + slug + "]]"
+	}
+
+	return noteCreateParams{
+		Title:  title,
+		Body:   body,
+		Author: resolveAuthor(""),
+	}
 }
 
 // normalizeNoteCreateParams performs the load-bearing transforms shared by
-// the flag path (runNoteCreateE, note_v1.go:240-259) and the wizard
-// conversion path: slug = slugify(title) when p.Slug is unset, validateSlug,
-// Type default "note", stage validation (when non-empty), and body
-// trailing-newline normalization
+// the flag path (runNoteCreateE) and the wizard conversion path: slug =
+// slugify(title) when p.Slug is unset, validateSlug, Type default "note",
+// stage validation (when non-empty), and body trailing-newline normalization
 // (body += "\n" if body != "" && !strings.HasSuffix(body, "\n")).
-//
-// runNoteCreateE itself must be wired to call this helper too (that edit
-// belongs to note_v1.go's dispatch-wiring, not this stub) so both paths
-// provably converge on one implementation rather than two
-// independently-maintained copies.
-//
-// NOT YET IMPLEMENTED: returns the input unchanged with a nil error.
 func normalizeNoteCreateParams(p noteCreateParams) (noteCreateParams, error) {
+	slugSrc := strings.TrimSpace(p.Slug)
+	if slugSrc == "" {
+		slugSrc = p.Title
+	}
+	slug := slugify(slugSrc)
+	if err := validateSlug(slug); err != nil {
+		return noteCreateParams{}, fmt.Errorf("note create: %w", err)
+	}
+	p.Slug = slug
+
+	typ := strings.TrimSpace(p.Type)
+	if typ == "" {
+		typ = "note"
+	}
+	p.Type = typ
+
+	stage := strings.TrimSpace(p.Stage)
+	if stage != "" {
+		if err := validateStage(stage); err != nil {
+			return noteCreateParams{}, fmt.Errorf("note create: %w", err)
+		}
+	}
+	p.Stage = stage
+
+	if p.Body != "" && !strings.HasSuffix(p.Body, "\n") {
+		p.Body += "\n"
+	}
+
 	return p, nil
 }
 
@@ -66,8 +166,51 @@ func normalizeNoteCreateParams(p noteCreateParams) (noteCreateParams, error) {
 // (mirrors buildTodoItems's shape; query is "SELECT id, loc FROM nodes WHERE
 // type='note'", note_v1.go:742), and maps them to []components.IndexRow with
 // Props["slug"] set (mirrors NotePicker's own row convention).
-//
-// NOT YET IMPLEMENTED: returns (nil, nil) unconditionally.
 func buildNoteLinkRows(cfg *config.Config) ([]components.IndexRow, error) {
-	return nil, nil
+	ix, err := index.Open(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("note create: open index: %w", err)
+	}
+	defer ix.Close()
+
+	if _, err := ix.Reconcile(); err != nil {
+		return nil, fmt.Errorf("note create: reconcile index: %w", err)
+	}
+
+	db := ix.DB()
+	rows, err := db.Query("SELECT id, loc FROM nodes WHERE type = 'note'")
+	if err != nil {
+		return nil, fmt.Errorf("note create: query notes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []components.IndexRow
+	for rows.Next() {
+		var id, loc string
+		if err := rows.Scan(&id, &loc); err != nil {
+			return nil, fmt.Errorf("note create: scan note: %w", err)
+		}
+		slug := strings.TrimSuffix(filepath.Base(loc), ".md")
+		if slug == "index" {
+			continue
+		}
+		props, err := loadProps(db, id)
+		if err != nil {
+			return nil, fmt.Errorf("note create: %w", err)
+		}
+		title := props["title"]
+		if title == "" {
+			title = slug
+		}
+		out = append(out, components.IndexRow{
+			ID:    id,
+			Title: title,
+			Type:  "note",
+			Props: map[string]string{"slug": slug},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("note create: iterate notes: %w", err)
+	}
+	return out, nil
 }

@@ -275,6 +275,10 @@ func resolveAuthor(flag string) string {
 func runTodoAddE(cmd *cobra.Command, args []string) error {
 	defer resetTodoFlags(cmd)
 
+	if todoAddWantsTUI(cmd, args) {
+		return runTodoAddWizard(cmd)
+	}
+
 	ephemeral := todoEphemeralFlag
 	scheduled := todoScheduledFlag
 	deadline := todoDeadlineFlag

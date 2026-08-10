@@ -88,6 +88,10 @@ func (r logAddResult) Pretty() string {
 func runAddE(cmd *cobra.Command, args []string) error {
 	defer resetAddFlags(cmd)
 
+	if addWantsTUI(cmd, args) {
+		return runAddWizard(cmd)
+	}
+
 	author := resolveAuthor(addAuthorFlag)
 	if embeddedHeaderRe.MatchString(author) {
 		return fmt.Errorf(`add: author must not contain a line starting with "## " (would be mis-split as a new entry)`)
