@@ -109,7 +109,7 @@ func TestNoteCreate_BareNonInteractive_NewEmptyTitleErrorNotYetReachable(t *test
 	}
 	combined := err.Error() + stderr
 	if !strings.Contains(combined, "title must not be empty") {
-		t.Errorf("expected the new AC §3.1 guard's \"title must not be empty\" error once Args is loosened and the guard lands, got: %v (stderr=%q)", err, stderr)
+		t.Errorf("expected the empty-title guard's \"title must not be empty\" error, got: %v (stderr=%q)", err, stderr)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 
 // Compile-time conformance assertion: TextPrompt must satisfy Prompt[string]
 // via its own Update method (mirrors prompt_test.go's var block for the
-// fnqs.6-era components).
+// other Prompt[T] components).
 var _ Prompt[string] = (*TextPrompt)(nil)
 
 // TestTextPrompt_ConformanceCompiles exists so the conformance assertion
@@ -36,8 +36,8 @@ func TestTextPrompt_ShowFocusesAndResetsState(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
-// TestTextPrompt_RequiredBlocksEmptySubmit (gap G2): with Required=true, an
-// Enter on an empty input must NOT reach a terminal state (finished stays
+// TestTextPrompt_RequiredBlocksEmptySubmit: with Required=true, an Enter on
+// an empty input must NOT reach a terminal state (finished stays
 // false) -- mirrors DatePicker's "Please enter a date" block
 // (date_picker.go:138-141) applied to plain text instead of a date. A
 // second Enter after typing a non-empty value must then submit with that
@@ -63,8 +63,8 @@ func TestTextPrompt_RequiredBlocksEmptySubmit(t *testing.T) {
 	}
 }
 
-// TestTextPrompt_NonRequiredAllowsEmptySubmit (gap G2): with Required=false
-// (rk add's quick-capture case), Enter on an empty input submits
+// TestTextPrompt_NonRequiredAllowsEmptySubmit: with Required=false (rk
+// add's quick-capture case), Enter on an empty input submits
 // immediately with Result()=="" -- no component-level block, letting the
 // caller's own empty-body guard (runAddE's existing check) handle it
 // downstream.

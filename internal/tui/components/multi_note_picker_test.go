@@ -46,7 +46,7 @@ func TestMultiNotePicker_ShowResetsSelection(t *testing.T) {
 	}
 }
 
-// TestMultiNotePicker_SpaceTogglesSelectionEnterConfirms (T15): Space on two
+// TestMultiNotePicker_SpaceTogglesSelectionEnterConfirms: Space on two
 // distinct rows toggles both into the selection set; Enter then confirms
 // with both slugs present in Result().
 func TestMultiNotePicker_SpaceTogglesSelectionEnterConfirms(t *testing.T) {
@@ -75,8 +75,8 @@ func TestMultiNotePicker_SpaceTogglesSelectionEnterConfirms(t *testing.T) {
 	}
 }
 
-// TestMultiNotePicker_EmptySelectionEnterConfirms (gap G5): Enter with no
-// Space toggles at all still confirms (finished=true), with Result() an
+// TestMultiNotePicker_EmptySelectionEnterConfirms: Enter with no Space
+// toggles at all still confirms (finished=true), with Result() an
 // empty (not nil-panicking) slice -- links are optional, so "skip" must be
 // reachable without selecting anything.
 func TestMultiNotePicker_EmptySelectionEnterConfirms(t *testing.T) {

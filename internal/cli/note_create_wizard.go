@@ -134,19 +134,29 @@ func buildNoteLinkRows(cfg *config.Config) ([]components.IndexRow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("note create: query notes: %w", err)
 	}
-	defer rows.Close()
-
-	var out []components.IndexRow
+	type noteRow struct{ id, loc string }
+	var noteRows []noteRow
 	for rows.Next() {
-		var id, loc string
-		if err := rows.Scan(&id, &loc); err != nil {
+		var r noteRow
+		if err := rows.Scan(&r.id, &r.loc); err != nil {
+			rows.Close()
 			return nil, fmt.Errorf("note create: scan note: %w", err)
 		}
-		slug := strings.TrimSuffix(filepath.Base(loc), ".md")
+		noteRows = append(noteRows, r)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("note create: iterate notes: %w", err)
+	}
+	rows.Close()
+
+	var out []components.IndexRow
+	for _, r := range noteRows {
+		slug := strings.TrimSuffix(filepath.Base(r.loc), ".md")
 		if slug == "index" {
 			continue
 		}
-		props, err := loadProps(db, id)
+		props, err := loadProps(db, r.id)
 		if err != nil {
 			return nil, fmt.Errorf("note create: %w", err)
 		}
@@ -155,14 +165,11 @@ func buildNoteLinkRows(cfg *config.Config) ([]components.IndexRow, error) {
 			title = slug
 		}
 		out = append(out, components.IndexRow{
-			ID:    id,
+			ID:    r.id,
 			Title: title,
 			Type:  "note",
 			Props: map[string]string{"slug": slug},
 		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("note create: iterate notes: %w", err)
 	}
 	return out, nil
 }
