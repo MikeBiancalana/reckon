@@ -1,8 +1,8 @@
 # Implementation Summary: reckon-fnqs.7
 
-## Status: READY FOR PUSH
+## Status: READY FOR PUSH, WITH ONE CAVEAT — see "Not verified" below
 
-## Review Verdict: APPROVE WITH CHANGES (both requested changes applied)
+## Review Verdict: APPROVE WITH CHANGES (all requested + follow-up changes applied)
 
 ## Changed Files:
 internal/cli/add.go
@@ -23,6 +23,9 @@ internal/tui/components/text_prompt_test.go
 ticket-work/reckon-fnqs.7/ (plan.md, acceptance-criteria.md, codebase-analysis.md, preflight-report.md, review.md, state.json, pattern-frequency.txt)
 
 ## Commits:
+53a8cf5 fix: Remove dead TextPrompt.SetValue, restore stage-before-slug validation order
+c17912f chore: Sync beads jsonl (claim status) and add review.md for reckon-fnqs.7
+3a4b324 docs: Add implementation summary for reckon-fnqs.7
 9411dbe chore: Add pattern-frequency scan for reckon-fnqs.7
 d268139 fix: Address code review findings for reckon-fnqs.7
 8928f88 chore: Add preflight report for reckon-fnqs.7
@@ -50,6 +53,23 @@ closure capture: 0
 nil check: 0
 missing validation: 0
 
+## Not verified: live wizard rendering on a real TTY
+
+Every check in this pipeline is either a scripted-keystroke unit test
+(`tea.WithInput`/`tea.WithOutput`) or an in-process `RootCmd.Execute()` —
+nothing has driven the actual `View()` rendering, real-terminal key
+handling, or the multi-step feel of any of the three wizards on a real
+terminal. The wizard *composition* (does the right sequence of steps run)
+and the *file-convergence* (does it write the same bytes as the flag path)
+are both well-covered — that's not in question. What's unverified is purely
+the interactive rendering/UX layer.
+
+This matters specifically for this ticket: the reason full-screen `rk tui`
+got deprioritized (reckon-nzk3) was a rendering bug that only showed up on
+first real use, despite passing all its own tests the same way this ticket's
+tests pass. Recommend eyeballing at least one wizard (e.g. `rk todo add`
+bare, on a real terminal) before pushing, given that history.
+
 ## Scope note for Mike
 Two components didn't exist yet and were built as part of this ticket
 (scoped in during planning, not discovered mid-implementation):
@@ -60,12 +80,15 @@ on the mini-TUI-components track — not the deprioritized full-screen `rk
 tui` layout (reckon-nzk3).
 
 ## Deferred (non-blocking, from code review)
-- Esc-back to an earlier wizard step re-mounts a blank component rather
-  than re-priming from the prior entry (`TextPrompt.SetValue` exists but no
-  factory calls it). Wizard framework supports this; just unwired.
 - `rk note create` wizard echoes an untrimmed `Title` in `--json`/pretty
   output (the written *file* is unaffected — round-trips to the same
   bytes). Optional: move the trim into `normalizeNoteCreateParams`.
 - `MultiNotePicker` selection order is nondeterministic (map iteration) --
   no correctness impact since the only convergence test carries no links,
   but consider sorting for stable body output.
+- Esc-back to an earlier wizard step re-mounts a blank component rather
+  than re-priming from the prior entry — the Wizard framework supports
+  re-priming (factories can read `prior`), these three drivers just don't
+  use it. `TextPrompt.SetValue` (the dead code this would have used) was
+  removed rather than wired, since Esc-back-loses-input is an accepted v1
+  UX cost per code review.
