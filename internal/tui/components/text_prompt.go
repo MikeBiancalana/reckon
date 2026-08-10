@@ -1,9 +1,38 @@
 package components
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
+
+var (
+	textPromptBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("39")).
+				Padding(1, 2)
+
+	textPromptTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("39"))
+
+	textPromptErrorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("196")).
+				Italic(true)
+
+	textPromptHelpStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240"))
+)
+
+// TextPromptSubmitMsg is sent when a value is confirmed with Enter.
+type TextPromptSubmitMsg struct {
+	Value string
+}
+
+// TextPromptCancelMsg is sent when the prompt is cancelled with Esc.
+type TextPromptCancelMsg struct{}
 
 // TextPrompt is a single-line Prompt[string], mirroring DatePicker's struct
 // shape minus date parsing. Reused for todo-add's subject step, note-create's
@@ -15,13 +44,6 @@ import (
 // must flow through to Done() finished=true with Result()=="" (no
 // component-level block), letting the caller's own empty-body guard handle
 // it downstream.
-//
-// STUB: Update/View are not yet implemented. Update currently returns tp
-// unchanged with a nil cmd on every message, so tp never reaches a terminal
-// state -- a keystroke-driven RunPrompt/Wizard.Run test against a live
-// tea.Program will time out via runPromptForTest's bound rather than hang
-// forever; a direct tp.Update(...) call in a non-Program test will just
-// observe Done() staying (false, false) and Result() staying "".
 type TextPrompt struct {
 	textInput textinput.Model
 	visible   bool
@@ -87,19 +109,68 @@ func (tp *TextPrompt) Result() string { return tp.result }
 // Done reports whether Update has reached a terminal state.
 func (tp *TextPrompt) Done() (finished, canceled bool) { return tp.submitted, tp.canceled }
 
-// Update handles Bubble Tea messages.
-//
-// NOT YET IMPLEMENTED: the real body must mirror DatePicker.Update -- Esc
-// cancels, Enter validates (blocking on empty input when required is true,
-// else always submitting the trimmed value) -- but is stubbed here to
-// compile without prematurely passing any behavioral test.
+// Update handles Bubble Tea messages. Mirrors DatePicker.Update's Esc/Enter
+// shape: Esc cancels unconditionally; Enter blocks (sets an error, stays
+// non-terminal) only when required and the input is blank after trimming,
+// otherwise submits the raw (untrimmed) value -- trimming, where wanted, is
+// the caller's job (e.g. wizardAddBody), not this component's.
 func (tp *TextPrompt) Update(msg tea.Msg) (Prompt[string], tea.Cmd) {
-	return tp, nil
+	if !tp.visible {
+		return tp, nil
+	}
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyEsc:
+			tp.Hide()
+			tp.canceled = true
+			return tp, func() tea.Msg {
+				return TextPromptCancelMsg{}
+			}
+
+		case tea.KeyEnter:
+			value := tp.textInput.Value()
+			if tp.required && strings.TrimSpace(value) == "" {
+				tp.error = "This field is required"
+				return tp, nil
+			}
+
+			tp.result = value
+			tp.submitted = true
+			tp.Hide()
+			return tp, func() tea.Msg {
+				return TextPromptSubmitMsg{Value: value}
+			}
+		}
+	}
+
+	var cmd tea.Cmd
+	tp.textInput, cmd = tp.textInput.Update(msg)
+	if tp.textInput.Value() != "" {
+		tp.error = ""
+	}
+	return tp, cmd
 }
 
 // View renders the prompt.
-//
-// NOT YET IMPLEMENTED.
 func (tp *TextPrompt) View() string {
-	return ""
+	if !tp.visible {
+		return ""
+	}
+
+	var content string
+	content += textPromptTitleStyle.Render(tp.title) + "\n\n"
+	content += tp.textInput.View() + "\n"
+
+	if tp.error != "" {
+		content += textPromptErrorStyle.Render("✗ "+tp.error) + "\n"
+	} else {
+		content += "\n"
+	}
+
+	content += "\n"
+	content += textPromptHelpStyle.Render("ESC: cancel  ENTER: confirm")
+
+	return textPromptBoxStyle.Render(content)
 }
