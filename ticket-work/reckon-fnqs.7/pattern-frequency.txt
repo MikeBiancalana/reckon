@@ -1,0 +1,5 @@
+unwrapped error: 0
+missing defer: 0
+closure capture: 0
+nil check: 0
+missing validation: 0

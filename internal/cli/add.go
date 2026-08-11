@@ -52,12 +52,17 @@ func init() {
 
 // resetAddFlags restores add flag variables to their defaults and clears the
 // pflag Changed state on whichever of these flags are registered on cmd.
+// "date" is included even though it isn't one of add's own flags (it's
+// RootCmd's persistent flag, only reset by value elsewhere, never by
+// Changed) -- addWantsTUI consults its Changed bit, and pflag never resets
+// Changed on its own once a flag has been set, so it must be cleared here or
+// it leaks across every later `rk add` invocation in the same process.
 func resetAddFlags(cmd *cobra.Command) {
 	addAuthorFlag = ""
 	addAtFlag = ""
 	addMessageFlag = nil
 	addEditFlag = false
-	for _, name := range []string{"author", "at", "message", "edit"} {
+	for _, name := range []string{"author", "at", "message", "edit", "date"} {
 		if fl := cmd.Flags().Lookup(name); fl != nil {
 			fl.Changed = false
 		}
@@ -87,6 +92,10 @@ func (r logAddResult) Pretty() string {
 
 func runAddE(cmd *cobra.Command, args []string) error {
 	defer resetAddFlags(cmd)
+
+	if addWantsTUI(cmd, args) {
+		return runAddWizard(cmd)
+	}
 
 	author := resolveAuthor(addAuthorFlag)
 	if embeddedHeaderRe.MatchString(author) {
