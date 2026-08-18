@@ -510,6 +510,12 @@ wired by Gilbert). Rules the trial runs under, settled with Gilbert on Mike's ap
   (Gilbert, Lycurgus, Callimachus) — free, and makes trial data real rather than synthetic.
 - **Measurement, not vibes**: a small deterministic divergence check (day's Logseq entries vs
   `rk query` day nodes — count + spot content) runs daily. Zero lost writes is the hard criterion.
+  Two known divergence classes from the trial (2026-08-17/18), which the audit must classify
+  rather than false-positive on: **day-split** — rk buckets by UTC day, Logseq by local, so
+  evening entries land in different day files until reckon-utcd is fixed (compare on entry
+  *instant*, normalized, not on day-file membership); **mirror-skip** — the dual-write shim can
+  silently skip when `rk` is off PATH (reckon-mirr: absolute-path invocation + pending-queue on
+  failure), so "missing in reckon" is a shim failure signal, not noise.
 - **Exit criteria defined before the trial accretes, both directions**: ~2 clean weeks + Mike
   voluntarily reading rk surfaces → cutover; divergence or capture-friction → rollback with a
   written why. Indefinite dual-write is the named failure mode — double capture cost decays
