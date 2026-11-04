@@ -1,65 +1,96 @@
+Status: PASS
+
 # Preflight Check Report: reckon-fkgb
 
-Status: PASS WITH WARNINGS
-
-Scope: `git diff origin/main -- internal/` (7 files, +1601/-24): `internal/cli/todo_edit.go` (new), `internal/cli/todo.go`, `internal/cli/today.go`, `internal/node/insert.go`, and their `_test.go` files, plus `internal/node/AGENTS.md` (docs).
+Scope: `git diff origin/main -- internal/` (7 files, +1790/-27): `internal/cli/todo_edit.go` (new), `internal/cli/todo.go`, `internal/cli/today.go`, `internal/node/insert.go`, their `_test.go` files, and `internal/node/AGENTS.md` (docs). No TUI files changed. Re-run against current HEAD `e85c7d0`.
 
 ## Automated Checks
 
 | Check | Result |
 |---|---|
-| `gofmt -l internal cmd` | PASS, no output (exit 0) |
-| `go vet ./...` | PASS, no output (exit 0) |
-| `go test ./...` | PASS, all 19 packages `ok`; re-run with `-count=1` shows no `FAIL`/`panic` |
-| `go test -tags integration ./tests/` | PASS, `ok github.com/MikeBiancalana/reckon/tests` |
-| `go test -cover ./internal/node ./internal/cli` | node 94.3%, cli 74.9% |
-| `go build -o <scratchpad>/rk ./cmd/rk` | PASS, exit 0 |
+| `gofmt -l internal cmd` | PASS, no output |
+| `go vet ./...` | PASS, no output, exit 0 |
+| `go test -count=1 ./...` | PASS, 16 packages `ok`, 3 with no test files (`cmd/rk`, `internal/perf`, `internal/time`), no FAIL |
+| `go test -tags integration -count=1 ./tests/` | PASS, `ok github.com/MikeBiancalana/reckon/tests` |
+| `go test -count=1 -cover ./internal/node ./internal/cli` | PASS, node 94.2%, cli 75.0% |
+| `go build -o /tmp/claude-1000/-home-chadd-repos-reckon/07058578-b04f-4517-9ef1-2699b825a095/scratchpad/rk ./cmd/rk` | PASS, exit 0 |
 
-Per-function coverage of changed code (from `-coverprofile`):
+Per-function coverage of changed code (`go tool cover -func`, current line numbers):
 
-| Function | Coverage |
-|---|---|
-| `runTodoEditE` (`todo_edit.go:60`) | 89.7% |
-| `validateTodoEditFlags` (`todo_edit.go:183`) | 100% |
-| `checkTodoDepends` (`todo_edit.go:222`) | 85.7% |
-| `reconcileAfterEdit` (`todo_edit.go:248`) | 88.9% |
-| `UpsertField` (`node/insert.go:59`) | 100% |
-| `RemoveField` (`node/insert.go:101`) | 91.7% |
-| `commitSplice` (`node/insert.go:85`) | 80.0% |
-| `resolveDurableTodoRef` (`today.go:456`) | 91.7% |
-| `loadDurableTodoAt` (`todo.go:923`) | 81.8% |
-| `findDurableTodoByRefOrAlias` (`todo.go:944`) | 84.6% |
+| Function | File:Line | Coverage |
+|---|---|---|
+| `runTodoEditE` | `internal/cli/todo_edit.go:61` | 92.9% |
+| `validateTodoEditFlags` | `internal/cli/todo_edit.go:188` | 100.0% |
+| `checkTodoDepends` | `internal/cli/todo_edit.go:227` | 85.7% |
+| `reconcileAfterEdit` | `internal/cli/todo_edit.go:253` | 88.9% |
+| `resolveDurableTodoRef` | `internal/cli/today.go:456` | 92.3% |
+| `resolveSchedDateArg` | `internal/cli/today.go:520` | 100.0% |
+| `validatePriority` | `internal/cli/today.go:536` | 100.0% |
+| `loadDurableTodoAt` | `internal/cli/todo.go:923` | 81.8% |
+| `findDurableTodoByRefOrAlias` | `internal/cli/todo.go:944` | 84.6% |
+| `InsertField` | `internal/node/insert.go:24` | 94.1% |
+| `UpsertField` | `internal/node/insert.go:62` | 96.3% |
+| `commitUpsert` | `internal/node/insert.go:102` | 85.7% |
+| `lineAfter` | `internal/node/insert.go:116` | 75.0% |
+| `checkNoContinuation` | `internal/node/insert.go:129` | 90.0% |
+| `RemoveField` | `internal/node/insert.go:154` | 96.0% |
+
+Note: the existing report at this path (before this run) cited stale line numbers and a `commitSplice` function that no longer exists. Its figures were not carried over.
 
 ## Manual Checks
 
 ### Error Handling
-- [x] Errors wrapped with context on the main paths (e.g. `todo_edit.go:88-94`, `todo_edit.go:139-141`, `insert.go` `RemoveField`/`commitSplice` wrap with method name).
-- [ ] WARNING: three bare `return err` sites in changed non-test code:
-  - `internal/cli/todo_edit.go:85` - `output.ModeFromFlags` error, unwrapped.
-  - `internal/cli/todo_edit.go:169` - `output.Print` error, unwrapped.
-  - `internal/cli/todo_edit.go:225` - `checkTodoDepends` returns `lookupNodeByRefOrAlias` error unwrapped; caller at `:140` adds `todo edit: --depends:` prefix, so context is present at the command level.
-- [x] No ignored errors found in added lines (`_, err :=` scan clean).
+
+Added bare `return err` sites (non-test, added lines only):
+
+| Location | Returns | Context source | Verdict |
+|---|---|---|---|
+| `internal/cli/todo_edit.go:84` | `validateTodoEditFlags` error | Callee errors already `todo edit: --<field>: ...` | OK |
+| `internal/cli/todo_edit.go:89` | `output.ModeFromFlags` error | Reviewer ruling: peers match | OK, ruled acceptable |
+| `internal/cli/todo_edit.go:98` | `resolveDurableTodoRef("todo edit", ...)` error | Callee prefixes with verb | OK |
+| `internal/cli/todo_edit.go:230` | `lookupNodeByRefOrAlias` error in `checkTodoDepends` | Caller `todo_edit.go:121-122` wraps `todo edit: --depends:` | OK, ruled acceptable |
+| `internal/cli/todo_edit.go:263` | `ix.Reconcile` error in `reconcileAfterEdit` | Caller `todo_edit.go:174-175` wraps as warning | OK |
+| `internal/node/insert.go:70` | `checkNoContinuation` error | Message carries `UpsertField:` prefix | OK |
+| `internal/node/insert.go:82` | `checkNoContinuation` error | Message carries `UpsertField:` prefix | OK |
+| `internal/node/insert.go:92` | `trial.InsertField` error | Callee prefixes `InsertField:` | OK |
+| `internal/node/insert.go:167` | `checkNoContinuation` error | Message carries `RemoveField:` prefix | OK |
+
+Prior warning status:
+- `todo_edit.go` print error: now wrapped at `internal/cli/todo_edit.go:180` (`todo edit: print result (file already written): %w`). Resolved.
+- `ModeFromFlags` (`:89`) and `checkTodoDepends` (`:230`): unchanged, reviewer-ruled acceptable, not re-raised.
+
+Other error-handling checks:
+- [x] No ignored errors in added lines (`_, err :=` scan clean).
+- [x] Main-path errors wrapped: `internal/cli/todo_edit.go:93, 101, 116-119, 122, 136, 150, 167, 180`.
 
 ### Resource Cleanup
-- [x] Index handle: `ix` closed via `defer` at `todo_edit.go:101-106`; `reconcileAfterEdit` opens and `defer`s `Close` at `todo_edit.go:254`.
-- [x] No `sql.Rows` or transactions added. `checkTodoDepends` uses `QueryRow`/`Scan` (`todo_edit.go:229-236`), which releases the connection.
+- [x] `ix` closed by deferred closure: `internal/cli/todo_edit.go:105-110`.
+- [x] `reconcileAfterEdit` opens and defers `Close`: `internal/cli/todo_edit.go:258-259`.
+- [x] `defer resetTodoFlags(cmd)`: `internal/cli/todo_edit.go:62`.
+- [x] Atomic write removes temp file on failure via defer: `internal/cli/adopt.go:249` (`writeFileAtomic`, reused by `todo_edit.go:166`).
+- [x] No `sql.Rows` or transaction added. `checkTodoDepends` uses `QueryRow`/`Scan` (`todo_edit.go:239-241`).
 
 ### CLI Patterns (subsystem: cli)
-- [x] `--quiet` respected: pretty output gated at `todo_edit.go:167` (same pattern as `todo.go:384`, `todo.go:701`); reconcile warning gated at `todo_edit.go:175`.
+- [x] `--quiet` respected: pretty result suppressed at `internal/cli/todo_edit.go:178`; reconcile warning suppressed at `:174`. Matches peers (`todo.go:384`, `todo.go:701`).
 - [x] Errors returned, no `os.Exit` in added code.
-- [x] Input validated before any write (`validateTodoEditFlags`, `todo_edit.go:183`); "nothing to change" guard at `todo_edit.go:70-72`.
+- [x] Input validated before any write: `validateTodoEditFlags` (`todo_edit.go:83-85`); "nothing to change" guard (`todo_edit.go:80-82`).
+- [x] Stderr output only for the reconcile warning (`todo_edit.go:175`).
 
 ### TUI Patterns
-- [x] N/A. No TUI files changed.
+- [x] N/A. No `internal/tui` files changed. Async closure rule not applicable.
 
 ### Test Coverage
-- [x] Every new non-test function has direct tests or is exercised via `TestTodoEdit_*` / `TestUpsertField_*` / `TestRemoveField_*` (ran through `runTodoEditE`).
+- [x] `todo_edit.go` functions exercised through command-level `TestTodoEdit_*` tests (`internal/cli/todo_edit_test.go`, 50+ tests).
+- [x] `insert.go` helpers covered by `TestInsertField_*`, `TestUpsertField_*`, `TestRemoveField_*`, plus `TestUpsertRemoveField_RefuseContinuationShapes` (`internal/node/insert_test.go:476`) which hits `checkNoContinuation`.
+- [x] No function is untested; `lineAfter` (75.0%) is the lowest-covered new helper.
 
 ### Common Mistakes
-- [x] No new `TODO`/`FIXME` lines.
+- [x] No new `TODO`/`FIXME` in added lines.
 - [x] No commented-out code in added lines.
 - [x] No `fmt.Print`/`log.Print`/`panic` in added non-test code.
-- [x] Hardcoded paths: none added.
+- [x] No hardcoded paths in added lines.
+- [x] `gofmt` clean on changed files.
+- Info: `internal/cli/todo.go:932` (added line) carries a ticket ref `(reckon-vj55)` inside an error string. Not a comment, so the no-provenance-in-comments rule does not strictly apply. Pre-existing pattern in `todo.go:477, 922, 982`.
 
 ## Issues Found
 
@@ -67,15 +98,18 @@ Per-function coverage of changed code (from `-coverprofile`):
 None.
 
 ### Warning (Should Fix)
-1. `internal/cli/todo_edit.go:85`, `:169`, `:225` - bare `return err` (see Error Handling above). Non-blocking; wrapping `:85` and `:169` with `todo edit:` would match the file's convention.
+None.
 
 ### Info (Nice to Have)
-1. `internal/cli/todo_edit.go:225` - `checkTodoDepends` could wrap its own lookup error; currently relies on the caller's prefix.
+1. `internal/node/insert.go:102` - `commitUpsert` at 85.7%, `lineAfter` at `:116` at 75.0%; both exercised only indirectly.
+2. `internal/cli/todo.go:932` - error string carries ticket ref `reckon-vj55`; acceptable, matches adjacent lines.
 
 ## Summary
 
-**Status:** PASS WITH WARNINGS (1 warning item, 3 sites; threshold is < 3 warnings).
+**Status:** PASS
+
+All six automated checks pass. No critical issues. Zero open warnings: the reviewer-ruled bare returns are unchanged, and the print-error warning is resolved at `todo_edit.go:180`. The remaining bare returns (`todo_edit.go:84, 98, 263`; `insert.go:70, 82, 92, 167`) each pass through an already-prefixed or caller-wrapped error.
 
 **Next Steps:**
-- Proceed to code review. Optionally wrap the three bare returns before review.
-- Do not stage or commit this report per orchestrator instruction (report file written only).
+- Proceed to code review.
+- No code changes made. Only `ticket-work/reckon-fkgb/preflight-report.md` was written. Nothing staged, committed, or pushed. No `bd` commands run.
