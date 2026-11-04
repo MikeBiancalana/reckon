@@ -88,8 +88,9 @@ round-trip is itself byte-stable.
 
 `(*Node).UpsertField(key, value)` sets a frontmatter key whatever its shape:
 
-- **Scalar span:** splices the value only (adds the missing space after a bare
-  `key:`).
+- **Scalar span:** replaces the parsed value span (adds the missing space after
+  a bare `key:`); a trailing comment on that line is dropped, because the span
+  includes it.
 - **Block list:** replaces the whole block span with one `key: value` line;
   sibling lines are untouched.
 - **Absent:** delegates to `InsertField` (new key lands as the first line).
@@ -101,6 +102,12 @@ trailing comment) or the whole block span. An absent key is a no-op. The
 parser keeps one span per key, so duplicates are removed one at a time until a
 re-parse shows the key absent. Removing the last frontmatter key errors,
 because `---\n---\n` re-parses as body.
+
+Both refuse (error, no mutation) when lines after the key's span still
+belong to it but the parser did not record them: nested maps, folded scalars,
+unindented lists, or a comment or blank line inside a block list. `UpsertField`
+also refuses a value that does not read back verbatim, and `RemoveField` a
+removal that would change the body.
 
 Both re-parse before committing and never mutate `*n` on failure. Unlike
 `SetField`, neither is limited to keys with an existing scalar span.

@@ -339,7 +339,7 @@ func TestUpsertField_RefusesScalarPlusBlockDuplicate(t *testing.T) {
 	}
 }
 
-// N6 guard: parse/serialize identity over the shared corpus must keep
+// Guard: parse/serialize identity over the shared corpus must keep
 // holding while the new field primitives exist.
 func TestUpsertField_GuardRoundTripCorpus(t *testing.T) {
 	for name, src := range roundtripCorpus {
@@ -471,4 +471,71 @@ func TestRemoveField_RefValuedLinkGone(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpsertRemoveField_RefuseContinuationShapes(t *testing.T) {
+	cases := []struct {
+		name, src, key string
+	}{
+		{"unindented_list", "---\ntype: todo\ndepends-on:\n- \"[[a]]\"\n- \"[[b]]\"\n---\nb\n", "depends-on"},
+		{"comment_in_block", "---\ntype: todo\ndepends-on:\n  - \"[[a]]\"\n  # keep\n  - \"[[b]]\"\n---\nb\n", "depends-on"},
+		{"nested_map", "---\ntype: todo\ndeadline:\n  soft: 2026-01-01\n---\nb\n", "deadline"},
+		{"folded_scalar", "---\ntype: todo\ndeadline: >\n  2026-01-01\n---\nb\n", "deadline"},
+		{"blank_in_block", "---\ntype: todo\ndepends-on:\n  - \"[[a]]\"\n\n  - \"[[b]]\"\n---\nb\n", "depends-on"},
+		{"orphan_after_scalar", "---\ntype: todo\ntags:\nk: 1\n  - orphan\n---\nb\n", "k"},
+	}
+	for _, c := range cases {
+		t.Run(c.name+"/upsert", func(t *testing.T) {
+			n := mustParseStr(t, c.src)
+			requireNamedError(t, n.UpsertField(c.key, "v"), "UpsertField", c.key)
+			if string(n.Raw) != c.src {
+				t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+			}
+		})
+		t.Run(c.name+"/remove", func(t *testing.T) {
+			n := mustParseStr(t, c.src)
+			requireNamedError(t, n.RemoveField(c.key), "RemoveField", c.key)
+			if string(n.Raw) != c.src {
+				t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+			}
+		})
+	}
+}
+
+func TestRemoveField_RefusesWhenBodyWouldChange(t *testing.T) {
+	src := "---\nk: 1\n---\nintro\n---\nbar\n"
+	n := mustParseStr(t, src)
+	requireNamedError(t, n.RemoveField("k"), "RemoveField", "k")
+	if string(n.Raw) != src {
+		t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+	}
+}
+
+func TestUpsertField_RefusesValueThatDoesNotReadBack(t *testing.T) {
+	for name, value := range map[string]string{
+		"extra_key":     "x\nstate: done",
+		"fence_inject":  "x\n---\ninjected",
+		"trailing_ws":   "x ",
+		"empty_to_list": "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := "---\ntype: todo\nk: old\n---\nb\n"
+			if name == "empty_to_list" {
+				src = "---\ntype: todo\nk: old\n  - item\n---\nb\n"
+			}
+			n := mustParseStr(t, src)
+			requireNamedError(t, n.UpsertField("k", value), "UpsertField", "k")
+			if string(n.Raw) != src {
+				t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+			}
+		})
+	}
+	t.Run("insert_path", func(t *testing.T) {
+		src := "---\ntype: todo\n---\nb\n"
+		n := mustParseStr(t, src)
+		requireNamedError(t, n.UpsertField("k", "x\nstate: done"), "UpsertField", "k")
+		if string(n.Raw) != src {
+			t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+		}
+	})
 }
