@@ -2,7 +2,6 @@ package node
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 )
 
@@ -58,7 +57,38 @@ func (n *Node) InsertField(key, value string) error {
 // returns an error and leaves the node unchanged. Every path re-parses before
 // committing, and bytes outside the touched line(s) are preserved.
 func (n *Node) UpsertField(key, value string) error {
-	return errors.New("not implemented")
+	scalar, hasScalar := n.fieldSpans[key]
+	block, hasBlock := n.blockSpans[key]
+	switch {
+	case hasScalar && hasBlock:
+		return fmt.Errorf("UpsertField: key %q is present as both a scalar and a block list; resolve by hand", key)
+	case hasScalar:
+		var out []byte
+		out = append(out, n.Raw[:scalar.Start]...)
+		if scalar.Start == scalar.End && scalar.Start > 0 && n.Raw[scalar.Start-1] == ':' {
+			out = append(out, ' ')
+		}
+		out = append(out, value...)
+		out = append(out, n.Raw[scalar.End:]...)
+		return n.commitSplice("UpsertField", out)
+	case hasBlock:
+		var out []byte
+		out = append(out, n.Raw[:block.Start]...)
+		out = append(out, key+": "+value+"\n"...)
+		out = append(out, n.Raw[block.End:]...)
+		return n.commitSplice("UpsertField", out)
+	}
+	return n.InsertField(key, value)
+}
+
+// commitSplice re-parses out and, only on success, replaces *n with the result.
+func (n *Node) commitSplice(method string, out []byte) error {
+	reparsed, err := ParseAt(out, n.Loc)
+	if err != nil {
+		return fmt.Errorf("%s: re-parse after splice failed: %w", method, err)
+	}
+	*n = *reparsed
+	return nil
 }
 
 // RemoveField deletes every occurrence of key from the frontmatter: a scalar
@@ -69,5 +99,35 @@ func (n *Node) UpsertField(key, value string) error {
 // re-parses before committing, and bytes outside the removed lines are
 // preserved.
 func (n *Node) RemoveField(key string) error {
-	return errors.New("not implemented")
+	cur := n
+	for {
+		var start, end int
+		if span, ok := cur.fieldSpans[key]; ok {
+			start = bytes.LastIndexByte(cur.Raw[:span.Start], '\n') + 1
+			nl := bytes.IndexByte(cur.Raw[span.End:], '\n')
+			if nl < 0 {
+				return fmt.Errorf("RemoveField: key %q: unterminated line", key)
+			}
+			end = span.End + nl + 1
+		} else if span, ok := cur.blockSpans[key]; ok {
+			start, end = span.Start, span.End
+		} else {
+			break
+		}
+		out := make([]byte, 0, len(cur.Raw)-(end-start))
+		out = append(out, cur.Raw[:start]...)
+		out = append(out, cur.Raw[end:]...)
+		next, err := ParseAt(out, n.Loc)
+		if err != nil {
+			return fmt.Errorf("RemoveField: re-parse after removing %q failed: %w", key, err)
+		}
+		if cur.bodySpan.Start > 0 && next.bodySpan.Start == 0 {
+			return fmt.Errorf("RemoveField: removing %q would leave the frontmatter empty", key)
+		}
+		cur = next
+	}
+	if cur != n {
+		*n = *cur
+	}
+	return nil
 }
