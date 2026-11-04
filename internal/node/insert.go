@@ -144,16 +144,6 @@ func checkNoContinuation(method string, raw []byte, from int, key string) error 
 	return nil
 }
 
-// commitSplice re-parses out and, only on success, replaces *n with the result.
-func (n *Node) commitSplice(method string, out []byte) error {
-	reparsed, err := ParseAt(out, n.Loc)
-	if err != nil {
-		return fmt.Errorf("%s: re-parse after splice failed: %w", method, err)
-	}
-	*n = *reparsed
-	return nil
-}
-
 // RemoveField deletes every occurrence of key from the frontmatter: a scalar
 // line (including its newline and any trailing comment) or a whole block-list
 // span, repeating until no duplicate remains. An absent key is a no-op with a
