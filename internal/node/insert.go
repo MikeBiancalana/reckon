@@ -2,6 +2,7 @@ package node
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 )
 
@@ -47,4 +48,26 @@ func (n *Node) InsertField(key, value string) error {
 	}
 	*n = *reparsed
 	return nil
+}
+
+// UpsertField sets key to value whatever shape the key currently has: it
+// splices the value into an existing scalar line (adding the missing space
+// after a bare "key:"), replaces a whole block-list span with a single
+// "key: value" line, and delegates to InsertField when the key is absent.
+// A key present as both a scalar and a block list is ambiguous, so the call
+// returns an error and leaves the node unchanged. Every path re-parses before
+// committing, and bytes outside the touched line(s) are preserved.
+func (n *Node) UpsertField(key, value string) error {
+	return errors.New("not implemented")
+}
+
+// RemoveField deletes every occurrence of key from the frontmatter: a scalar
+// line (including its newline and any trailing comment) or a whole block-list
+// span, repeating until no duplicate remains. An absent key is a no-op with a
+// nil error. Removing the last key of a frontmatter block, which would leave
+// an empty fence that re-parses as body, returns an error. Every path
+// re-parses before committing, and bytes outside the removed lines are
+// preserved.
+func (n *Node) RemoveField(key string) error {
+	return errors.New("not implemented")
 }
