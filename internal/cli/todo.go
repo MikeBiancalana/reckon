@@ -706,27 +706,13 @@ func runTodoDoneE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// doneDurableTodo resolves ref to a durable todo file (ULID fast-path, else a
-// walk over todos/*.md matching ULID or alias), then flips state->done via a
-// span-local SetField, or reports an idempotent skip if already done.
+// doneDurableTodo resolves ref to a durable todo through the shared resolver
+// (resolveDurableTodoRef), then flips state->done via a span-local SetField,
+// or reports an idempotent skip if already done.
 func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
-	todosDir := filepath.Join(vaultDir, "todos")
-
-	fastPath := filepath.Join(todosDir, ref+".md")
-	n, foundPath, err := loadDurableTodoAt("todo done", fastPath)
+	n, foundPath, err := resolveDurableTodoRef("todo done", vaultDir, ref)
 	if err != nil {
 		return todoDoneResult{}, err
-	}
-	if n != nil && n.Type != "todo" {
-		// e.g. ref == "inbox" resolving to the ephemeral container: not a
-		// durable todo match, fall through to the type-filtered walk below.
-		n, foundPath = nil, ""
-	}
-	if n == nil {
-		n, foundPath, err = findDurableTodoByRefOrAlias("todo done", todosDir, ref)
-		if err != nil {
-			return todoDoneResult{}, err
-		}
 	}
 	if n == nil {
 		return todoDoneResult{}, fmt.Errorf("todo done: no todo found matching %q (not found)", ref)
@@ -955,7 +941,7 @@ func findDurableTodoByRefOrAlias(verb, todosDir, ref string) (*node.Node, string
 		if err != nil || n.Type != "todo" {
 			continue
 		}
-		if n.ULID == ref || containsString(n.Aliases, ref) {
+		if (n.ULID != "" && n.ULID == ref) || containsString(n.Aliases, ref) {
 			return n, path, nil
 		}
 	}

@@ -1,13 +1,13 @@
 {
   "ticket_id": "reckon-kcpb",
-  "phase": "implementer",
+  "phase": "preflight",
   "worktree": ".worktrees/reckon-kcpb",
   "subsystem": "cli",
   "attempts": {
     "planner": 1,
     "test_writer": 1,
-    "implementer": 0,
-    "simplify": 0,
+    "implementer": 1,
+    "simplify": 1,
     "preflight": 0,
     "reviewer": 0
   },

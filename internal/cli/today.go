@@ -437,10 +437,9 @@ func dispatchTodayAct(vaultDir, ref, key, arg string, noLog bool) (todayActResul
 
 // loadNativeTodoForEdit resolves ref to a durable todo file (ULID fast-path,
 // else a walk over todos/*.md matching ULID or alias). A path-shaped ref
-// resolves only through the alias walk here; doneDurableTodo (todo.go) still
-// also accepts it as a direct path under todos/.
+// resolves only through the alias walk.
 func loadNativeTodoForEdit(vaultDir, ref string) (*node.Node, string, error) {
-	n, foundPath, err := resolveDurableTodoRef("todo done", vaultDir, ref)
+	n, foundPath, err := resolveDurableTodoRef("today act", vaultDir, ref)
 	if err != nil {
 		return nil, "", err
 	}
@@ -452,8 +451,12 @@ func loadNativeTodoForEdit(vaultDir, ref string) (*node.Node, string, error) {
 
 // resolveDurableTodoRef resolves ref to a durable todo (ULID fast-path, else a
 // walk over todos/*.md matching ULID or alias). It returns a nil node, with no
-// error, when nothing matches; verb prefixes read/parse/CRLF errors.
+// error, when nothing matches; verb prefixes the empty-ref and
+// read/parse/CRLF errors. A path-shaped ref resolves by alias only.
 func resolveDurableTodoRef(verb, vaultDir, ref string) (*node.Node, string, error) {
+	if strings.TrimSpace(ref) == "" {
+		return nil, "", fmt.Errorf("%s: empty ref (give a todo ULID or alias)", verb)
+	}
 	todosDir := filepath.Join(vaultDir, "todos")
 
 	var (
@@ -470,6 +473,8 @@ func resolveDurableTodoRef(verb, vaultDir, ref string) (*node.Node, string, erro
 		}
 	}
 	if n != nil && n.Type != "todo" {
+		// e.g. ref == "inbox" resolving to the ephemeral container: not a
+		// durable todo match, fall through to the type-filtered walk below.
 		n, foundPath = nil, ""
 	}
 	if n == nil {
