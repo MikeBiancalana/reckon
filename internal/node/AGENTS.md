@@ -105,7 +105,9 @@ because `---\n---\n` re-parses as body.
 
 Both refuse (error, no mutation) when lines after the key's span still
 belong to it but the parser did not record them: nested maps, folded scalars,
-unindented lists, or a comment or blank line inside a block list. `UpsertField`
+unindented lists, or a comment or blank line inside a block list that is
+followed by more items (a comment followed by a sibling key or the closing
+fence is accepted). `UpsertField`
 also refuses a value that does not read back verbatim, and `RemoveField` a
 removal that would change the body.
 
