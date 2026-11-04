@@ -107,9 +107,13 @@ Both refuse (error, no mutation) when lines after the key's span still
 belong to it but the parser did not record them: nested maps, folded scalars,
 unindented lists, or a comment or blank line inside a block list that is
 followed by more items (a comment followed by a sibling key or the closing
-fence is accepted). `UpsertField`
-also refuses a value that does not read back verbatim, and `RemoveField` a
-removal that would change the body.
+fence is accepted). `UpsertField` also refuses a value that does not read back
+verbatim, and `RemoveField` a removal that would change the body.
+
+**Known gap:** a multi-line quoted scalar or flow collection whose unindented
+continuation line looks like a `key:` line is not refused, because it is
+indistinguishable from a sibling without a YAML parser. The edit succeeds and
+can leave that line behind.
 
 Both re-parse before committing and never mutate `*n` on failure. Unlike
 `SetField`, neither is limited to keys with an existing scalar span.

@@ -55,10 +55,9 @@ func (n *Node) InsertField(key, value string) error {
 // "key: value" line, and delegates to InsertField when the key is absent.
 // A key present as both a scalar and a block list is ambiguous, so the call
 // returns an error and leaves the node unchanged, as does a key whose value
-// continues on lines the parser does not model (nested map, folded scalar,
-// blank line inside a list, comment followed by more list items) and a value that does not read back
-// verbatim. Every path re-parses before committing, and bytes outside the
-// touched line(s) are preserved.
+// continues on lines the parser does not model (see checkNoContinuation) and a
+// value that does not read back verbatim. Every path re-parses before
+// committing, and bytes outside the touched line(s) are preserved.
 func (n *Node) UpsertField(key, value string) error {
 	scalar, hasScalar := n.fieldSpans[key]
 	block, hasBlock := n.blockSpans[key]
@@ -126,9 +125,10 @@ func lineAfter(raw []byte, pos int) int {
 // span. Blank and comment lines are skipped at any indent. The closing fence,
 // or an unindented non-list line that looks like a sibling "key:" line, ends
 // the key's value; any other line is a continuation the parser did not
-// record, so splicing the span would orphan it. A quoted scalar whose
-// continuation line itself looks like "k: v" is indistinguishable from a
-// sibling without a YAML parser and is accepted.
+// record, so splicing the span would orphan it. A multi-line quoted scalar or
+// flow collection whose continuation line itself looks like a sibling key is
+// indistinguishable from one without a YAML parser, so it is accepted and the
+// edit can leave that line behind.
 func checkNoContinuation(method string, raw []byte, from int, key string) error {
 	for pos := from; pos < len(raw); {
 		end := lineAfter(raw, pos)

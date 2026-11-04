@@ -1,15 +1,15 @@
 {
   "ticket_id": "reckon-fkgb",
-  "phase": "implementer",
+  "phase": "pr_gate",
   "worktree": ".worktrees/reckon-fkgb",
   "subsystem": "cli",
   "attempts": {
     "planner": 1,
     "test_writer": 1,
-    "implementer": 0,
-    "simplify": 0,
-    "preflight": 0,
-    "reviewer": 0
+    "implementer": 3,
+    "simplify": 3,
+    "preflight": 3,
+    "reviewer": 3
   },
   "new_test_names": [
     "TestRemoveField_AbsentKeyIsNoOp",
@@ -67,5 +67,5 @@
   ],
   "stall_count": 0,
   "last_test_output_hash": "",
-  "status": "in_progress"
+  "status": "ready_for_push"
 }
