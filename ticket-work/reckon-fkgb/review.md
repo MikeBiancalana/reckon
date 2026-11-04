@@ -1,135 +1,122 @@
-# Code Review: reckon-fkgb (`rk todo edit`)
+# Code Review: reckon-fkgb (`rk todo edit`), feedback loop 1
 
 **Verdict:** REQUEST CHANGES
 
-## Summary
+Reviewed HEAD `4e915a1` against `origin/main`. The first review is at git rev `2361eb9`.
 
-The command's core holds up: validate first, one atomic write, truthful no-op handling, `--depends` checks, and byte-identical `today act` / `todo done` output. Two Major findings block merge, and both have small fixes:
-- **Finding 1:** the new primitives leave invalid frontmatter behind when a key has continuation lines the parser doesn't model, and the command still reports success.
-- **Finding 2:** an empty ref silently edits an arbitrary id-less todo.
+All prior findings are fixed or accepted except that finding 1's class is only partly closed. `checkNoContinuation` still lets three continuation shapes through, and each one silently corrupts the file while the command reports success (new finding 1). The fix is one small helper change, prototyped and passing. Everything else is Minor.
 
-The rest are Minor. D1, D2, and the plan's accepted risks are not re-opened.
+## Prior Findings
 
-## Findings
+| # | Status | Evidence |
+|---|---|---|
+| 1 | Partly fixed | All seven original shapes are refused with bytes unchanged at CLI or primitive level. Three other shapes still get through: new finding 1. |
+| 2 | Fixed | `""` and `"  "` refused, id-less todo unchanged. |
+| 3 | Fixed | Body-containing-`---` fixture refused, `Raw` unchanged; control fixture with a remaining key succeeds. |
+| 4 | Fixed | Newline-injection and trailing-space values refused on the scalar, block and absent paths. `""` over indented items refused by the continuation check. |
+| 5 | Mostly fixed | Backslash and tab refused. Invalid UTF-8 still gets through: new finding 4. |
+| 6 | Fixed for `todo edit` | `../outside` reports not found, file unchanged. Side effect on `today act`: new finding 3. |
+| 7 | Fixed | Legacy `depends:` cycle refused by ULID and by alias on both sides. |
+| 8 | Accepted, not fixed | Test-only in-process flag leak, deliberately left. |
+| 9 | Fixed | `internal/node/AGENTS.md:91-93` documents it; the binary drops `# soft` as documented. |
+| 10 | Fixed | With stdout at `/dev/full`: exit 1, wrapped message, file written, index already shows the new value. |
+| 11 | Fixed | Both cited comments reworded. A new reference was added elsewhere: new finding 5. |
+| 12 | Fixed | Branch removed (`insert.go:158-160`). |
+| 13 | Fixed | Comment reworded (`todo_edit.go:19-21`); absent-field clear still reports `cleared`. |
 
-### Major
+## New Findings
 
-1. **[Major]** `UpsertField` / `RemoveField` orphan continuation lines and report success — `internal/node/insert.go:65-79`, `:105-112` — The parser gives these shapes only a one-line scalar span or a truncated block span, so the lines below are left behind. Each CLI row exited 0, and the `--json` result listed the field as set or cleared:
+1. **[Major]** `checkNoContinuation` misses continuation lines that start at column 0 — `internal/node/insert.go:139-142` — The helper accepts any first non-blank line that doesn't start with space, tab or `-`. Each row below exited 0 and reported the field set or cleared. PyYAML loads every input and rejects every output. Obsidian was not run; [INFERRED] it fails the same way.
 
-   | Fixture under the key | Command | Result |
+   | Fixture under the key | Command | Left in the file |
    |---|---|---|
-   | Unindented list `depends-on:\n- "[[tgt]]"\n- "[[other]]"` | `--depends tgt` | `depends-on: "[[tgt]]"\n- "[[tgt]]"\n- "[[other]]"` |
-   | Same | `--no-depends` | `- "[[tgt]]"\n- "[[other]]"` remain under `type: todo`, while JSON says `cleared:["depends"]` |
-   | Comment inside a block, `  - "[[tgt]]"\n  # keep\n  - "[[other]]"` | `--no-depends` | `  # keep\n  - "[[other]]"` orphaned |
-   | Nested map `deadline:\n  soft: 2026-01-01` | `--deadline` or `--no-deadline` | `  soft: ...` left under the new line or the previous key |
-   | Folded scalar `deadline: >\n  2026-01-01` | `--deadline 2026-03-03` | `deadline: 2026-03-03\n  2026-01-01` |
-   | Blank line inside a block, `  - "[[A]]"\n\n  - "[[B]]"` | `--no-depends` | `  - "[[B]]"` stays in the file |
-   | Primitive only: `tags:\nk: 1\n  - orphan` | `RemoveField("k")` | `tags` silently adopts `orphan` as a block item |
+   | `depends-on:\n  - "[[tgt]]"\n# keep\n  - "[[other]]"` | `--no-depends` | `# keep\n  - "[[other]]"`, with `"cleared":["depends"]` |
+   | Same | `--depends tgt` | `depends-on: "[[tgt]]"\n# keep\n  - "[[other]]"` |
+   | `depends-on:\n# keep\n- "[[tgt]]"` | `--no-depends` | `# keep\n- "[[tgt]]"` |
+   | `deadline:\n# c\n  soft: 2026-01-01` | `--deadline` or `--no-deadline` | `# c\n  soft: 2026-01-01` |
+   | `depends-on: [\n"[[tgt]]",\n"[[other]]"\n]` | `--no-depends` or `--depends tgt` | `"[[tgt]]",\n"[[other]]"\n]` |
+   | `depends-on: ["[[tgt]]",\n"[[other]]"]` | `--no-depends` | `"[[other]]"]` |
+   | `deadline: "2026-01-01\nsoft"` | `--deadline` or `--no-deadline` | `soft"` |
+   | `priority: 'A\nB'` | `--no-priority` | `B'` |
 
-   Each result is invalid or changed YAML for Obsidian and other readers, while `rk`'s own re-parse passes, so the re-parse guard can't catch it. This breaks the promise that out-of-subset shapes are "not corrupted" (`internal/node/AGENTS.md:153`). `--no-depends` is the worst case: it reports the dependency cleared while targets stay in the file.
+   This also makes `AGENTS.md:107-108` and the `UpsertField` doc comment (`insert.go:57-60`) untrue, since both say a comment inside a list is refused. `--no-depends` is the worst case, as in the first review: it reports the dependency cleared while a target stays in the file.
 
-   **Fix:** add one helper in `node`, used by the scalar and block paths of both primitives. Skip blank or whitespace-only lines after the affected span. If the next line inside the fence starts with a space, a tab, or `-`, return an error with no mutation (`key %q has continuation lines; resolve by hand`). Add these seven shapes as `insert_test.go` cases. The existing tests have no such fixture. `SetField` and `SetAliases` splice the same way on these shapes; applying the helper there is a follow-up, not part of this PR.
+   **Fix:** invert the default in the helper:
+   - Skip a blank line or a comment line at any indent.
+   - Return nil for the exact `---` line.
+   - Return nil for a column-0 line that doesn't start with `-` and either matches `fmScalarRe`, contains `: `, or ends in `:`.
+   - Refuse everything else.
 
-2. **[Major]** An empty ref edits the first id-less todo — `internal/cli/todo_edit.go:92`, via `internal/cli/todo.go:958` — `n.ULID == ref` is true when both are empty. `rk todo edit "$UNSET" --deadline 2026-05-05 --json` exited 0 and wrote `deadline:` into `todos/idless.md`, reporting `"ref":""`. The plan rejects `--deadline ""` for this same unset-variable hazard (D1), but the ref has no such guard. `origin/main` has the same flaw: `todo done ""` marked the file done, and `today act "" p A` set its priority.
+   Add the table's shapes to `TestUpsertRemoveField_RefuseContinuationShapes`. I prototyped this in an exported copy: `internal/node` and `internal/cli` tests pass, all rows above are refused with bytes unchanged, and every legitimate shape in the regression table below still succeeds except the `...` line, which it refuses.
 
-   **Fix:** in `runTodoEditE`, before resolving, reject an empty or whitespace-only ref. Add a test with an id-less fixture. Leave `todo done` and `today act` unchanged here, as the plan requires, and file the shared fix at `todo.go:958` as a follow-up alongside OPEN-8.
+   All three sibling tests are needed. `fmScalarRe` alone would refuse `Due Date: 1` and `my.key: 1`. Without it, `deadline:2026-08-01` is refused, and `SetField` writes that form on a bare `deadline:` line (plan, "New finding"). A prototype without it did refuse that sibling and `k:\tv`, both of which HEAD accepts. A plain "contains `:`" test is too loose, because it would pass `"[[a:b]]",`, which the rule above refuses. [OPEN] A multi-line quoted scalar whose continuation line itself contains `: ` still passes; accept it, since only a real YAML parser could tell.
 
-### Minor
+2. **[Minor]** An indented comment after a key is wrongly refused — `internal/node/insert.go:139` — `deadline: 2026-01-01\n  # note\nk: v` with `--deadline` or `--no-deadline`, and the same fixture with the comment last before the fence, fail with `has continuation lines`. PyYAML reads this as a plain sibling and comment, so the message is wrong. Bytes stay unchanged, so this is an annoyance rather than a risk. **Fix:** new finding 1's comment skip covers it (verified in the prototype).
 
-3. **[Minor]** `RemoveField`'s empty-frontmatter guard misses a body containing `---` — `internal/node/insert.go:124` — `---\nk: 1\n---\nintro\n---\nbar\n` with `RemoveField("k")` returns nil and yields `---\n---\nintro\n---\nbar\n`, so `Body` shrinks to `bar\n` and `intro` becomes frontmatter. The CLI can't reach this because a todo keeps `type`, but the method's documented contract is false. **Fix:** error unless `next.Body == cur.Body`.
+3. **[Minor]** `today act` changed for path refs, and now disagrees with `todo done` — `internal/cli/today.go:438-441`, `:466`, `internal/cli/todo.go:715` — Finding 6's guard sits in the shared resolver, but `doneDurableTodo` keeps its own unguarded copy.
 
-4. **[Minor]** `UpsertField` doesn't check that the re-parse matches the value it was given — `internal/node/insert.go:59-82` — Run against the primitive:
-   - `"x\nstate: done"` adds a `state` key.
-   - `"x\n---\ninjected"` moves text into the body.
-   - `"x "` reads back as `x`.
-   - `""` over a key followed by indented items makes the key a block list.
+   | Ref | `today act` on `origin/main` | `today act` on HEAD | `todo done` on HEAD |
+   |---|---|---|---|
+   | `sub/x` (`todos/sub/x.md`) | Edits the file | Not found | Marks done |
+   | `../outside` | Edits the file | Not found | Marks done |
 
-   The CLI can't reach these because every value is validated first (`todo_edit.go:183-218`). **Fix:** after re-parsing, error unless `frontmatter[key] == value`.
+   The comment at `today.go:438-441` still says the two "never disagree on which file a ref names", which is now false, and the plan's "`today act` keeps its behavior" no longer holds for these refs. The traversal write also stays reachable through `todo done`. **Fix:** keep the guard, correct the comment, state the `today act` change in the PR description, and add the `todo done` guard to the follow-up with its empty-ref fix (below). Routing `doneDurableTodo` through `resolveDurableTodoRef` would close both, but the plan keeps `todo done` out of this PR.
 
-5. **[Minor]** A `--depends` alias with a backslash passes validation but writes a dangling link — `internal/cli/todo_edit.go:143`, `:212` — With alias `c:\x`, the lookup matches and the command exits 0, but `strconv.Quote` stores `"[[c:\\x]]"`. The parser doesn't unescape, so the edge has `dst` = `c:\\x` and `dst_key` = null. Other characters `strconv.Quote` escapes go through the same path. **Fix:** also reject `\` and non-printable characters at `:212`. `render.go` has the same quoting, but only this command validates the target and then reports success.
+4. **[Minor]** A `--depends` alias with invalid UTF-8 still writes a dangling link — `internal/cli/todo_edit.go:217` — An invalid byte decodes to U+FFFD, which `unicode.IsPrint` accepts, but `strconv.Quote` escapes it. Alias `a\xffb` exited 0, wrote `depends-on: "[[a\xffb]]"` with a literal backslash, and the edge has `dst_key` null. Very unlikely in practice. **Fix:** replace the non-printable test with ``strconv.Quote(v) != `"`+v+`"` ``, keeping `[]|#` in `ContainsAny`. That one comparison covers backslash, double quote, non-printable characters and invalid UTF-8, and can't drift from the quoting it guards.
 
-6. **[Minor]** Security: a `../` ref writes outside `todos/` — `internal/cli/today.go:459` — `rk todo edit ../outside --deadline 2026-05-05` modified `<vault>/outside.md`, because the fast path joins the ref unchecked and needs only `type: todo`. `todo done` uses the same fast-path code on `origin/main`, but `todo edit` adds a new way to write through it. **Fix:** skip the fast path when `ref != filepath.Base(ref)`, so the walk reports not-found.
+5. **[Minor]** New provenance in a test comment — `internal/cli/todo_edit_test.go:916` — The section header `// Review regressions` refers to this review, which is what prior finding 11 removed elsewhere. **Fix:** name the behavior, for example `// Refusals: unmodeled shapes, refs, depends targets`.
 
-7. **[Minor]** The cycle check ignores `depends:` edges while `--no-depends` treats them as dependencies — `internal/cli/todo_edit.go:235` vs `:69` — With B holding `depends: "[[A]]"`, `edit A --depends B` succeeded. **Fix:** use `rel IN ('depends-on','depends')`. This doesn't change D2, because it only affects what is read.
+6. **[Minor]** A key the parser doesn't match looks absent — `internal/node/node.go:103`, `internal/cli/todo_edit.go:139` — `"deadline": 2026-01-01` or `deadline : 2026-01-01` with `--no-deadline` exits 0, reports `cleared`, and leaves the line. `"deadline": ...` with `--deadline` inserts a second `deadline` key. No file gets corrupted on a clear, but the JSON is false. Rare, because neither Obsidian nor `rk` writes these forms [INFERRED]. `today act D` reaches the same insert through `setOrInsertField` (read, not run). **Fix:** follow-up; not needed for this PR.
 
-8. **[Minor]** Flag values leak in-process when cobra fails before `RunE` — `internal/cli/todo.go:132` (`Args`), `internal/cli/todo_edit.go:61` — `todo edit --deadline 2026-07-07` with no ref fails argument validation, so the deferred reset never runs. In a scratch test, the next `todo add` in that process wrote `deadline: 2026-07-07`, and `Changed` stayed true on the edit flag set even after `resetCLIFlags`. Production is one command per process, so only tests are exposed, and no current test triggers it. **Fix:** have `resetCLIFlags` in `query_test.go` also call `resetTodoFlags(todoEditCmd)` and `resetTodoFlags(todoAddCmd)`.
+## Regression Checks
 
-9. **[Minor]** The docs say "splices the value only", but a trailing comment on the line is dropped — `internal/node/AGENTS.md:91`, `internal/node/insert.go:65-73` — `deadline: 2026-01-01 # soft` with `--deadline 2026-02-02` loses `# soft`, because the parser's value span includes the comment. `SetField` behaves the same, and `RemoveField`'s docs do state it. **Fix:** document this for `UpsertField`. Preserving the comment isn't required.
-
-10. **[Minor]** A print failure returns unwrapped, after the write, and skips the reconcile — `internal/cli/todo_edit.go:167-171` — A failed stdout write exits non-zero with nothing saying the file changed, and the index stays stale. **Fix:** reconcile before printing, and wrap as `todo edit: print result (file already written): %w`.
-
-11. **[Minor]** Provenance in new test comments — `internal/node/insert_test.go:342` (`N6 guard:` is a plan ID), `internal/cli/todo_edit_test.go:1-7` ("TDD red tests", "compiles before the implementation exists") — **Fix:** reword both to describe behavior. New production comments in `todo_edit.go`, `insert.go`, `todo.go`, and `today.go` are clean. The `insert_test.go:3-11` and `:120` references predate this ticket.
-
-12. **[Minor]** Unreachable branch in `RemoveField` — `internal/node/insert.go:107-110` — A scalar span always ends before the `\n` that precedes the closing fence (`closeAbs - 1`), so `nl < 0` can't happen. "Unterminated line" is also not a real state. **Fix:** delete the branch.
-
-13. **[Minor]** The `Cleared` comment is inaccurate — `internal/cli/todo_edit.go:19-20` — It says "removed field names", but the list also names fields that were already absent. That's what the idempotence rule needs (identical result on re-run). **Fix:** reword to "fields now absent".
-
-## Answers to the Requested Probes
-
-| Area | Result |
+| Question | Result |
 |---|---|
-| Value with `:` or `#` in a sibling or in the target | No finding. Bytes preserved and the value reads back whole. |
-| `key:` in the body or inside another key's block list | No finding. Parsing is bounded by the fence, and indented lines never match a key. |
-| Closing fence with no trailing newline | No finding. Set and clear are byte-correct. |
-| Prefix collisions (`depends-on-note`, `deadline-note`) | No finding. Keys match exactly. |
-| Comment or nested map after a key | Finding 1. A column-0 comment after a block survives. |
-| Duplicate keys | No corruption. Scalar+scalar splices the winning line. Scalar+block is refused on set and fully removed on clear. Block+block leaves a scalar+block duplicate, so the next `--depends` is refused and `--no-depends` recovers it. |
-| Skip-write and reconcile | No finding. `original` is unaffected by the edits. Same-value and absent-clear runs left the file unchanged. Reconcile failure warns with exit 0. An unwritable dir errors with the file untouched. |
-| Partial writes | No finding. All edits happen in memory before one `writeFileAtomic`; a duplicate-key refusal left the file unchanged. |
-| Flag reset | All eight flags and their `Changed` state reset after every `RunE` path. Leak only before `RunE` (finding 8). |
-| `--depends` self detection | No finding. ULID, alias, id-less stem, id-less alias, and `file:` key all rejected. |
-| Cycle query | No finding for `depends-on`. ULID, alias on both sides, and id-less self all rejected. A removed edge no longer blocks, and a new on-disk edge is seen. A stale edge with a preserved mtime does block, but that comes from reconcile's mtime fast path, not this query. |
-| Duplicate alias | No finding. The lookup and the resolver picked the same node in the one fixture run. |
-| Alias stored as given | No finding (unicode included). Replacing a link updates `edges`. Backslash: finding 5. |
-| `verb` change, `today act` / `todo done` | No finding. 100 scenarios byte-identical on `origin/main` and this branch, with file-state hashes also identical. `today act` strings are pinned by `TestTodoEdit_GuardTodayActUnchanged`. |
-| Recurrence | No finding. `--no-scheduled` uses `repeat` from the same parse, and is rejected for scalar, block, and `state: done` recurring todos. An empty `repeat:` is allowed, and `todo done` already rejects that shape as malformed (`todo.go:764-766`), so no working rule loses its cursor. `--scheduled` then `todo done` advances from the new date, and `--deadline` is left alone. |
-| JSON | No finding beyond 1 and 13. A set to the existing value reports that value and doesn't write. `depends` echoes the ref as given. |
+| Following column-0 comment, sibling after a blank line, last key before the fence, blank line before the fence, sibling with an unindented list of its own, sibling `Due Date:`, `my.key:`, `deadline:2026-08-01` or `k:\tv` | Accepted, correct bytes. |
+| Following indented comment | Wrongly refused: finding 2. |
+| `---x` line | Not reachable. The parser takes the first `\n---` as the fence and treats a suffixed one as no frontmatter, so the file has no todo type and reports not found. |
+| `...` as a fence | Not a fence in the parser. As a stray line it passes today and is refused after the finding 1 fix; PyYAML rejects `...` followed by a key, so refusing is fine. |
+| CRLF | CLI refuses earlier. At primitive level the helper handles CRLF lines and fence correctly. |
+| Failure message | Clear and names flag and key: `todo edit: --no-depends: RemoveField: key "depends-on" has continuation lines; resolve by hand`. Only finding 2 mislabels. |
+| Error leaves the file untouched | Yes. Clear refused alongside sets, and upsert refused after an earlier clear, both left bytes unchanged; mtime and directory listing checked on the first. |
+| Slash alias through the walk | Resolves for `proj/foo`, `../esc`, `a/`, `.`, `..` on `todo edit`, and `proj/foo` on `today act`. |
+| `today act` / `todo done` parity for non-path refs | 259 scenarios, output and `todos/` hashes identical. The single diff is a random `did_entry_id` ULID. |
+| Read-back on CLI values | No false failure. Absent, double-quoted, unquoted, single-quoted, flow, block, bare `key:`, bare with trailing spaces, trailing spaces after the value, and duplicate scalars all succeed. `frontmatter[key]` keeps the quotes as written, so `"[[x]]"` compares equal. Date, shorthand, ULID, and alias values with space, `:`, `'`, `/`, `^`, accents and CJK pass and resolve to a `dst_key`. |
+| Same-value set | Exit 0, no write. |
+| Quality gates | `gofmt -l` empty, `go vet ./internal/...` clean, `go test -count=1 ./internal/node ./internal/cli` pass, no worktree changes from the tests. |
 
-## Open Points from Earlier Phases
-
-| Preflight site | Decision |
-|---|---|
-| `todo_edit.go:85` | Keep. It matches peers (`todo.go:361`, `:517`, `:683`), and `root.go:85` rejects the flag conflict first. |
-| `todo_edit.go:169` | Change, see finding 10. |
-| `todo_edit.go:225` | Keep. The callee adds `today: lookup %q` and the caller adds `todo edit: --depends:`. |
-
-Provenance: see finding 11.
-
-## Other Dimensions
-
-- **Correctness:** Findings 1-5, 7.
-- **Error handling:** Finding 10.
-- **Maintainability:** Findings 9, 11-13.
-- **Architecture:** No findings. The extractions in `today.go` are mechanical, the file split matches `todo_add_wizard.go` and `todo_browse.go`, and the code follows the plan with no material deviation.
-- **Testing:** Gaps are listed in findings 1 and 2. `-shuffle=on` fails `TestAdd*` and `TestChecklist*` tests on both `origin/main` and this branch, and no `TestTodoEdit*` test failed across four full shuffled runs of this branch, so that isn't from this ticket; follow-up.
-- **Performance:** No findings. `--depends` reconciles twice (pre-write check, post-write refresh), which D6 calls for.
-- **Security:** SQL uses placeholders. See finding 6.
+Anything else in the fix delta: no finding. Reconcile before print, `lineAfter`, the `commitUpsert` rename and the `RemoveField` loop all behaved correctly, including removing a scalar and block duplicate of one key.
 
 ## Pre-existing, Not Blocking (follow-ups to file)
 
-- Empty ref on `todo done` and `today act` (finding 2).
-- `writeFileAtomic` replaces a symlinked todo with a regular file and leaves the link's target stale, while exiting 0. Observed through `todo edit`; the helper is unchanged by this branch.
-- Plan-accepted risk confirmed: `--depends file:n2.md` passes the lookup and writes a link with `dst_key` null.
+- Empty ref on `todo done` and `today act` (prior finding 2). Add the `todo done` path guard here (new finding 3).
+- `SetField` and `SetAliases` splice the same way on unmodeled continuation shapes (prior finding 1).
+- `writeFileAtomic` replaces a symlinked todo with a regular file and leaves the link's target stale, while exiting 0.
+- `--depends file:n2.md` passes the lookup and writes a link with `dst_key` null (plan-accepted risk).
+- `-shuffle=on` fails `TestAdd*` and `TestChecklist*` on both `origin/main` and this branch (not re-run this loop).
+- Keys the parser doesn't match (new finding 6).
 
 ## Experiments Run
 
-Everything ran outside the repo, in the scratchpad, with `RECKON_VAULT`, `RECKON_CACHE`, and `RECKON_DATA_DIR` set to temp dirs.
+All ran outside the repo with `RECKON_VAULT`, `RECKON_CACHE` and `RECKON_DATA_DIR` in fresh temp dirs, using binaries built from HEAD and `origin/main`.
 
 | Experiment | Coverage |
 |---|---|
-| CLI byte matrix | 33 frontmatter fixtures through the `rk todo edit` binary, inspected as file output |
-| `--depends` and refs | Self, cycle, stale edge, legacy `depends`, alias, unicode, backslash, duplicate alias, non-todo target, `file:` key, empty ref, `../` ref, directory ref, `inbox` |
-| Recurrence and validation | `repeat` variants, `todo done` advance, invalid values, conflict flags |
-| Failure paths | Cache path under a regular file, read-only `todos/`, `--json --ndjson`, symlink, file mode |
-| Parity | Binaries from `origin/main` and HEAD on a 100-scenario matrix: refs (missing, CRLF, conflict marker, inbox, directory, empty, `../`, ULID, alias) across all `today act` keys and `todo done`, bad args, unreadable file; diffed output and file hashes |
-| Primitive probes | Temporary Go test in an exported copy of HEAD, for findings 3 and 4 |
-| Flag state | Temporary Go test in the same copy, through `RootCmd`, for finding 8 and the reset check |
-| Test order | `go test -shuffle=on` on both trees; `-race` for the `TodoEdit` tests on HEAD (passed) |
+| Prior findings | CLI reproductions of 1, 2, 5, 6, 7, 9, 10, 13; temporary Go test in an exported copy for 1 (primitive row), 3, 4; code read for 11, 12 |
+| Continuation matrix | 18 legitimate-shape runs and 12 continuation-shape runs, with exit code, byte hash and resulting frontmatter |
+| Atomicity | Refusal with several flags, in both clear-first and later-upsert order |
+| Read-back | 13 existing-shape runs, 9 alias forms with the resulting edge, invalid UTF-8 alias, primitive probes for quoted, date, ULID and flow values, plus CRLF and duplicates |
+| Refs | Slash aliases, `.`, `..`, `a/`, nested and `../` refs on `today act` (both binaries) and `todo done` (HEAD) |
+| Parity | 17 refs (ULID, alias, slash alias, id-less, recurring, CRLF, conflict marker, note, inbox, directory, unreadable, missing, empty, space, `.`, `..`, directory name) across the `today act` keys, `--json` and pretty `todo done`, and bad args: 259 scenarios. Timestamps in log lines and temp paths normalized; `log/` excluded from hashes |
+| YAML check | PyYAML on the input and output of every finding 1 row, the indented comment, and a `...` line |
+| Fix prototype | Finding 1's rule applied in an exported copy; `internal/node` and `internal/cli` tests, the continuation matrix re-run, and no-space siblings compared across HEAD, a prototype without `fmScalarRe`, and the final rule |
+
+Not run: Obsidian, full `go test ./...`, integration tests (preflight covered those at `e85c7d0`; later commits are docs only).
 
 ## Decision
 
-**Required before merge:** findings 1 and 2.
+**Required before merge:** finding 1.
 
-**Should fix in the same pass (one-line or small changes):** findings 3, 4, 5, 6, 7, 10, 11, 12, 13.
+**Should fix in the same pass (small changes):** findings 3, 4, 5. Finding 2 comes with finding 1.
 
-**Optional:** findings 8 and 9.
+**Follow-up:** finding 6 and the list above.
