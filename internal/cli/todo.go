@@ -51,6 +51,11 @@ var (
 	todoListDurableFlag   bool
 	todoListEphemeralFlag bool
 	todoDoneEphemeralFlag bool
+	todoPriorityFlag      string
+	todoNoDeadlineFlag    bool
+	todoNoScheduledFlag   bool
+	todoNoPriorityFlag    bool
+	todoNoDependsFlag     bool
 )
 
 // resetTodoFlags restores todo flag variables to their defaults and clears the
@@ -71,7 +76,12 @@ func resetTodoFlags(cmd *cobra.Command) {
 	todoListDurableFlag = false
 	todoListEphemeralFlag = false
 	todoDoneEphemeralFlag = false
-	for _, name := range []string{"ephemeral", "scheduled", "deadline", "depends", "repeat", "author", "message", "edit", "all", "state", "durable"} {
+	todoPriorityFlag = ""
+	todoNoDeadlineFlag = false
+	todoNoScheduledFlag = false
+	todoNoPriorityFlag = false
+	todoNoDependsFlag = false
+	for _, name := range []string{"ephemeral", "scheduled", "deadline", "depends", "repeat", "author", "message", "edit", "all", "state", "durable", "priority", "no-deadline", "no-scheduled", "no-priority", "no-depends"} {
 		if fl := cmd.Flags().Lookup(name); fl != nil {
 			fl.Changed = false
 		}
@@ -86,7 +96,7 @@ func resetTodoFlags(cmd *cobra.Command) {
 var todoCmd = &cobra.Command{
 	Use:   "todo",
 	Short: "Manage todo items (durable and ephemeral)",
-	Long:  "Create, list, and complete todo items. Durable todos live one-per-file under todos/<ULID>.md; ephemeral todos are checkbox lines in a shared todos/inbox.md container.",
+	Long:  "Create, list, edit, and complete todo items. Durable todos live one-per-file under todos/<ULID>.md; ephemeral todos are checkbox lines in a shared todos/inbox.md container.",
 }
 
 var todoAddCmd = &cobra.Command{
@@ -113,6 +123,16 @@ var todoDoneCmd = &cobra.Command{
 	RunE:         runTodoDoneE,
 }
 
+var todoEditCmd = &cobra.Command{
+	Use:   "edit <ref> [flags]",
+	Short: "Set or clear a durable todo's deadline, scheduled, priority, or depends-on",
+	Long: "Edit metadata on one durable todo in a single atomic write. Each value flag sets its field; " +
+		"each --no-<field> flag removes it. All flags are validated before anything is written.",
+	SilenceUsage: true,
+	Args:         cobra.ExactArgs(1),
+	RunE:         runTodoEditE,
+}
+
 func init() {
 	af := todoAddCmd.Flags()
 	af.BoolVar(&todoEphemeralFlag, "ephemeral", false, "Create an ephemeral inbox item instead of a durable todo")
@@ -134,7 +154,17 @@ func init() {
 	df.BoolVar(&todoDoneEphemeralFlag, "ephemeral", false, "Target the ephemeral inbox: <ref> is a 1-based line index")
 	df.StringVar(&todoAuthorFlag, "author", "", "Author to record on a recurring rule's did:: audit entry (default: $RECKON_AUTHOR, $USER, or \"local\")")
 
-	todoCmd.AddCommand(todoAddCmd, todoListCmd, todoDoneCmd)
+	ef := todoEditCmd.Flags()
+	ef.StringVar(&todoDeadlineFlag, "deadline", "", "Set the deadline (YYYY-MM-DD)")
+	ef.StringVar(&todoScheduledFlag, "scheduled", "", "Set the scheduled date (YYYY-MM-DD, tomorrow, or next-week)")
+	ef.StringVar(&todoPriorityFlag, "priority", "", "Set the priority (A, B, or C)")
+	ef.StringVar(&todoDependsFlag, "depends", "", "Set the ULID/alias this todo depends on (replaces all existing depends-on targets)")
+	ef.BoolVar(&todoNoDeadlineFlag, "no-deadline", false, "Remove the deadline")
+	ef.BoolVar(&todoNoScheduledFlag, "no-scheduled", false, "Remove the scheduled date (rejected for a todo with repeat)")
+	ef.BoolVar(&todoNoPriorityFlag, "no-priority", false, "Remove the priority")
+	ef.BoolVar(&todoNoDependsFlag, "no-depends", false, "Remove every depends-on (and depends) target")
+
+	todoCmd.AddCommand(todoAddCmd, todoListCmd, todoDoneCmd, todoEditCmd)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -683,7 +713,7 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 	todosDir := filepath.Join(vaultDir, "todos")
 
 	fastPath := filepath.Join(todosDir, ref+".md")
-	n, foundPath, err := loadDurableTodoAt(fastPath)
+	n, foundPath, err := loadDurableTodoAt("todo done", fastPath)
 	if err != nil {
 		return todoDoneResult{}, err
 	}
@@ -693,7 +723,7 @@ func doneDurableTodo(vaultDir, ref string) (todoDoneResult, error) {
 		n, foundPath = nil, ""
 	}
 	if n == nil {
-		n, foundPath, err = findDurableTodoByRefOrAlias(todosDir, ref)
+		n, foundPath, err = findDurableTodoByRefOrAlias("todo done", todosDir, ref)
 		if err != nil {
 			return todoDoneResult{}, err
 		}
@@ -890,20 +920,20 @@ func doneRecurringTodo(vaultDir string, n *node.Node, foundPath, ref, repeatCook
 // loadDurableTodoAt reads and parses the file at path. A nonexistent file is
 // reported as (nil, "", nil) — not an error — so callers can fall back to a
 // search. CRLF files are refused (mirrors adopt.go, reckon-vj55).
-func loadDurableTodoAt(path string) (*node.Node, string, error) {
+func loadDurableTodoAt(verb, path string) (*node.Node, string, error) {
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, "", nil
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("todo done: read %s: %w", path, err)
+		return nil, "", fmt.Errorf("%s: read %s: %w", verb, path, err)
 	}
 	if bytes.Contains(raw, []byte("\r\n")) {
-		return nil, "", fmt.Errorf("todo done: CRLF line endings are not supported (reckon-vj55): %s", path)
+		return nil, "", fmt.Errorf("%s: CRLF line endings are not supported (reckon-vj55): %s", verb, path)
 	}
 	n, err := node.Parse(raw)
 	if err != nil {
-		return nil, "", fmt.Errorf("todo done: parse %s: %w", path, err)
+		return nil, "", fmt.Errorf("%s: parse %s: %w", verb, path, err)
 	}
 	return n, path, nil
 }
@@ -911,10 +941,10 @@ func loadDurableTodoAt(path string) (*node.Node, string, error) {
 // findDurableTodoByRefOrAlias walks todos/*.md looking for a durable todo
 // (type "todo") whose ULID or alias matches ref. Unparsable/CRLF files are
 // skipped rather than aborting the whole search.
-func findDurableTodoByRefOrAlias(todosDir, ref string) (*node.Node, string, error) {
+func findDurableTodoByRefOrAlias(verb, todosDir, ref string) (*node.Node, string, error) {
 	matches, err := filepath.Glob(filepath.Join(todosDir, "*.md"))
 	if err != nil {
-		return nil, "", fmt.Errorf("todo done: glob todos dir: %w", err)
+		return nil, "", fmt.Errorf("%s: glob todos dir: %w", verb, err)
 	}
 	for _, path := range matches {
 		raw, err := os.ReadFile(path)

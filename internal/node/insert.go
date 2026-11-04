@@ -48,3 +48,151 @@ func (n *Node) InsertField(key, value string) error {
 	*n = *reparsed
 	return nil
 }
+
+// UpsertField sets key to value whatever shape the key currently has: it
+// splices the value into an existing scalar line (adding the missing space
+// after a bare "key:"), replaces a whole block-list span with a single
+// "key: value" line, and delegates to InsertField when the key is absent.
+// A key present as both a scalar and a block list is ambiguous, so the call
+// returns an error and leaves the node unchanged, as does a key whose value
+// continues on lines the parser does not model (see checkNoContinuation) and a
+// value that does not read back verbatim. Every path re-parses before
+// committing, and bytes outside the touched line(s) are preserved.
+func (n *Node) UpsertField(key, value string) error {
+	scalar, hasScalar := n.fieldSpans[key]
+	block, hasBlock := n.blockSpans[key]
+	switch {
+	case hasScalar && hasBlock:
+		return fmt.Errorf("UpsertField: key %q is present as both a scalar and a block list; resolve by hand", key)
+	case hasScalar:
+		if err := checkNoContinuation("UpsertField", n.Raw, lineAfter(n.Raw, scalar.End), key); err != nil {
+			return err
+		}
+		var out []byte
+		out = append(out, n.Raw[:scalar.Start]...)
+		if scalar.Start == scalar.End && scalar.Start > 0 && n.Raw[scalar.Start-1] == ':' {
+			out = append(out, ' ')
+		}
+		out = append(out, value...)
+		out = append(out, n.Raw[scalar.End:]...)
+		return n.commitUpsert(out, key, value)
+	case hasBlock:
+		if err := checkNoContinuation("UpsertField", n.Raw, block.End, key); err != nil {
+			return err
+		}
+		var out []byte
+		out = append(out, n.Raw[:block.Start]...)
+		out = append(out, key+": "+value+"\n"...)
+		out = append(out, n.Raw[block.End:]...)
+		return n.commitUpsert(out, key, value)
+	}
+	trial := *n
+	if err := trial.InsertField(key, value); err != nil {
+		return err
+	}
+	if trial.frontmatter[key] != value {
+		return fmt.Errorf("UpsertField: value for key %q does not read back verbatim", key)
+	}
+	*n = trial
+	return nil
+}
+
+// commitUpsert re-parses out and commits it only when key reads back as value.
+func (n *Node) commitUpsert(out []byte, key, value string) error {
+	reparsed, err := ParseAt(out, n.Loc)
+	if err != nil {
+		return fmt.Errorf("UpsertField: re-parse after splice failed: %w", err)
+	}
+	if reparsed.frontmatter[key] != value {
+		return fmt.Errorf("UpsertField: value for key %q does not read back verbatim", key)
+	}
+	*n = *reparsed
+	return nil
+}
+
+// lineAfter returns the offset just past the newline ending the line that
+// contains pos, or len(raw) when that line is unterminated.
+func lineAfter(raw []byte, pos int) int {
+	nl := bytes.IndexByte(raw[pos:], '\n')
+	if nl < 0 {
+		return len(raw)
+	}
+	return pos + nl + 1
+}
+
+// checkNoContinuation refuses an edit whose replaced span ends where more
+// lines still belong to the key. from is the offset of the line after the
+// span. Blank and comment lines are skipped at any indent. The closing fence,
+// or an unindented non-list line that looks like a sibling "key:" line, ends
+// the key's value; any other line is a continuation the parser did not
+// record, so splicing the span would orphan it. A multi-line quoted scalar or
+// flow collection whose continuation line itself looks like a sibling key is
+// indistinguishable from one without a YAML parser, so it is accepted and the
+// edit can leave that line behind.
+func checkNoContinuation(method string, raw []byte, from int, key string) error {
+	for pos := from; pos < len(raw); {
+		end := lineAfter(raw, pos)
+		line := bytes.TrimRight(raw[pos:end], "\r\n")
+		pos = end
+		trimmed := bytes.TrimSpace(line)
+		switch {
+		case len(trimmed) == 0 || trimmed[0] == '#':
+			continue
+		case string(line) == "---":
+			return nil
+		case line[0] != ' ' && line[0] != '\t' && line[0] != '-' && looksLikeSiblingKey(line):
+			return nil
+		}
+		return fmt.Errorf("%s: key %q has continuation lines; resolve by hand", method, key)
+	}
+	return nil
+}
+
+// looksLikeSiblingKey reports whether an unindented line reads as the start
+// of another mapping entry.
+func looksLikeSiblingKey(line []byte) bool {
+	return fmScalarRe.Match(line) || bytes.Contains(line, []byte(": ")) || bytes.HasSuffix(line, []byte(":"))
+}
+
+// RemoveField deletes every occurrence of key from the frontmatter: a scalar
+// line (including its newline and any trailing comment) or a whole block-list
+// span, repeating until no duplicate remains. An absent key is a no-op with a
+// nil error. Removing the last key of a frontmatter block, which would leave
+// an empty fence that re-parses as body, returns an error. Every path
+// re-parses before committing, and bytes outside the removed lines are
+// preserved.
+func (n *Node) RemoveField(key string) error {
+	cur := n
+	for {
+		var start, end int
+		if span, ok := cur.fieldSpans[key]; ok {
+			start = bytes.LastIndexByte(cur.Raw[:span.Start], '\n') + 1
+			end = lineAfter(cur.Raw, span.End)
+		} else if span, ok := cur.blockSpans[key]; ok {
+			start, end = span.Start, span.End
+		} else {
+			break
+		}
+		if err := checkNoContinuation("RemoveField", cur.Raw, end, key); err != nil {
+			return err
+		}
+		out := make([]byte, 0, len(cur.Raw)-(end-start))
+		out = append(out, cur.Raw[:start]...)
+		out = append(out, cur.Raw[end:]...)
+		next, err := ParseAt(out, n.Loc)
+		if err != nil {
+			return fmt.Errorf("RemoveField: re-parse after removing %q failed: %w", key, err)
+		}
+		if cur.bodySpan.Start > 0 && next.bodySpan.Start == 0 {
+			return fmt.Errorf("RemoveField: removing %q would leave the frontmatter empty", key)
+		}
+		if next.Body != cur.Body {
+			return fmt.Errorf("RemoveField: removing %q would change the body", key)
+		}
+		cur = next
+	}
+	if cur != n {
+		*n = *cur
+	}
+	return nil
+}

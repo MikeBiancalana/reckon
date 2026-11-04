@@ -233,3 +233,356 @@ func TestInsertField_RoundTrip(t *testing.T) {
 	}
 	sameView(t, "parse(render) after InsertField", reparsedFromRender, n)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UpsertField / RemoveField
+// ─────────────────────────────────────────────────────────────────────────────
+
+// mustParseStr parses src or fails the test.
+func mustParseStr(t *testing.T, src string) *Node {
+	t.Helper()
+	n, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	return n
+}
+
+// requireNamedError fails unless err is non-nil and carries both the method
+// prefix and the key, so a bare "not implemented" cannot satisfy a refusal test.
+func requireNamedError(t *testing.T, err error, method, key string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("%s: expected an error, got nil", method)
+	}
+	if !strings.Contains(err.Error(), method+":") || !strings.Contains(err.Error(), key) {
+		t.Fatalf("error %q must start with %q and name key %q", err, method+":", key)
+	}
+}
+
+func TestUpsertField_ScalarSplicesValueOnly(t *testing.T) {
+	src := "---\nid: X\ntype: todo\ndeadline: 2026-07-01\nstate: open\n---\nbody\n"
+	n := mustParseStr(t, src)
+	if err := n.UpsertField("deadline", "2026-08-01"); err != nil {
+		t.Fatalf("UpsertField: %v", err)
+	}
+	want := strings.Replace(src, "2026-07-01", "2026-08-01", 1)
+	if got := string(n.Serialize()); got != want {
+		t.Fatalf("not value-local\n--- want ---\n%q\n--- got ---\n%q", want, got)
+	}
+	if n.Props["deadline"] != "2026-08-01" {
+		t.Errorf("Props[deadline] = %q", n.Props["deadline"])
+	}
+}
+
+func TestUpsertField_BareColonGetsSpace(t *testing.T) {
+	cases := map[string]string{
+		"no_space":       "---\ntype: todo\ndeadline:\nstate: open\n---\nb\n",
+		"trailing_space": "---\ntype: todo\ndeadline: \nstate: open\n---\nb\n",
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			n := mustParseStr(t, src)
+			if err := n.UpsertField("deadline", "2026-08-01"); err != nil {
+				t.Fatalf("UpsertField: %v", err)
+			}
+			want := "---\ntype: todo\ndeadline: 2026-08-01\nstate: open\n---\nb\n"
+			if got := string(n.Serialize()); got != want {
+				t.Fatalf("want %q, got %q", want, got)
+			}
+			if n.Props["deadline"] != "2026-08-01" {
+				t.Errorf("Props[deadline] = %q", n.Props["deadline"])
+			}
+		})
+	}
+}
+
+func TestUpsertField_BlockListCollapsesToOneLine(t *testing.T) {
+	src := "---\nid: X\ntype: todo\ndepends-on:\n  - \"[[A]]\"\n  - \"[[B]]\"\nstate: open\n---\nbody\n"
+	n := mustParseStr(t, src)
+	if err := n.UpsertField("depends-on", `"[[C]]"`); err != nil {
+		t.Fatalf("UpsertField: %v", err)
+	}
+	want := "---\nid: X\ntype: todo\ndepends-on: \"[[C]]\"\nstate: open\n---\nbody\n"
+	if got := string(n.Serialize()); got != want {
+		t.Fatalf("block not collapsed surgically\n--- want ---\n%q\n--- got ---\n%q", want, got)
+	}
+	if len(n.Links) != 1 || n.Links[0].Rel != "depends-on" || n.Links[0].To != "C" {
+		t.Errorf("Links = %+v, want single depends-on -> C", n.Links)
+	}
+	re := mustParseStr(t, string(n.Serialize()))
+	sameView(t, "reparse after collapse", re, n)
+}
+
+func TestUpsertField_AbsentKeyEqualsInsertField(t *testing.T) {
+	src := "---\nid: X\ntype: todo\n---\nbody\n"
+	a := mustParseStr(t, src)
+	b := mustParseStr(t, src)
+	if err := a.UpsertField("priority", "B"); err != nil {
+		t.Fatalf("UpsertField: %v", err)
+	}
+	if err := b.InsertField("priority", "B"); err != nil {
+		t.Fatalf("InsertField: %v", err)
+	}
+	if !bytes.Equal(a.Serialize(), b.Serialize()) {
+		t.Fatalf("Upsert on absent key differs from InsertField\n%q\n%q", a.Serialize(), b.Serialize())
+	}
+}
+
+func TestUpsertField_RefusesScalarPlusBlockDuplicate(t *testing.T) {
+	src := "---\ntype: todo\ntags: x\ntags:\n  - a\n---\nb\n"
+	n := mustParseStr(t, src)
+	err := n.UpsertField("tags", "y")
+	requireNamedError(t, err, "UpsertField", "tags")
+	if string(n.Raw) != src {
+		t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+	}
+}
+
+// Guard: parse/serialize identity over the shared corpus must keep
+// holding while the new field primitives exist.
+func TestUpsertField_GuardRoundTripCorpus(t *testing.T) {
+	for name, src := range roundtripCorpus {
+		t.Run(name, func(t *testing.T) {
+			n, err := Parse([]byte(src))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if got := string(n.Serialize()); got != src {
+				t.Fatalf("round-trip not byte-identical\n--- want ---\n%q\n--- got ---\n%q", src, got)
+			}
+		})
+	}
+}
+
+func TestRemoveField_ScalarLineGone(t *testing.T) {
+	cases := map[string]string{
+		"plain":            "---\nid: X\ntype: todo\ndeadline: 2026-07-01\nstate: open\n---\nbody\n",
+		"trailing_comment": "---\nid: X\ntype: todo\ndeadline: 2026-07-01 # soft\nstate: open\n---\nbody\n",
+	}
+	want := "---\nid: X\ntype: todo\nstate: open\n---\nbody\n"
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			n := mustParseStr(t, src)
+			if err := n.RemoveField("deadline"); err != nil {
+				t.Fatalf("RemoveField: %v", err)
+			}
+			if got := string(n.Serialize()); got != want {
+				t.Fatalf("want %q, got %q", want, got)
+			}
+			if n.HasField("deadline") {
+				t.Error("HasField(deadline) still true")
+			}
+			if _, ok := n.Props["deadline"]; ok {
+				t.Error("Props still has deadline")
+			}
+		})
+	}
+}
+
+func TestRemoveField_BlockListGone(t *testing.T) {
+	src := "---\nid: X\ntype: todo\ntags:\n  - a\n  - b\nstate: open\n---\nbody\n"
+	n := mustParseStr(t, src)
+	if err := n.RemoveField("tags"); err != nil {
+		t.Fatalf("RemoveField: %v", err)
+	}
+	want := "---\nid: X\ntype: todo\nstate: open\n---\nbody\n"
+	if got := string(n.Serialize()); got != want {
+		t.Fatalf("want %q, got %q", want, got)
+	}
+	if _, ok := n.Props["tags"]; ok {
+		t.Error("Props still has tags")
+	}
+}
+
+func TestRemoveField_AbsentKeyIsNoOp(t *testing.T) {
+	src := "---\nid: X\ntype: todo\n---\nbody\n"
+	n := mustParseStr(t, src)
+	if err := n.RemoveField("deadline"); err != nil {
+		t.Fatalf("RemoveField on absent key: %v", err)
+	}
+	if string(n.Raw) != src {
+		t.Fatalf("Raw changed on no-op: %q", n.Raw)
+	}
+}
+
+func TestRemoveField_DuplicatesAllRemoved(t *testing.T) {
+	cases := map[string]string{
+		"scalar_scalar": "---\nid: X\ntype: todo\ndeadline: 2026-01-01\nstate: open\ndeadline: 2026-02-02\n---\nbody\n",
+		"scalar_block":  "---\nid: X\ntype: todo\ndeadline: 2026-01-01\nstate: open\ndeadline:\n  - a\n---\nbody\n",
+		"block_scalar":  "---\nid: X\ntype: todo\ndeadline:\n  - a\nstate: open\ndeadline: 2026-02-02\n---\nbody\n",
+	}
+	want := "---\nid: X\ntype: todo\nstate: open\n---\nbody\n"
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			n := mustParseStr(t, src)
+			if err := n.RemoveField("deadline"); err != nil {
+				t.Fatalf("RemoveField: %v", err)
+			}
+			if got := string(n.Serialize()); got != want {
+				t.Fatalf("want %q, got %q", want, got)
+			}
+			re := mustParseStr(t, string(n.Serialize()))
+			if re.HasField("deadline") {
+				t.Error("reparse still shows deadline")
+			}
+			if _, ok := re.Props["deadline"]; ok {
+				t.Error("reparse Props still has deadline")
+			}
+		})
+	}
+}
+
+func TestRemoveField_RefusesEmptyingFrontmatter(t *testing.T) {
+	src := "---\ntype: todo\n---\nbody\n"
+	n := mustParseStr(t, src)
+	err := n.RemoveField("type")
+	requireNamedError(t, err, "RemoveField", "type")
+	if !strings.Contains(strings.ToLower(err.Error()), "frontmatter") {
+		t.Errorf("error %q should explain that frontmatter would be left empty", err)
+	}
+	if string(n.Raw) != src {
+		t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+	}
+}
+
+func TestRemoveField_RefValuedLinkGone(t *testing.T) {
+	cases := map[string]string{
+		"scalar":      "---\nid: X\ntype: todo\ndepends-on: \"[[A]]\"\nstate: open\n---\nbody\n",
+		"multi":       "---\nid: X\ntype: todo\ndepends-on: \"[[A]]\", \"[[B]]\"\nstate: open\n---\nbody\n",
+		"block_list":  "---\nid: X\ntype: todo\ndepends-on:\n  - \"[[A]]\"\n  - \"[[B]]\"\nstate: open\n---\nbody\n",
+		"unquoted_ln": "---\nid: X\ntype: todo\ndepends-on: [[A]]\nstate: open\n---\nbody\n",
+	}
+	want := "---\nid: X\ntype: todo\nstate: open\n---\nbody\n"
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			n := mustParseStr(t, src)
+			if len(n.Links) == 0 {
+				t.Fatal("fixture has no links")
+			}
+			if err := n.RemoveField("depends-on"); err != nil {
+				t.Fatalf("RemoveField: %v", err)
+			}
+			if got := string(n.Serialize()); got != want {
+				t.Fatalf("want %q, got %q", want, got)
+			}
+			if len(n.Links) != 0 {
+				t.Errorf("Links = %+v, want none", n.Links)
+			}
+		})
+	}
+}
+
+func TestUpsertRemoveField_RefuseContinuationShapes(t *testing.T) {
+	cases := []struct {
+		name, src, key string
+	}{
+		{"unindented_list", "---\ntype: todo\ndepends-on:\n- \"[[a]]\"\n- \"[[b]]\"\n---\nb\n", "depends-on"},
+		{"comment_in_block", "---\ntype: todo\ndepends-on:\n  - \"[[a]]\"\n  # keep\n  - \"[[b]]\"\n---\nb\n", "depends-on"},
+		{"nested_map", "---\ntype: todo\ndeadline:\n  soft: 2026-01-01\n---\nb\n", "deadline"},
+		{"folded_scalar", "---\ntype: todo\ndeadline: >\n  2026-01-01\n---\nb\n", "deadline"},
+		{"blank_in_block", "---\ntype: todo\ndepends-on:\n  - \"[[a]]\"\n\n  - \"[[b]]\"\n---\nb\n", "depends-on"},
+		{"orphan_after_scalar", "---\ntype: todo\ntags:\nk: 1\n  - orphan\n---\nb\n", "k"},
+		{"col0_comment_then_indented_item", "---\ntype: todo\ndepends-on:\n  - \"[[tgt]]\"\n# keep\n  - \"[[other]]\"\n---\nb\n", "depends-on"},
+		{"col0_comment_then_col0_item", "---\ntype: todo\ndepends-on:\n# keep\n- \"[[tgt]]\"\n---\nb\n", "depends-on"},
+		{"col0_comment_then_nested_map", "---\ntype: todo\ndeadline:\n# c\n  soft: 2026-01-01\n---\nb\n", "deadline"},
+		{"flow_list_multiline", "---\ntype: todo\ndepends-on: [\n\"[[tgt]]\",\n\"[[other]]\"\n]\n---\nb\n", "depends-on"},
+		{"flow_list_continued", "---\ntype: todo\ndepends-on: [\"[[tgt]]\",\n\"[[other]]\"]\n---\nb\n", "depends-on"},
+		{"dq_scalar_multiline", "---\ntype: todo\ndeadline: \"2026-01-01\nsoft\"\n---\nb\n", "deadline"},
+		{"sq_scalar_multiline", "---\ntype: todo\npriority: 'A\nB'\n---\nb\n", "priority"},
+		{"stray_doc_end", "---\ntype: todo\nk: 1\n...\nj: 2\n---\nb\n", "k"},
+	}
+	for _, c := range cases {
+		t.Run(c.name+"/upsert", func(t *testing.T) {
+			n := mustParseStr(t, c.src)
+			requireNamedError(t, n.UpsertField(c.key, "v"), "UpsertField", c.key)
+			if string(n.Raw) != c.src {
+				t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+			}
+		})
+		t.Run(c.name+"/remove", func(t *testing.T) {
+			n := mustParseStr(t, c.src)
+			requireNamedError(t, n.RemoveField(c.key), "RemoveField", c.key)
+			if string(n.Raw) != c.src {
+				t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+			}
+		})
+	}
+}
+
+func TestUpsertRemoveField_AcceptsSiblingShapes(t *testing.T) {
+	cases := []struct{ name, tail string }{
+		{"sibling_after_blank", "\nk: v\n"},
+		{"col0_comment_then_sibling", "# note\nk: v\n"},
+		{"indented_comment_then_sibling", "  # note\nk: v\n"},
+		{"indented_comment_before_fence", "  # note\n"},
+		{"spaced_key", "Due Date: 1\n"},
+		{"dotted_key", "my.key: 1\n"},
+		{"no_space_after_colon", "due:2026-08-01\n"},
+		{"tab_after_colon", "k:\tv\n"},
+		{"bare_key", "k:\n"},
+		{"last_key_before_fence", ""},
+		{"blank_before_fence", "\n"},
+	}
+	for _, c := range cases {
+		src := "---\ntype: todo\ndeadline: 2026-01-01\n" + c.tail + "---\nb\n"
+		t.Run(c.name+"/upsert", func(t *testing.T) {
+			n := mustParseStr(t, src)
+			if err := n.UpsertField("deadline", "2026-02-02"); err != nil {
+				t.Fatalf("UpsertField refused legitimate shape: %v", err)
+			}
+			want := strings.Replace(src, "deadline: 2026-01-01", "deadline: 2026-02-02", 1)
+			if string(n.Raw) != want {
+				t.Fatalf("Raw = %q, want %q", n.Raw, want)
+			}
+		})
+		t.Run(c.name+"/remove", func(t *testing.T) {
+			n := mustParseStr(t, src)
+			if err := n.RemoveField("deadline"); err != nil {
+				t.Fatalf("RemoveField refused legitimate shape: %v", err)
+			}
+			want := strings.Replace(src, "deadline: 2026-01-01\n", "", 1)
+			if string(n.Raw) != want {
+				t.Fatalf("Raw = %q, want %q", n.Raw, want)
+			}
+		})
+	}
+}
+
+func TestRemoveField_RefusesWhenBodyWouldChange(t *testing.T) {
+	src := "---\nk: 1\n---\nintro\n---\nbar\n"
+	n := mustParseStr(t, src)
+	requireNamedError(t, n.RemoveField("k"), "RemoveField", "k")
+	if string(n.Raw) != src {
+		t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+	}
+}
+
+func TestUpsertField_RefusesValueThatDoesNotReadBack(t *testing.T) {
+	for name, value := range map[string]string{
+		"extra_key":     "x\nstate: done",
+		"fence_inject":  "x\n---\ninjected",
+		"trailing_ws":   "x ",
+		"empty_to_list": "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := "---\ntype: todo\nk: old\n---\nb\n"
+			if name == "empty_to_list" {
+				src = "---\ntype: todo\nk: old\n  - item\n---\nb\n"
+			}
+			n := mustParseStr(t, src)
+			requireNamedError(t, n.UpsertField("k", value), "UpsertField", "k")
+			if string(n.Raw) != src {
+				t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+			}
+		})
+	}
+	t.Run("insert_path", func(t *testing.T) {
+		src := "---\ntype: todo\n---\nb\n"
+		n := mustParseStr(t, src)
+		requireNamedError(t, n.UpsertField("k", "x\nstate: done"), "UpsertField", "k")
+		if string(n.Raw) != src {
+			t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+		}
+	})
+}
