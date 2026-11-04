@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -214,7 +213,7 @@ func validateTodoEditFlags(fields []*todoEditField) error {
 				return fmt.Errorf("todo edit: --priority: %w", err)
 			}
 		case "depends":
-			if strings.ContainsAny(f.value, "[]\"|#\\") || strings.IndexFunc(f.value, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
+			if strings.ContainsAny(f.value, "[]|#") || strconv.Quote(f.value) != `"`+f.value+`"` {
 				return fmt.Errorf("todo edit: --depends: invalid character in %q (give a bare ULID or alias, not a wikilink)", f.value)
 			}
 		}

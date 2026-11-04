@@ -436,9 +436,9 @@ func dispatchTodayAct(vaultDir, ref, key, arg string, noLog bool) (todayActResul
 }
 
 // loadNativeTodoForEdit resolves ref to a durable todo file (ULID fast-path,
-// else a walk over todos/*.md matching ULID or alias) -- identical
-// resolution to doneDurableTodo (todo.go), reused verbatim so `rk today act`
-// and `rk todo done` never disagree on which file a ref names.
+// else a walk over todos/*.md matching ULID or alias). A path-shaped ref
+// resolves only through the alias walk here; doneDurableTodo (todo.go) still
+// also accepts it as a direct path under todos/.
 func loadNativeTodoForEdit(vaultDir, ref string) (*node.Node, string, error) {
 	n, foundPath, err := resolveDurableTodoRef("todo done", vaultDir, ref)
 	if err != nil {

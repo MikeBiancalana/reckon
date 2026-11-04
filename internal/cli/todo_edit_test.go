@@ -913,7 +913,7 @@ func TestTodoEdit_GuardTodayActUnchanged(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Review regressions
+// Refusals: unmodeled shapes, refs, depends targets
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestTodoEdit_RefusesKeyWithContinuationLines(t *testing.T) {
@@ -940,6 +940,12 @@ func TestTodoEdit_DependsRejectsBackslashAndControlChars(t *testing.T) {
 	id, _, _ := newTodo(t, vault, "Body")
 	requireEditRefused(t, vault, []string{"todo edit: --depends", "invalid character"}, id, "--depends", `c:\x`)
 	requireEditRefused(t, vault, []string{"todo edit: --depends", "invalid character"}, id, "--depends", "a\tb")
+}
+
+func TestTodoEdit_DependsRejectsInvalidUTF8(t *testing.T) {
+	vault := newEditVault(t)
+	id, _, _ := newTodo(t, vault, "Body")
+	requireEditRefused(t, vault, []string{"todo edit: --depends", "invalid character"}, id, "--depends", "a\xffb")
 }
 
 func TestTodoEdit_RefDoesNotEscapeTodosDir(t *testing.T) {
