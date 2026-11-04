@@ -2,11 +2,11 @@
 
 ## Summary
 
-Add `rk todo edit <ref> [--deadline D] [--scheduled D] [--priority A|B|C] [--depends REF]`. It covers durable todos only and is set-only: each given flag sets its field, and clearing is not supported. All flags are validated first, then applied in memory, then written in one `writeFileAtomic`.
+Add `rk todo edit <ref> [--deadline D] [--scheduled D] [--priority A|B|C] [--depends REF] [--no-deadline] [--no-scheduled] [--no-priority] [--no-depends]`. It covers durable todos only. Each value flag sets its field and each `--no-<field>` flag removes it. All flags are validated first, then applied in memory, then written in one `writeFileAtomic`.
 
-There is one new node primitive, `(*Node).UpsertField`. `today act` keeps its behavior and error text; only the shared resolution and validation code is extracted.
+There are two new node primitives, `(*Node).UpsertField` and `(*Node).RemoveField`. `today act` keeps its behavior and error text; only the shared resolution and validation code is extracted.
 
-**Two decisions for the user** (D1 and D2 below). Neither blocks implementation; the defaults are safe.
+**One decision for the user** (D2 below); it does not block implementation. D1 was decided by the user: clear through flag negation.
 
 **Corrections to the upstream docs**
 - The analysis (§4, Pitfall 10) says `today act` error strings are test-pinned. A grep of `today_test.go`, `todo_test.go` and `todo_recur_test.go` finds no assertion on `today act:`, `invalid value`, `no todo found`, or the CRLF/vj55 text. Keep them unchanged because the task requires it, not because tests would fail.
@@ -18,10 +18,10 @@ There is one new node primitive, `(*Node).UpsertField`. `today act` keeps its be
 
 | File | Change |
 |---|---|
-| `internal/node/insert.go` | Add `UpsertField(key, value string) error` (D3). |
-| `internal/node/insert_test.go` | Tests N1-N6. |
-| `internal/node/AGENTS.md` | Document `UpsertField`; update the sentence saying only `SetAliases` reads `blockSpans`. |
-| `internal/cli/todo.go` | Add `todoPriorityFlag` and `"priority"` to the `resetTodoFlags` var block and name list (:74). Add `todoEditCmd`, register flags in `init()`, add to `AddCommand` (:137). Update `todoCmd.Long` and the comment at :85. Add a `verb string` parameter to `loadDurableTodoAt` (:893) and `findDurableTodoByRefOrAlias` (:914); `doneDurableTodo` call sites pass `"todo done"`. |
+| `internal/node/insert.go` | Add `UpsertField(key, value string) error` (D3) and `RemoveField(key string) error` (D3b). |
+| `internal/node/insert_test.go` | Tests N1-N12. |
+| `internal/node/AGENTS.md` | Document both primitives; update the sentence saying only `SetAliases` reads `blockSpans`. |
+| `internal/cli/todo.go` | Add `todoPriorityFlag`, the four `todoNo*Flag` bools, and their names to the `resetTodoFlags` var block and name list (:74). Add `todoEditCmd`, register flags in `init()`, add to `AddCommand` (:137). Update `todoCmd.Long` and the comment at :85. Add a `verb string` parameter to `loadDurableTodoAt` (:893) and `findDurableTodoByRefOrAlias` (:914); `doneDurableTodo` call sites pass `"todo done"`. |
 | `internal/cli/todo_edit.go` (new) | `todoEditResult`, `runTodoEditE`, `validateTodoDepends`, post-write reconcile helper. Follows the `todo_add_wizard.go` / `todo_browse.go` file split. |
 | `internal/cli/today.go` | Mechanical extractions only (table below), plus a one-line `rk todo edit` pointer in `todayActCmd.Long`. |
 | `internal/cli/todo_edit_test.go` (new) | All CLI scenarios. Reuses `setupQueryVault`, `writeTestNode`, `writeTodoFixture`, `writeRecurringTodo`, `pinTodoNow`, `snapshotVaultFiles`, `runTodo`, `runQuery`, `parseNDJSONMaps`. |
@@ -39,24 +39,24 @@ Not touched: `dispatchTodayAct`, `act*` flow, `normalizeActKey`, `doneDurableTod
 **`runTodoEditE` flow**
 1. `defer resetTodoFlags(cmd)`, then capture values using `cmd.Flags().Changed`.
 2. If no flag was changed, return the nothing-to-change error.
-3. Run pure validation (dates, priority, depends characters, empty values). No I/O yet.
+3. Run pure validation (dates, priority, depends characters, empty values, set-and-clear conflicts). No I/O yet.
 4. Get output mode and config.
 5. Call `resolveDurableTodoRef("todo edit", ...)`; on nil return `todo edit: no todo found matching %q (not found)`.
-6. Run node-dependent checks: the `--depends` validation with the index (D6).
-7. Apply `UpsertField` in the fixed order deadline, scheduled, priority, depends.
+6. Run node-dependent checks: the `--depends` validation with the index (D6), and the `--no-scheduled` recurrence guard (D7).
+7. Apply `RemoveField` for clears, then `UpsertField` in the fixed order deadline, scheduled, priority, depends.
 8. If `!bytes.Equal(original, n.Serialize())`, call `writeFileAtomic`.
 9. Print the result unless `mode == Pretty && quietFlag`.
 10. Run the post-write reconcile; any failure is a stderr warning unless `--quiet`.
 
-**Result shape** (`todoEditResult`): `kind` (`"durable"`), `ref`, `id,omitempty`, `path`, `state,omitempty`, and `deadline`, `scheduled`, `priority`, `depends` (each `omitempty`, edited fields only). Pretty form: `todo: <ref> updated (deadline X, priority Y)`.
+**Result shape** (`todoEditResult`): `kind` (`"durable"`), `ref`, `id,omitempty`, `path`, `state,omitempty`, and `deadline`, `scheduled`, `priority`, `depends` (each `omitempty`, set fields only), and `cleared` (`omitempty`, field names in the fixed order). Pretty form: `todo: <ref> updated (deadline X, priority Y, cleared scheduled)`.
 
 ## Design decisions (with alternatives considered)
 
-### Needs the user (default applied, implementation proceeds)
+### Decided or needs the user
 
 | ID | Decision | Reason | Alternatives |
 |---|---|---|---|
-| **D1 / OPEN-6: clear syntax** | **Set-only.** A given-but-empty flag (`--deadline ""`) is rejected: `todo edit: --deadline: empty value (clearing a field is not supported)`. File a follow-up for clear. | The ticket asks for backfill and for fixing a wrong depends; replace covers both. Rejecting `""` keeps the syntax free, so clear can be added later without breaking anything. It also avoids an unset `--deadline "$D"` silently wiping a field. | (a) AC default, `""` clears: needs a second primitive, `RemoveField`, with whole-line and block removal, the only-key case (`---\n---\n` re-parses as body, `node.go:243`), and duplicate-key handling. Departs from the AC's recommended default via its stated fallback. (b) `--clear <field>`: more surface. |
+| **D1 / OPEN-6: clear syntax** | **User decision: flag negation.** `--no-deadline`, `--no-scheduled`, `--no-priority`, `--no-depends` (bool flags; `--no-<name>` is the standard GNU/git spelling). A given-but-empty value (`--deadline ""`) is still rejected: `todo edit: --deadline: empty value (use --no-deadline to clear)`. Giving `--deadline X --no-deadline` together is rejected: `todo edit: --deadline and --no-deadline conflict`. | Closes the ticket's hand-edit pain, including "this todo depends on nothing". Explicit flags mean an unset `--deadline "$D"` cannot silently wipe a field. | (a) `""` clears: the unset-variable hazard above. (b) Set-only with a follow-up: leaves hand editing for removal. (c) `--clear <field>`: less conventional. |
 | **D2: `depends:` vs `depends-on:`** | **Write `depends-on`.** Leave any existing `depends:` line untouched. File a follow-up to reconcile the doc with the code. | See below. | (a) Write `depends:` per the doc: `rk todo list` would lose the dependency (`loadDependsOn`, `todo.go:605`) and AC-6/AC-8 fail. (b) Implement per-type mapping in this ticket: changes index semantics, out of scope, and `note_v1_test.go:288` pins rel `depends` for notes. (c) Delete or refuse on a `depends:` line: needs a removal primitive, or blocks an otherwise valid edit. |
 
 D2 detail: the design doc (:487, :523, :548, :948) has authors write `depends:` mapped to rel `depends-on`, but no code does that mapping. `todo add` writes `depends-on:` and `todo_test.go:324` pins the link. Writing `depends-on` honors the doc's normalized rel (invariant 3). The user may want to amend the doc or add the mapping.
@@ -69,7 +69,7 @@ D2 detail: the design doc (:487, :523, :548, :948) has authors write `depends:` 
 | OPEN-2 (target exists) | Require `--depends` to resolve through `lookupNodeByRefOrAlias` (`today.go:681`, any type or ULID or alias). | Typos are the bug being fixed. This is deliberately stricter than add (`TestTodoDependsOn_DanglingEdge` pins add as lenient). Dangling links stay valid in the model and hand-editing remains possible. |
 | OPEN-3 (retrofit add) | No; follow-up. | Keeps the PR scoped. |
 | OPEN-4 (cycles) | Reject self and direct 2-cycle only. | One SQL query; transitive detection is out of scope. |
-| OPEN-5 (no flags) | Error `todo edit: nothing to change (give --deadline/--scheduled/--depends/--priority)`, no prompt. | Agent-first; TUI is out of scope. |
+| OPEN-5 (no flags) | Error `todo edit: nothing to change (give --deadline/--scheduled/--depends/--priority or a --no-<field> flag)`, no prompt. | Agent-first; TUI is out of scope. |
 | OPEN-7 (shorthands) | `--scheduled` accepts `tomorrow`/`next-week`/date; `--deadline` is literal only. | Parity with `today act` `d`/`D`. Extends AC-4's "literal" wording as the AC's own default says. |
 | OPEN-8 (ambiguous ref) | Keep first-match parity; follow-up. | Shared flaw across done/act/edit. |
 | OPEN-9 (canonicalize alias) | Store as given. | Parity with add; the design's Fields table says `to` is a ULID or alias, resolved later (`### Fields`, :473). |
@@ -98,6 +98,20 @@ Alternatives rejected:
 - Refactoring `SetAliases` onto this: not needed for the ticket, so leave it.
 - Fixing the bare-colon bug inside `SetField`: changes `today act` bytes; file as a follow-up.
 
+### D3b: node primitive `RemoveField(key)`
+
+| Shape of `key` | Behavior |
+|---|---|
+| Absent | No-op, nil error, `Raw` unchanged. Clearing is idempotent. |
+| Scalar | Remove the whole line, including its newline and any trailing comment. |
+| Block | Remove the whole block span. |
+| Duplicates, in any mix of shapes | Remove every occurrence. The parser keeps only one span per key, so removal repeats until the key is gone; a re-parse must show the key absent or the call errors with no mutation. |
+| Removal would leave an empty frontmatter | Error, no mutation. `---\n---\n` re-parses as body (`node.go:243`). A valid todo always keeps `type`, so the CLI does not reach this. |
+
+Each path re-parses before committing to `*n`, and bytes outside the removed lines stay identical.
+
+`--no-depends` removes both `depends-on` and a hand-written `depends` line. Otherwise clearing would silently leave the dependency the author wrote per the design doc. `--depends X` still leaves a `depends` line alone (D2).
+
 ### D4: command shape
 `rk todo edit` over a `today act` key (the ticket's alternative): `today act` is one field per call and stays undiscoverable from `rk todo --help`.
 
@@ -116,10 +130,10 @@ Reuse `todoScheduledFlag`, `todoDeadlineFlag` and `todoDependsFlag`, the way `--
 4. **Direct cycle**: `SELECT 1 FROM edges WHERE src=? AND rel='depends-on' AND dst_key=(SELECT id FROM nodes WHERE loc=?)`.
 
 ### D7: recurrence
-No guard needed. `--scheduled` moves the cursor, as `today act d` already does. `--deadline` is independent; `doneRecurringTodo` never advances it. With set-only, a recurring cursor cannot be blanked (R2).
+`--scheduled` moves the cursor, as `today act d` already does. `--deadline` and `--no-deadline` are independent; `doneRecurringTodo` never advances the deadline. `--no-scheduled` on a todo with `repeat` is rejected before any write, because completion needs the cursor (`todo.go:817-819`): `todo edit: --no-scheduled: todo has repeat; a recurring todo needs its scheduled cursor`.
 
 ### D8: determinism and idempotence
-- Fixed apply order regardless of argv, because `InsertField` prepends. Resulting top lines: `depends-on`, `priority`, `scheduled`, `deadline`.
+- Fixed apply order regardless of argv, because `InsertField` prepends. Clears run before sets; set-and-clear on one field is rejected earlier, so the order has no semantic effect. Resulting top lines: `depends-on`, `priority`, `scheduled`, `deadline`.
 - Skip the write when bytes are unchanged, so there is no mtime churn. Still run the post-write reconcile; it is cheap and needs no branch.
 
 ## Test scenarios (directly from AC, one-line given/when/then)
@@ -133,7 +147,13 @@ No guard needed. `--scheduled` moves the cursor, as `today act d` already does. 
 | N3 | block-list key / upsert / block collapses to one line, siblings byte-identical, re-parse stable |
 | N4 | absent key / upsert / equals `InsertField` output |
 | N5 | scalar + block duplicate of a key / upsert / error, `Raw` unchanged |
-| N6 | `roundtripCorpus` / parse-serialize after this change, mirroring `TestSetAliases_BlockListCollapsesToFlow` / no regression |
+| N6 | `roundtripCorpus` / parse-serialize after this change, mirroring `TestSetAliases_BlockListCollapsesToFlow` / no regression (guard: passes today, not a red test) |
+| N7 | scalar key with siblings / remove / that line gone, all other bytes identical |
+| N8 | block-list key / remove / whole block gone, siblings byte-identical |
+| N9 | absent key / remove / nil error, `Raw` unchanged |
+| N10 | key duplicated as scalar+scalar and scalar+block / remove / every occurrence gone, re-parse shows no key |
+| N11 | key is the only frontmatter key / remove / error, `Raw` unchanged |
+| N12 | ref-valued `depends-on` line / remove / link gone from parsed `Links` |
 
 **CLI (`todo_edit_test.go`)**
 
@@ -160,13 +180,21 @@ No guard needed. `--scheduled` moves the cursor, as `today act d` already does. 
 | V9 | A depends on B / edit B `--depends A` / rejected |
 | V10 | CRLF file by ULID ref / run / refused with `todo edit:` + vj55 message |
 | R1 | `repeat: +1w`, `scheduled: D1` / `--scheduled D2` then `todo done` / advances from D2 |
-| R2 | recurring todo / `--scheduled ""` / rejected, untouched |
+| R2 | recurring todo / `--no-scheduled` / rejected with the repeat reason, untouched |
 | R3 | recurring todo / `--deadline` / allowed, `repeat` and `scheduled` untouched |
 | D1 | `state: done` / `--deadline` / succeeds, state still done |
 | I1 | E1 run twice / second run / exit 0, bytes and result identical |
-| C1 (changed by D1) | each of the four flags given `""` / run / empty-value error, untouched |
+| C1 | each of the four value flags given `""` / run / empty-value error naming `--no-<field>`, untouched |
+| C2 | has deadline / `--no-deadline` / exact line removed, JSON `cleared` lists it |
+| C3 | has priority, non-recurring scheduled / `--no-priority --no-scheduled` / both removed in one write |
+| C4 | `depends-on` as scalar, multi-target, and block list / `--no-depends` / key gone, no links, `rk query` edges empty, `todo list` shows no dependency |
+| C5 | hand-written `depends: "[[A]]"` / `--no-depends` / line removed |
+| C6 | field absent / `--no-deadline` run twice / exit 0, bytes untouched, no write |
+| C7 | `--deadline X --no-deadline` / run / conflict error, untouched |
+| C8 | `--no-deadline --priority B` / run / one write with both effects, deterministic bytes |
+| C9 | `state: done` with deadline / `--no-deadline` / succeeds, state unchanged |
 | X1 | `--json` / `--ndjson` / pretty / `--quiet` / run / shapes per AC-7; quiet suppresses pretty only |
-| X2 | command tree / inspect `todoCmd.Commands()` and `todoEditCmd.Flags()` / `edit` and four flags present (assert on names per the `root_help_test.go:95` note, not rendered help) |
+| X2 | command tree / find `edit` by name in `todoCmd.Commands()` and inspect its `Flags()` / `edit` and all eight flags present (assert on names per the `root_help_test.go:95` note, not rendered help) |
 | X3 | after edit / read-only `rk query` on `node_props` / new `deadline` and `priority` visible, no manual reconcile (priority is not in `todoListItem`, so query is the check) |
 | X4 | existing tests / run unchanged / `today act D`/`d`/`p` pass |
 | X5 | `RECKON_CACHE` set to a path beneath a regular file / plain `--deadline` / exit 0, file written, stderr warning |
@@ -178,7 +206,6 @@ X5 needs no new seam, because a plain edit touches the index only after the writ
 
 | Risk | Handling |
 |---|---|
-| Wrong dependency cannot be removed, only replaced. | Accepted under D1; hand-edit until the follow-up. |
 | A `depends:` line coexists with a new `depends-on:`, leaving two dependency facts in the file; only `depends-on` is visible to `rk todo list`. | Accepted under D2. |
 | Multi-target overwrite drops other targets without warning. | Stated in flag help (OPEN-10). |
 | Stricter `--depends` than add blocks forward references and targets not yet synced to this device. | Accepted (OPEN-2). |
@@ -189,8 +216,7 @@ X5 needs no new seam, because a plain edit touches the index only after the writ
 | `today act` still has the bare-colon `SetField` bug. | Unchanged by this ticket; follow-up. |
 
 **Follow-ups to file**
-1. Clear-field support, if the user does not want it in this PR.
-2. Reconcile `depends:` vs `depends-on` between doc and code.
-3. `todo add` validation and `--priority`.
-4. Ambiguous-ref detection across done/act/edit.
-5. Bare-colon `SetField` spacing in `today act`.
+1. Reconcile `depends:` vs `depends-on` between doc and code.
+2. `todo add` validation and `--priority`.
+3. Ambiguous-ref detection across done/act/edit.
+4. Bare-colon `SetField` spacing in `today act`.
