@@ -1,17 +1,25 @@
 {
   "ticket_id": "reckon-kcpb",
-  "phase": "test_writer",
+  "phase": "implementer",
   "worktree": ".worktrees/reckon-kcpb",
   "subsystem": "cli",
   "attempts": {
     "planner": 1,
-    "test_writer": 0,
+    "test_writer": 1,
     "implementer": 0,
     "simplify": 0,
     "preflight": 0,
     "reviewer": 0
   },
-  "new_test_names": [],
+  "new_test_names": [
+    "TestTodoDone_RejectsEmptyRef",
+    "TestTodayAct_RejectsEmptyRef",
+    "TestTodoDone_RefDoesNotEscapeTodosDir",
+    "TestTodoDone_PathRefNotResolvedByDirectJoin",
+    "TestResolveDurableTodoRef_EmptyRefUsesCallerVerb",
+    "TestFindDurableTodoByRefOrAlias_EmptyRefNeverMatches",
+    "TestTodayAct_CRLFRefusalUsesTodayActPrefix"
+  ],
   "stall_count": 0,
   "last_test_output_hash": "",
   "status": "in_progress"
