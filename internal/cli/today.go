@@ -456,10 +456,18 @@ func loadNativeTodoForEdit(vaultDir, ref string) (*node.Node, string, error) {
 func resolveDurableTodoRef(verb, vaultDir, ref string) (*node.Node, string, error) {
 	todosDir := filepath.Join(vaultDir, "todos")
 
-	fastPath := filepath.Join(todosDir, ref+".md")
-	n, foundPath, err := loadDurableTodoAt(verb, fastPath)
-	if err != nil {
-		return nil, "", err
+	var (
+		n         *node.Node
+		foundPath string
+		err       error
+	)
+	// A ref that names a path (separators, "..") must not reach the direct
+	// join; it can only match through the alias walk.
+	if ref == filepath.Base(ref) {
+		n, foundPath, err = loadDurableTodoAt(verb, filepath.Join(todosDir, ref+".md"))
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	if n != nil && n.Type != "todo" {
 		n, foundPath = nil, ""

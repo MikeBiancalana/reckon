@@ -1,11 +1,10 @@
-// Package cli — TDD red tests for `rk todo edit <ref>`: set or clear a
-// durable todo's deadline, scheduled, priority and depends-on in one atomic,
+// Package cli — tests for `rk todo edit <ref>`: set or clear a durable
+// todo's deadline, scheduled, priority and depends-on in one atomic,
 // byte-preserving write.
 //
 // The command is driven only through runTodo("edit", ...) and decoded into
-// generic maps, so this file compiles before the implementation exists. Every
-// refusal test asserts the specific error text first and then the bytes; an
-// unknown-command error therefore cannot satisfy it.
+// generic maps. Every refusal test asserts the specific error text first and
+// then the bytes; an unknown-command error therefore cannot satisfy it.
 //
 // Behaviour pinned here:
 //   - value flags: --deadline D, --scheduled D|tomorrow|next-week,
@@ -911,4 +910,49 @@ func TestTodoEdit_GuardTodayActUnchanged(t *testing.T) {
 	if err == nil || !strings.Contains(stderr+err.Error(), "CRLF line endings are not supported (reckon-vj55)") {
 		t.Errorf("CRLF today act: error = %v, want the vj55 refusal", err)
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Review regressions
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestTodoEdit_RefusesKeyWithContinuationLines(t *testing.T) {
+	vault := newEditVault(t)
+	tgt, _, _ := newTodo(t, vault, "T")
+	id, _, _ := newTodo(t, vault, "Blocked", "depends-on:", `- "[[`+tgt+`]]"`, `- "[[other]]"`)
+	want := []string{"todo edit: --no-depends:", "continuation lines"}
+	requireEditRefused(t, vault, want, id, "--no-depends")
+	want = []string{"todo edit: --depends:", "continuation lines"}
+	requireEditRefused(t, vault, want, id, "--depends", tgt)
+}
+
+func TestTodoEdit_RejectsEmptyRef(t *testing.T) {
+	vault := newEditVault(t)
+	mustWriteFile(t, filepath.Join(vault, "todos", "idless.md"), "---\ntype: todo\nstate: open\n---\nBody\n")
+	for _, ref := range []string{"", "  "} {
+		requireEditRefused(t, vault, []string{"todo edit:", "empty ref"}, ref, "--deadline", "2026-05-05")
+	}
+}
+
+func TestTodoEdit_DependsRejectsBackslashAndControlChars(t *testing.T) {
+	vault := newEditVault(t)
+	newTodo(t, vault, "Target", `aliases: ["c:\x"]`)
+	id, _, _ := newTodo(t, vault, "Body")
+	requireEditRefused(t, vault, []string{"todo edit: --depends", "invalid character"}, id, "--depends", `c:\x`)
+	requireEditRefused(t, vault, []string{"todo edit: --depends", "invalid character"}, id, "--depends", "a\tb")
+}
+
+func TestTodoEdit_RefDoesNotEscapeTodosDir(t *testing.T) {
+	vault := newEditVault(t)
+	outside := filepath.Join(vault, "outside.md")
+	mustWriteFile(t, outside, "---\ntype: todo\nstate: open\n---\nBody\n")
+	requireEditRefused(t, vault, []string{`todo edit: no todo found matching "../outside"`}, "../outside", "--deadline", "2026-05-05")
+	requireFile(t, outside, "---\ntype: todo\nstate: open\n---\nBody\n")
+}
+
+func TestTodoEdit_DependsRejectsCycleThroughLegacyDependsKey(t *testing.T) {
+	vault := newEditVault(t)
+	aID, _, _ := newTodo(t, vault, "A")
+	bID, _, _ := newTodo(t, vault, "B", `depends: "[[`+aID+`]]"`)
+	requireEditRefused(t, vault, []string{"todo edit: --depends", "cycle"}, aID, "--depends", bID)
 }

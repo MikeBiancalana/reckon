@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -16,7 +17,7 @@ import (
 )
 
 // todoEditResult is the structured summary of one `rk todo edit` run. The set
-// fields carry the values written; Cleared lists the removed field names in
+// fields carry the values written; Cleared lists the fields now absent, in
 // the fixed field order.
 type todoEditResult struct {
 	Kind      string   `json:"kind"`
@@ -61,6 +62,9 @@ func runTodoEditE(cmd *cobra.Command, args []string) error {
 	defer resetTodoFlags(cmd)
 
 	ref := args[0]
+	if strings.TrimSpace(ref) == "" {
+		return fmt.Errorf("todo edit: empty ref (give a todo ULID or alias)")
+	}
 	flags := cmd.Flags()
 	fields := []*todoEditField{
 		{name: "deadline", keys: []string{"deadline"}, set: flags.Changed("deadline"), value: todoDeadlineFlag, clear: todoNoDeadlineFlag},
@@ -164,16 +168,17 @@ func runTodoEditE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if !(mode == output.Pretty && quietFlag) {
-		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
-			return err
-		}
-	}
-
 	// The file write is authoritative and already done, so index trouble is a
-	// warning, never a failure.
+	// warning, never a failure. Reconcile runs before printing so a print
+	// failure cannot leave the index stale.
 	if err := reconcileAfterEdit(ix, cfg); err != nil && !quietFlag {
 		fmt.Fprintf(cmd.ErrOrStderr(), "todo edit: warning: reconcile index after write: %v\n", err)
+	}
+
+	if !(mode == output.Pretty && quietFlag) {
+		if err := output.New(cmd.OutOrStdout(), mode).Print(res); err != nil {
+			return fmt.Errorf("todo edit: print result (file already written): %w", err)
+		}
 	}
 	return nil
 }
@@ -209,7 +214,7 @@ func validateTodoEditFlags(fields []*todoEditField) error {
 				return fmt.Errorf("todo edit: --priority: %w", err)
 			}
 		case "depends":
-			if strings.ContainsAny(f.value, "[]\"|#\r\n") {
+			if strings.ContainsAny(f.value, "[]\"|#\\") || strings.IndexFunc(f.value, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
 				return fmt.Errorf("todo edit: --depends: invalid character in %q (give a bare ULID or alias, not a wikilink)", f.value)
 			}
 		}
@@ -232,7 +237,7 @@ func checkTodoDepends(db *sql.DB, selfLoc, target string) error {
 	}
 	var one int
 	err = db.QueryRow(
-		"SELECT 1 FROM edges WHERE src = ? AND rel = 'depends-on' AND dst_key = (SELECT id FROM nodes WHERE loc = ?) LIMIT 1",
+		"SELECT 1 FROM edges WHERE src = ? AND rel IN ('depends-on','depends') AND dst_key = (SELECT id FROM nodes WHERE loc = ?) LIMIT 1",
 		id, selfLoc).Scan(&one)
 	if err == nil {
 		return fmt.Errorf("%q already depends on this todo; this would create a dependency cycle", target)
