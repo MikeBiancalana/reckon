@@ -47,8 +47,8 @@ block-style values: `parseFrontmatter`'s block-list branch (see "Block-style
 lists" below) records `blockSpans[key] = Span{Start, End}` covering the WHOLE
 block — the bare `key:` line through its last `- item` continuation line,
 inclusive of that line's ending — alongside the synthesized flow string it
-already writes into `frontmatter[key]`. Nothing but `SetAliases` (below)
-reads `blockSpans` today; it exists so a caller that knows how to rewrite an
+already writes into `frontmatter[key]`. `SetAliases` (below), `UpsertField`
+and `RemoveField` read `blockSpans`; it exists so a caller that knows how to rewrite an
 entire block list at once (not just a scalar's value) has a byte span to
 splice over, without re-deriving that span itself from `Raw`.
 
@@ -83,6 +83,27 @@ originally authored in. Gated by `TestRoundTripIdentity`/
 the targeted `TestSetAliases_BlockListCollapsesToFlow` (node_test.go), which
 exercises all three shapes and reparses the result to confirm the post-edit
 round-trip is itself byte-stable.
+
+## `UpsertField` / `RemoveField` — shape-agnostic set and clear (insert.go)
+
+`(*Node).UpsertField(key, value)` sets a frontmatter key whatever its shape:
+
+- **Scalar span:** splices the value only (adds the missing space after a bare
+  `key:`).
+- **Block list:** replaces the whole block span with one `key: value` line;
+  sibling lines are untouched.
+- **Absent:** delegates to `InsertField` (new key lands as the first line).
+- **Scalar and block both present** (hand-authored duplicate): error, because
+  which line wins depends on order and a splice could be silently lost.
+
+`(*Node).RemoveField(key)` deletes the whole line (scalar, including any
+trailing comment) or the whole block span. An absent key is a no-op. The
+parser keeps one span per key, so duplicates are removed one at a time until a
+re-parse shows the key absent. Removing the last frontmatter key errors,
+because `---\n---\n` re-parses as body.
+
+Both re-parse before committing and never mutate `*n` on failure. Unlike
+`SetField`, neither is limited to keys with an existing scalar span.
 
 ## Supported frontmatter/markdown subset (shipped, this ticket: reckon-vj55)
 

@@ -63,7 +63,8 @@ var todayActCmd = &cobra.Command{
 	Short: "Actuate a today agenda item (t/pin, d/defer, D/deadline, p/priority, x/done, i/start, c/cancel)",
 	Long: "Split-actuator dispatch for one agenda row: native (type todo) rows are " +
 		"mutated span-locally; external (type work-ticket) rows are rejected " +
-		"read-only (use `rk today open`).",
+		"read-only (use `rk today open`). To set or clear several fields at once, " +
+		"including depends-on, use `rk todo edit`.",
 	SilenceUsage: true,
 	Args:         cobra.RangeArgs(2, 3),
 	RunE:         runTodayActE,
@@ -439,10 +440,24 @@ func dispatchTodayAct(vaultDir, ref, key, arg string, noLog bool) (todayActResul
 // resolution to doneDurableTodo (todo.go), reused verbatim so `rk today act`
 // and `rk todo done` never disagree on which file a ref names.
 func loadNativeTodoForEdit(vaultDir, ref string) (*node.Node, string, error) {
+	n, foundPath, err := resolveDurableTodoRef("todo done", vaultDir, ref)
+	if err != nil {
+		return nil, "", err
+	}
+	if n == nil {
+		return nil, "", fmt.Errorf("today act: no todo found matching %q (not found)", ref)
+	}
+	return n, foundPath, nil
+}
+
+// resolveDurableTodoRef resolves ref to a durable todo (ULID fast-path, else a
+// walk over todos/*.md matching ULID or alias). It returns a nil node, with no
+// error, when nothing matches; verb prefixes read/parse/CRLF errors.
+func resolveDurableTodoRef(verb, vaultDir, ref string) (*node.Node, string, error) {
 	todosDir := filepath.Join(vaultDir, "todos")
 
 	fastPath := filepath.Join(todosDir, ref+".md")
-	n, foundPath, err := loadDurableTodoAt(fastPath)
+	n, foundPath, err := loadDurableTodoAt(verb, fastPath)
 	if err != nil {
 		return nil, "", err
 	}
@@ -450,13 +465,10 @@ func loadNativeTodoForEdit(vaultDir, ref string) (*node.Node, string, error) {
 		n, foundPath = nil, ""
 	}
 	if n == nil {
-		n, foundPath, err = findDurableTodoByRefOrAlias(todosDir, ref)
+		n, foundPath, err = findDurableTodoByRefOrAlias(verb, todosDir, ref)
 		if err != nil {
 			return nil, "", err
 		}
-	}
-	if n == nil {
-		return nil, "", fmt.Errorf("today act: no todo found matching %q (not found)", ref)
 	}
 	return n, foundPath, nil
 }
@@ -486,9 +498,18 @@ func actPin(vaultDir string, n *node.Node, foundPath, ref string) (todayActResul
 	}, nil
 }
 
-// resolveDeferDate resolves a "d"/"defer" argument: the "tomorrow"/
-// "next-week" shorthands, or a literal YYYY-MM-DD date.
+// resolveDeferDate resolves a "d"/"defer" argument.
 func resolveDeferDate(arg string, now time.Time) (string, error) {
+	date, err := resolveSchedDateArg(arg, now)
+	if err != nil {
+		return "", fmt.Errorf("today act: defer: %w", err)
+	}
+	return date, nil
+}
+
+// resolveSchedDateArg resolves the "tomorrow"/"next-week" shorthands or a
+// literal YYYY-MM-DD date to a YYYY-MM-DD string.
+func resolveSchedDateArg(arg string, now time.Time) (string, error) {
 	switch arg {
 	case "tomorrow":
 		return now.AddDate(0, 0, 1).Format("2006-01-02"), nil
@@ -497,10 +518,18 @@ func resolveDeferDate(arg string, now time.Time) (string, error) {
 	default:
 		d, err := parseSchedDate(arg)
 		if err != nil {
-			return "", fmt.Errorf("today act: defer: %w", err)
+			return "", err
 		}
 		return d.Format("2006-01-02"), nil
 	}
+}
+
+// validatePriority accepts only the A, B, and C priority letters.
+func validatePriority(v string) error {
+	if v != "A" && v != "B" && v != "C" {
+		return fmt.Errorf("invalid value %q (want A, B, or C)", v)
+	}
+	return nil
 }
 
 // actDefer implements the "d"/"defer" key: scheduled <- resolved date.
@@ -550,8 +579,8 @@ func actDeadline(vaultDir string, n *node.Node, foundPath, ref, arg string) (tod
 // Validation happens BEFORE any field mutation or write, so a rejected
 // value leaves the file byte-identical.
 func actPriority(vaultDir string, n *node.Node, foundPath, ref, arg string) (todayActResult, error) {
-	if arg != "A" && arg != "B" && arg != "C" {
-		return todayActResult{}, fmt.Errorf("today act: priority: invalid value %q (want A, B, or C)", arg)
+	if err := validatePriority(arg); err != nil {
+		return todayActResult{}, fmt.Errorf("today act: priority: %w", err)
 	}
 	if err := setOrInsertField(n, "priority", arg); err != nil {
 		return todayActResult{}, fmt.Errorf("today act: set priority: %w", err)
