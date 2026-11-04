@@ -56,7 +56,7 @@ func (n *Node) InsertField(key, value string) error {
 // A key present as both a scalar and a block list is ambiguous, so the call
 // returns an error and leaves the node unchanged, as does a key whose value
 // continues on lines the parser does not model (nested map, folded scalar,
-// comment or blank line inside a list) and a value that does not read back
+// blank line inside a list, comment followed by more list items) and a value that does not read back
 // verbatim. Every path re-parses before committing, and bytes outside the
 // touched line(s) are preserved.
 func (n *Node) UpsertField(key, value string) error {
@@ -123,25 +123,35 @@ func lineAfter(raw []byte, pos int) int {
 
 // checkNoContinuation refuses an edit whose replaced span ends where more
 // lines still belong to the key. from is the offset of the line after the
-// span; blank lines are skipped, and an indented or "-" line before the
-// closing fence is a continuation the parser did not record, so splicing the
-// span would orphan it.
+// span. Blank and comment lines are skipped at any indent. The closing fence,
+// or an unindented non-list line that looks like a sibling "key:" line, ends
+// the key's value; any other line is a continuation the parser did not
+// record, so splicing the span would orphan it. A quoted scalar whose
+// continuation line itself looks like "k: v" is indistinguishable from a
+// sibling without a YAML parser and is accepted.
 func checkNoContinuation(method string, raw []byte, from int, key string) error {
 	for pos := from; pos < len(raw); {
 		end := lineAfter(raw, pos)
 		line := bytes.TrimRight(raw[pos:end], "\r\n")
 		pos = end
+		trimmed := bytes.TrimSpace(line)
 		switch {
-		case len(bytes.TrimSpace(line)) == 0:
+		case len(trimmed) == 0 || trimmed[0] == '#':
 			continue
 		case string(line) == "---":
 			return nil
-		case line[0] == ' ' || line[0] == '\t' || line[0] == '-':
-			return fmt.Errorf("%s: key %q has continuation lines; resolve by hand", method, key)
+		case line[0] != ' ' && line[0] != '\t' && line[0] != '-' && looksLikeSiblingKey(line):
+			return nil
 		}
-		return nil
+		return fmt.Errorf("%s: key %q has continuation lines; resolve by hand", method, key)
 	}
 	return nil
+}
+
+// looksLikeSiblingKey reports whether an unindented line reads as the start
+// of another mapping entry.
+func looksLikeSiblingKey(line []byte) bool {
+	return fmScalarRe.Match(line) || bytes.Contains(line, []byte(": ")) || bytes.HasSuffix(line, []byte(":"))
 }
 
 // RemoveField deletes every occurrence of key from the frontmatter: a scalar

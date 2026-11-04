@@ -483,6 +483,14 @@ func TestUpsertRemoveField_RefuseContinuationShapes(t *testing.T) {
 		{"folded_scalar", "---\ntype: todo\ndeadline: >\n  2026-01-01\n---\nb\n", "deadline"},
 		{"blank_in_block", "---\ntype: todo\ndepends-on:\n  - \"[[a]]\"\n\n  - \"[[b]]\"\n---\nb\n", "depends-on"},
 		{"orphan_after_scalar", "---\ntype: todo\ntags:\nk: 1\n  - orphan\n---\nb\n", "k"},
+		{"col0_comment_then_indented_item", "---\ntype: todo\ndepends-on:\n  - \"[[tgt]]\"\n# keep\n  - \"[[other]]\"\n---\nb\n", "depends-on"},
+		{"col0_comment_then_col0_item", "---\ntype: todo\ndepends-on:\n# keep\n- \"[[tgt]]\"\n---\nb\n", "depends-on"},
+		{"col0_comment_then_nested_map", "---\ntype: todo\ndeadline:\n# c\n  soft: 2026-01-01\n---\nb\n", "deadline"},
+		{"flow_list_multiline", "---\ntype: todo\ndepends-on: [\n\"[[tgt]]\",\n\"[[other]]\"\n]\n---\nb\n", "depends-on"},
+		{"flow_list_continued", "---\ntype: todo\ndepends-on: [\"[[tgt]]\",\n\"[[other]]\"]\n---\nb\n", "depends-on"},
+		{"dq_scalar_multiline", "---\ntype: todo\ndeadline: \"2026-01-01\nsoft\"\n---\nb\n", "deadline"},
+		{"sq_scalar_multiline", "---\ntype: todo\npriority: 'A\nB'\n---\nb\n", "priority"},
+		{"stray_doc_end", "---\ntype: todo\nk: 1\n...\nj: 2\n---\nb\n", "k"},
 	}
 	for _, c := range cases {
 		t.Run(c.name+"/upsert", func(t *testing.T) {
@@ -497,6 +505,45 @@ func TestUpsertRemoveField_RefuseContinuationShapes(t *testing.T) {
 			requireNamedError(t, n.RemoveField(c.key), "RemoveField", c.key)
 			if string(n.Raw) != c.src {
 				t.Fatalf("Raw mutated despite refusal: %q", n.Raw)
+			}
+		})
+	}
+}
+
+func TestUpsertRemoveField_AcceptsSiblingShapes(t *testing.T) {
+	cases := []struct{ name, tail string }{
+		{"sibling_after_blank", "\nk: v\n"},
+		{"col0_comment_then_sibling", "# note\nk: v\n"},
+		{"indented_comment_then_sibling", "  # note\nk: v\n"},
+		{"indented_comment_before_fence", "  # note\n"},
+		{"spaced_key", "Due Date: 1\n"},
+		{"dotted_key", "my.key: 1\n"},
+		{"no_space_after_colon", "due:2026-08-01\n"},
+		{"tab_after_colon", "k:\tv\n"},
+		{"bare_key", "k:\n"},
+		{"last_key_before_fence", ""},
+		{"blank_before_fence", "\n"},
+	}
+	for _, c := range cases {
+		src := "---\ntype: todo\ndeadline: 2026-01-01\n" + c.tail + "---\nb\n"
+		t.Run(c.name+"/upsert", func(t *testing.T) {
+			n := mustParseStr(t, src)
+			if err := n.UpsertField("deadline", "2026-02-02"); err != nil {
+				t.Fatalf("UpsertField refused legitimate shape: %v", err)
+			}
+			want := strings.Replace(src, "deadline: 2026-01-01", "deadline: 2026-02-02", 1)
+			if string(n.Raw) != want {
+				t.Fatalf("Raw = %q, want %q", n.Raw, want)
+			}
+		})
+		t.Run(c.name+"/remove", func(t *testing.T) {
+			n := mustParseStr(t, src)
+			if err := n.RemoveField("deadline"); err != nil {
+				t.Fatalf("RemoveField refused legitimate shape: %v", err)
+			}
+			want := strings.Replace(src, "deadline: 2026-01-01\n", "", 1)
+			if string(n.Raw) != want {
+				t.Fatalf("Raw = %q, want %q", n.Raw, want)
 			}
 		})
 	}
