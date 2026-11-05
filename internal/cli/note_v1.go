@@ -435,6 +435,9 @@ func createNote(notesDir string, params noteCreateParams) (noteCreateResult, err
 func runNoteShowE(cmd *cobra.Command, args []string) error {
 	defer resetNoteFlags(cmd)
 	ref := args[0]
+	if err := checkNoteRef("note show", ref); err != nil {
+		return err
+	}
 
 	mode, err := output.ModeFromFlags(jsonFlag, ndjsonFlag)
 	if err != nil {
@@ -559,6 +562,9 @@ func loadNoteBacklinks(db *sql.DB, id string) ([]noteBacklink, error) {
 func runNoteRenameE(cmd *cobra.Command, args []string) error {
 	defer resetNoteFlags(cmd)
 	ref := args[0]
+	if err := checkNoteRef("note rename", ref); err != nil {
+		return err
+	}
 	newTitle := strings.TrimSpace(args[1])
 
 	newSlug := slugify(newTitle)
@@ -658,6 +664,10 @@ func runNoteRenameE(cmd *cobra.Command, args []string) error {
 // matches ref. Unparsable/CRLF files are skipped rather than aborting the
 // whole search (mirrors todo.go's findDurableTodoByRefOrAlias).
 func findNoteByRefOrAlias(notesDir, ref string) (*node.Node, string, error) {
+	// An empty ref would equal an id-less note's ULID or the base of notes/.md.
+	if ref == "" {
+		return nil, "", nil
+	}
 	files, err := noteFiles(notesDir)
 	if err != nil {
 		return nil, "", err
@@ -682,6 +692,15 @@ func findNoteByRefOrAlias(notesDir, ref string) (*node.Node, string, error) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared notes/ filesystem helpers (create + rename collision checks)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// checkNoteRef refuses an empty or whitespace ref. An id-less note has an empty
+// ULID, so an unset shell variable would otherwise select an arbitrary note.
+func checkNoteRef(verb, ref string) error {
+	if strings.TrimSpace(ref) == "" {
+		return fmt.Errorf("%s: empty ref (give a note ULID, slug, or alias)", verb)
+	}
+	return nil
+}
 
 // noteFiles returns every *.md file under notesDir (recursively), excluding
 // files named "index.md" (rk note index's own generated output, never a note

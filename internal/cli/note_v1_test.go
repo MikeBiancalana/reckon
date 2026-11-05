@@ -1051,3 +1051,66 @@ func TestNoteIndex_PrunesStaleGenerated(t *testing.T) {
 		t.Errorf("removed = %v, want [notes/sub/index.md]", res.Removed)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Empty refs: an unset shell variable must never select an id-less note.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const idlessNoteSrc = "---\ntype: note\ntitle: Idless\n---\nbody\n"
+
+func TestNoteRename_RejectsEmptyRef(t *testing.T) {
+	const wantErr = "note rename: empty ref (give a note ULID, slug, or alias)"
+	for name, args := range map[string][]string{
+		"empty":          {"rename", "", "New"},
+		"spaces":         {"rename", "  ", "New"},
+		"tab_newline":    {"rename", "\t\n", "New"},
+		"ref_over_title": {"rename", "", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			vault, _ := setupQueryVault(t)
+			t.Cleanup(resetCLIFlags)
+			mustWriteFile(t, filepath.Join(vault, "notes", "idless-note.md"), idlessNoteSrc)
+			requireRefused(t, vault, runNote, wantErr, args...)
+		})
+	}
+}
+
+func TestNoteShow_RejectsEmptyRef(t *testing.T) {
+	const wantErr = "note show: empty ref (give a note ULID, slug, or alias)"
+	for name, ref := range map[string]string{"empty": "", "spaces": "  ", "tab_newline": "\t\n"} {
+		t.Run(name, func(t *testing.T) {
+			vault, _ := setupQueryVault(t)
+			t.Cleanup(resetCLIFlags)
+			mustWriteFile(t, filepath.Join(vault, "notes", "idless-note.md"), idlessNoteSrc)
+			requireRefused(t, vault, runNote, wantErr, "show", ref)
+		})
+	}
+}
+
+func TestFindNoteByRefOrAlias_EmptyRefNeverMatches(t *testing.T) {
+	notesDir := filepath.Join(t.TempDir(), "notes")
+	idless := filepath.Join(notesDir, "idless-note.md")
+	id := node.Mint()
+	withID := filepath.Join(notesDir, "with-id.md")
+	mustWriteFile(t, idless, idlessNoteSrc)
+	mustWriteFile(t, withID, "---\nid: "+id+"\ntype: note\ntitle: With ID\naliases: [other-name]\n---\nbody\n")
+	mustWriteFile(t, filepath.Join(notesDir, ".md"), idlessNoteSrc)
+
+	n, path, err := findNoteByRefOrAlias(notesDir, "")
+	if err != nil {
+		t.Fatalf("empty ref: unexpected error: %v", err)
+	}
+	if n != nil {
+		t.Errorf("empty ref matched %s, want no match", path)
+	}
+
+	for ref, want := range map[string]string{id: withID, "other-name": withID, "idless-note": idless} {
+		n, path, err := findNoteByRefOrAlias(notesDir, ref)
+		if err != nil {
+			t.Fatalf("ref %q: unexpected error: %v", ref, err)
+		}
+		if n == nil || path != want {
+			t.Errorf("ref %q: resolved to %q, want %q", ref, path, want)
+		}
+	}
+}
