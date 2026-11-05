@@ -1,0 +1,23 @@
+{
+  "ticket_id": "reckon-pjfa",
+  "phase": "review",
+  "worktree": ".worktrees/reckon-pjfa",
+  "subsystem": "cli",
+  "attempts": {
+    "planner": 1,
+    "test_writer": 1,
+    "implementer": 1,
+    "simplify": 0,
+    "preflight": 1,
+    "reviewer": 0
+  },
+  "new_test_names": [
+    "TestNoteRename_RejectsEmptyRef",
+    "TestNoteShow_RejectsEmptyRef",
+    "TestFindNoteByRefOrAlias_EmptyRefNeverMatches"
+  ],
+  "stall_count": 0,
+  "last_test_output_hash": "",
+  "status": "in_progress",
+  "simplify_skipped": "Diff is about 16 lines; orchestrator read it and spawned no simplify agent. Phase is best-effort."
+}
