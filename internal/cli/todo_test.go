@@ -2610,6 +2610,22 @@ func TestTodoDone_NonEscapingPathShapesNotFound(t *testing.T) {
 	}
 }
 
+// These refs equal their own filepath.Base, so each needs a fixture at the
+// name a direct join would produce to prove the join is skipped.
+func TestTodoDone_DotAndRootRefsSkipDirectJoin(t *testing.T) {
+	for _, c := range []struct{ name, ref, file string }{
+		{"dotdot", "..", "...md"},
+		{"dot", ".", "..md"},
+		{"root", "/", ".md"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			vault := newEditVault(t)
+			mustWriteFile(t, filepath.Join(vault, "todos", c.file), outsideTodoSrc)
+			requireRefused(t, vault, runTodo, fmt.Sprintf("todo done: no todo found matching %q (not found)", c.ref), "done", c.ref)
+		})
+	}
+}
+
 func TestTodoDone_PathShapedAliasResolvesViaWalk(t *testing.T) {
 	vault := newEditVault(t)
 	id := node.Mint()

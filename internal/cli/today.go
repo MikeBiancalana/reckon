@@ -464,9 +464,9 @@ func resolveDurableTodoRef(verb, vaultDir, ref string) (*node.Node, string, erro
 		foundPath string
 		err       error
 	)
-	// A ref that names a path (separators, "..") must not reach the direct
-	// join; it can only match through the alias walk.
-	if ref == filepath.Base(ref) {
+	// A ref that names a path (separators, ".", "..") must not reach the
+	// direct join; it can only match through the alias walk.
+	if ref != "." && ref != ".." && !strings.ContainsRune(ref, filepath.Separator) {
 		n, foundPath, err = loadDurableTodoAt(verb, filepath.Join(todosDir, ref+".md"))
 		if err != nil {
 			return nil, "", err
