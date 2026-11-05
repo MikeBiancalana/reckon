@@ -7,7 +7,7 @@
     "planner": 1,
     "test_writer": 1,
     "implementer": 2,
-    "simplify": 1,
+    "simplify": 0,
     "preflight": 1,
     "reviewer": 1
   },
@@ -23,5 +23,6 @@
   ],
   "stall_count": 0,
   "last_test_output_hash": "",
-  "status": "in_progress"
+  "status": "in_progress",
+  "simplify_skipped": "Diff is net-negative and about 15 lines; orchestrator read it and spawned no simplify agent. Phase is best-effort."
 }

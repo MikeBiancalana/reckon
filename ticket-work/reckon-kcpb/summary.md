@@ -12,10 +12,20 @@ internal/cli/todo.go
 internal/cli/todo_test.go
 ticket-work/reckon-kcpb/acceptance-criteria.md
 ticket-work/reckon-kcpb/codebase-analysis.md
+ticket-work/reckon-kcpb/pattern-frequency.txt
 ticket-work/reckon-kcpb/plan.md
 ticket-work/reckon-kcpb/preflight-report.md
+ticket-work/reckon-kcpb/review.md
 ticket-work/reckon-kcpb/state.json
-.beads/issues.jsonl
+ticket-work/reckon-kcpb/summary.md
+
+## Commits:
+cf354e9 docs: Add review, summary, and follow-up beads for reckon-kcpb
+c0cbecc fix: skip direct todo join for dot and root refs
+0f78dcf docs: Add preflight report for reckon-kcpb
+f99eb69 fix: share todo ref resolver; refuse empty and path-escaping refs
+27806f0 test: Write failing tests for reckon-kcpb
+db5b775 docs: Add plan and analysis for reckon-kcpb
 
 ## Test Results:
 ok  	github.com/MikeBiancalana/reckon/internal/spike/roundtrip	(cached)
