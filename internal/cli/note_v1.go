@@ -664,6 +664,10 @@ func runNoteRenameE(cmd *cobra.Command, args []string) error {
 // matches ref. Unparsable/CRLF files are skipped rather than aborting the
 // whole search (mirrors todo.go's findDurableTodoByRefOrAlias).
 func findNoteByRefOrAlias(notesDir, ref string) (*node.Node, string, error) {
+	// An empty ref would equal an id-less note's ULID or the base of notes/.md.
+	if ref == "" {
+		return nil, "", nil
+	}
 	files, err := noteFiles(notesDir)
 	if err != nil {
 		return nil, "", err
@@ -678,7 +682,7 @@ func findNoteByRefOrAlias(notesDir, ref string) (*node.Node, string, error) {
 			continue
 		}
 		base := strings.TrimSuffix(filepath.Base(path), ".md")
-		if (n.ULID != "" && n.ULID == ref) || base == ref || containsString(n.Aliases, ref) {
+		if n.ULID == ref || base == ref || containsString(n.Aliases, ref) {
 			return n, path, nil
 		}
 	}

@@ -1093,7 +1093,8 @@ func TestFindNoteByRefOrAlias_EmptyRefNeverMatches(t *testing.T) {
 	id := node.Mint()
 	withID := filepath.Join(notesDir, "with-id.md")
 	mustWriteFile(t, idless, idlessNoteSrc)
-	mustWriteFile(t, withID, "---\nid: "+id+"\ntype: note\ntitle: With ID\n---\nbody\n")
+	mustWriteFile(t, withID, "---\nid: "+id+"\ntype: note\ntitle: With ID\naliases: [other-name]\n---\nbody\n")
+	mustWriteFile(t, filepath.Join(notesDir, ".md"), idlessNoteSrc)
 
 	n, path, err := findNoteByRefOrAlias(notesDir, "")
 	if err != nil {
@@ -1103,7 +1104,7 @@ func TestFindNoteByRefOrAlias_EmptyRefNeverMatches(t *testing.T) {
 		t.Errorf("empty ref matched %s, want no match", path)
 	}
 
-	for ref, want := range map[string]string{id: withID, "idless-note": idless} {
+	for ref, want := range map[string]string{id: withID, "other-name": withID, "idless-note": idless} {
 		n, path, err := findNoteByRefOrAlias(notesDir, ref)
 		if err != nil {
 			t.Fatalf("ref %q: unexpected error: %v", ref, err)
