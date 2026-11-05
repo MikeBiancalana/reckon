@@ -4,7 +4,7 @@
 
 `rk note rename "" New` renamed the first note with no `id:` line, because an empty ref compared equal to its empty ULID. An unset shell variable could therefore move an arbitrary file. `rk note show ""` had the same defect and printed that note.
 
-Both verbs now refuse an empty or whitespace ref with `<verb>: empty ref (give a note ULID, slug, or alias)`, and the rename walk can no longer match an empty ULID. ULID, slug and alias refs behave as before.
+Both verbs now refuse an empty or whitespace ref with `<verb>: empty ref (give a note ULID, slug, or alias)`, and the rename walk matches nothing on an empty ref. ULID, slug and alias refs behave as before.
 
 `note show` is not named in the ticket. It is included because it is the same defect in the same file, and the fix is one shared guard.
 
@@ -13,7 +13,7 @@ Both verbs now refuse an empty or whitespace ref with `<verb>: empty ref (give a
 | File | Change | Reason |
 |---|---|---|
 | `internal/cli/note_v1.go` | New `checkNoteRef(verb, ref)` helper; first check in `runNoteRenameE` and `runNoteShowE`. | One message, ahead of title validation and config/index work. |
-| same | `findNoteByRefOrAlias` (:675): `(n.ULID != "" && n.ULID == ref)`. | Root cause; safe for future callers. |
+| same | `findNoteByRefOrAlias`: return no match on an empty ref. | Covers both the empty ULID and the base of `notes/.md`, so the walk is safe for future callers. Review showed a ULID-only check left the `.md` route open. |
 | `internal/cli/note_v1_test.go` | Tests below. | Pins refusals and the walk. |
 
 ## Design decisions

@@ -21,4 +21,4 @@ Status: PASS
 ## Extra Verification
 
 - Real binary, id-less note: `rename ""` and `show ""` exit 1 with the file untouched; `rename idless-note New` still succeeds.
-- Mutation: restoring `n.ULID == ref` in the walk fails `TestFindNoteByRefOrAlias_EmptyRefNeverMatches`.
+- Mutation: removing the early return in the walk fails `TestFindNoteByRefOrAlias_EmptyRefNeverMatches`.

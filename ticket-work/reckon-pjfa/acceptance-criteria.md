@@ -3,7 +3,7 @@
 ## Explicit
 
 1. `rk note rename <ref> <title>` refuses an empty or whitespace ref.
-2. `findNoteByRefOrAlias` never matches an id-less note through its empty ULID.
+2. `findNoteByRefOrAlias` matches nothing on an empty ref, neither an empty ULID nor `notes/.md`.
 
 ## Implicit
 
@@ -22,8 +22,8 @@
 | 1 | id-less note | `rename "" New`, `rename "  " New`, `rename "\t\n" New` | `note rename: empty ref (give a note ULID, slug, or alias)`; vault unchanged |
 | 2 | id-less note | `rename "" ""` | same ref error |
 | 3 | id-less note | `show ""`, `show "  "`, `show "\t\n"` | `note show: empty ref (give a note ULID, slug, or alias)`; vault unchanged |
-| 4 | id-less note and note with ULID | `findNoteByRefOrAlias` with `""` | no match, no error |
-| 5 | same | `findNoteByRefOrAlias` with the ULID, and with the id-less slug | each resolves to its own file |
+| 4 | id-less note, `notes/.md` and note with ULID | `findNoteByRefOrAlias` with `""` | no match, no error |
+| 5 | same | `findNoteByRefOrAlias` with the ULID, an alias, and the id-less slug | each resolves to its own file |
 
 ## Out of scope
 
