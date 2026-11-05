@@ -1318,3 +1318,58 @@ func TestTodayAct_DoneSkippedSignalInJSON(t *testing.T) {
 		t.Errorf("pretty output should indicate the idempotent skip, got: %q", prettyOut)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ref resolution: empty refs, refs that name a path, error prefix
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestTodayAct_RejectsEmptyRef(t *testing.T) {
+	keys := [][]string{
+		{"t"},
+		{"d", "tomorrow"},
+		{"D", "2026-07-20"},
+		{"p", "A"},
+		{"x"},
+		{"i"},
+		{"c"},
+	}
+	for _, key := range keys {
+		for name, ref := range map[string]string{"empty": "", "whitespace": "   "} {
+			t.Run(key[0]+"/"+name, func(t *testing.T) {
+				vault, _ := setupQueryVault(t)
+				t.Cleanup(resetCLIFlags)
+				pinTodoNow(t, "2026-07-10")
+				mustWriteFile(t, filepath.Join(vault, "todos", "idless.md"), idlessTodoSrc)
+				args := append([]string{"act", ref}, key...)
+				requireRefused(t, vault, runToday, "today act: empty ref (give a todo ULID or alias)", args...)
+			})
+		}
+	}
+}
+
+func TestTodayAct_RefDoesNotEscapeTodosDir(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-10")
+	mustWriteFile(t, filepath.Join(vault, "outside.md"), outsideTodoSrc)
+	requireRefused(t, vault, runToday, `today act: no todo found matching "../outside" (not found)`, "act", "../outside", "x")
+}
+
+func TestTodayAct_CRLFRefusalUsesTodayActPrefix(t *testing.T) {
+	vault, _ := setupQueryVault(t)
+	t.Cleanup(resetCLIFlags)
+	pinTodoNow(t, "2026-07-10")
+	id := node.Mint()
+	mustWriteFile(t, filepath.Join(vault, "todos", id+".md"),
+		"---\r\nid: "+id+"\r\ntype: todo\r\nstate: open\r\n---\r\nBody\r\n")
+
+	before := snapshotVaultFiles(t, vault)
+	_, _, err := runToday(t, vault, "act", id, "d", "tomorrow")
+	resetCLIFlags()
+	if err == nil || !strings.HasPrefix(err.Error(), "today act: CRLF line endings") {
+		t.Errorf("error = %v, want prefix %q", err, "today act: CRLF line endings")
+	}
+	if after := snapshotVaultFiles(t, vault); !vaultSnapshotsEqual(before, after) {
+		t.Error("vault mutated by a refused command")
+	}
+}

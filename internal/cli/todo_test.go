@@ -2489,3 +2489,178 @@ func TestTodoAdd_LongSubjectNotTruncated(t *testing.T) {
 
 	verifyTodoBodyAndSubject(t, vault, res, long+"\n", long)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ref resolution: empty refs and refs that name a path
+// ─────────────────────────────────────────────────────────────────────────────
+
+const (
+	idlessTodoSrc  = "---\ntype: todo\nstate: open\n---\nBody\n"
+	outsideTodoSrc = "---\nid: 01ARZ3NDEKTSV4RRFFQ69G5FAV\ntype: todo\nstate: open\n---\nBody\n"
+)
+
+// requireRefused runs a todo-family command through run and requires it to
+// fail with exactly wantErr and leave the vault byte-identical. run is
+// runTodo or runToday; flags are reset afterwards so it can be called
+// repeatedly within one test.
+func requireRefused(t *testing.T, vault string, run func(*testing.T, string, ...string) (string, string, error), wantErr string, args ...string) {
+	t.Helper()
+	before := snapshotVaultFiles(t, vault)
+	_, _, err := run(t, vault, args...)
+	resetCLIFlags()
+	if err == nil {
+		t.Fatalf("rk %q: expected an error, got nil", args)
+	}
+	if err.Error() != wantErr {
+		t.Errorf("rk %q: error = %q, want %q", args, err.Error(), wantErr)
+	}
+	if after := snapshotVaultFiles(t, vault); !vaultSnapshotsEqual(before, after) {
+		t.Errorf("rk %q: vault mutated by a refused command", args)
+	}
+}
+
+const emptyRefDoneErr = "todo done: empty ref (give a todo ULID or alias)"
+
+func TestTodoDone_RejectsEmptyRef(t *testing.T) {
+	for name, ref := range map[string]string{"empty": "", "whitespace": "  "} {
+		t.Run(name, func(t *testing.T) {
+			vault := newEditVault(t)
+			mustWriteFile(t, filepath.Join(vault, "todos", "idless.md"), idlessTodoSrc)
+			requireRefused(t, vault, runTodo, emptyRefDoneErr, "done", ref)
+		})
+	}
+}
+
+func TestTodoDone_RefDoesNotEscapeTodosDir(t *testing.T) {
+	for name, ref := range map[string]string{
+		"parent":          "../outside",
+		"embedded_dotdot": "sub/../../outside",
+		"above_vault":     "../../outside",
+	} {
+		t.Run(name, func(t *testing.T) {
+			vault := newEditVault(t)
+			mustWriteFile(t, filepath.Join(vault, "todos", "keep.md"), "---\nid: "+node.Mint()+"\ntype: todo\nstate: open\n---\nKeep\n")
+			target := filepath.Join(vault, "outside.md")
+			if name == "above_vault" {
+				target = filepath.Join(filepath.Dir(vault), "outside.md")
+			}
+			mustWriteFile(t, target, outsideTodoSrc)
+			requireRefused(t, vault, runTodo, fmt.Sprintf("todo done: no todo found matching %q (not found)", ref), "done", ref)
+			requireFile(t, target, outsideTodoSrc)
+		})
+	}
+}
+
+func TestTodoDone_PathRefNotResolvedByDirectJoin(t *testing.T) {
+	for name, c := range map[string]struct{ file, ref string }{
+		"nested":    {"sub/foo.md", "sub/foo"},
+		"dot_slash": {"foo.md", "./foo"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			vault := newEditVault(t)
+			mustWriteFile(t, filepath.Join(vault, "todos", c.file), outsideTodoSrc)
+			requireRefused(t, vault, runTodo, fmt.Sprintf("todo done: no todo found matching %q (not found)", c.ref), "done", c.ref)
+		})
+	}
+}
+
+func TestResolveDurableTodoRef_EmptyRefUsesCallerVerb(t *testing.T) {
+	vault := newEditVault(t)
+	mustWriteFile(t, filepath.Join(vault, "todos", "idless.md"), idlessTodoSrc)
+	for _, ref := range []string{"", "  "} {
+		n, _, err := resolveDurableTodoRef("todo edit", vault, ref)
+		if n != nil {
+			t.Errorf("ref %q: resolved a node, want nil", ref)
+		}
+		if want := "todo edit: empty ref (give a todo ULID or alias)"; err == nil || err.Error() != want {
+			t.Errorf("ref %q: error = %v, want %q", ref, err, want)
+		}
+	}
+}
+
+func TestFindDurableTodoByRefOrAlias_EmptyRefNeverMatches(t *testing.T) {
+	vault := newEditVault(t)
+	mustWriteFile(t, filepath.Join(vault, "todos", "idless.md"), idlessTodoSrc)
+	n, path, err := findDurableTodoByRefOrAlias("todo done", filepath.Join(vault, "todos"), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != nil {
+		t.Errorf("empty ref matched %s, want no match", path)
+	}
+}
+
+func TestTodoDone_NonEscapingPathShapesNotFound(t *testing.T) {
+	for _, c := range []struct{ name, ref string }{
+		{"dotdot", ".."},
+		{"dot", "."},
+		{"absolute", ""},
+		{"trailing_slash", "foo/"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			vault := newEditVault(t)
+			mustWriteFile(t, filepath.Join(vault, "outside.md"), outsideTodoSrc)
+			mustWriteFile(t, filepath.Join(vault, "todos", "foo.md"), outsideTodoSrc)
+			ref := c.ref
+			if c.name == "absolute" {
+				ref = filepath.Join(vault, "outside")
+			}
+			requireRefused(t, vault, runTodo, fmt.Sprintf("todo done: no todo found matching %q (not found)", ref), "done", ref)
+		})
+	}
+}
+
+// These refs equal their own filepath.Base, so each needs a fixture at the
+// name a direct join would produce to prove the join is skipped.
+func TestTodoDone_DotAndRootRefsSkipDirectJoin(t *testing.T) {
+	for _, c := range []struct{ name, ref, file string }{
+		{"dotdot", "..", "...md"},
+		{"dot", ".", "..md"},
+		{"root", "/", ".md"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			vault := newEditVault(t)
+			mustWriteFile(t, filepath.Join(vault, "todos", c.file), outsideTodoSrc)
+			requireRefused(t, vault, runTodo, fmt.Sprintf("todo done: no todo found matching %q (not found)", c.ref), "done", c.ref)
+		})
+	}
+}
+
+func TestTodoDone_PathShapedAliasResolvesViaWalk(t *testing.T) {
+	vault := newEditVault(t)
+	id := node.Mint()
+	writeTestNode(t, vault, "todos/"+id+".md", id, "todo", "Aliased", "state: open", "aliases: [sub/foo]")
+
+	if _, stderr, err := runTodo(t, vault, "done", "sub/foo"); err != nil {
+		t.Fatalf("rk todo done sub/foo: %v\nstderr: %s", err, stderr)
+	}
+	n, err := node.Parse([]byte(mustReadFile(t, filepath.Join(vault, "todos", id+".md"))))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Props["state"] != "done" {
+		t.Errorf("Props[state] = %q, want done", n.Props["state"])
+	}
+}
+
+func TestTodoDone_InboxContainerNotAMatch(t *testing.T) {
+	vault := newEditVault(t)
+	writeEphemeralContainer(t, vault, node.Mint(), "- [ ] one")
+	requireRefused(t, vault, runTodo, `todo done: no todo found matching "inbox" (not found)`, "done", "inbox")
+}
+
+func TestTodoDone_EphemeralEmptyIndexKeepsOwnError(t *testing.T) {
+	vault := newEditVault(t)
+	requireRefused(t, vault, runTodo, `todo done: --ephemeral requires a positive 1-based index, got ""`, "done", "", "--ephemeral")
+}
+
+func TestTodoDone_IDLessTodoByFileStemStillResolves(t *testing.T) {
+	vault := newEditVault(t)
+	path := filepath.Join(vault, "todos", "idless.md")
+	mustWriteFile(t, path, idlessTodoSrc)
+
+	if _, stderr, err := runTodo(t, vault, "done", "idless"); err != nil {
+		t.Fatalf("rk todo done idless: %v\nstderr: %s", err, stderr)
+	}
+	requireFile(t, path, strings.Replace(idlessTodoSrc, "state: open", "state: done", 1))
+}
